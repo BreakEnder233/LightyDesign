@@ -1,50 +1,53 @@
 import { useEffect, useMemo, useState } from "react";
 
 type HeaderLayoutRow = {
-  HeaderType: string;
-  configuration: unknown;
+  headerType: string;
 };
 
 type SheetColumn = {
-  FieldName: string;
-  Type: string;
-  DisplayName?: string | null;
-  IsListType: boolean;
-  IsReferenceType: boolean;
+  fieldName: string;
+  type: string;
+  displayName?: string | null;
+  isListType: boolean;
+  isReferenceType: boolean;
   attributes: Record<string, unknown>;
 };
 
 type SheetMetadata = {
   workbookName?: string | null;
-  Name: string;
-  DataFilePath: string;
-  HeaderFilePath: string;
+  name: string;
+  dataFilePath: string;
+  headerFilePath: string;
   rowCount: number;
   columnCount: number;
   columns: SheetColumn[];
 };
 
-type WorkspaceSheetSummary = {
-  metadata: SheetMetadata;
-  rows: string[][];
+type WorkspaceNavigationSheet = {
+  workbookName: string;
+  name: string;
+  dataFilePath: string;
+  headerFilePath: string;
+  rowCount: number;
+  columnCount: number;
 };
 
-type WorkspaceSummaryWorkbook = {
-  Name: string;
-  DirectoryPath: string;
-  previewOnly: boolean;
-  sheets: WorkspaceSheetSummary[];
+type WorkspaceNavigationWorkbook = {
+  name: string;
+  directoryPath: string;
+  sheetCount: number;
+  sheets: WorkspaceNavigationSheet[];
 };
 
-type WorkspaceResponse = {
-  RootPath: string;
-  ConfigFilePath: string;
-  HeadersFilePath: string;
+type WorkspaceNavigationResponse = {
+  rootPath: string;
+  configFilePath: string;
+  headersFilePath: string;
   headerLayout: {
     count: number;
     rows: HeaderLayoutRow[];
   };
-  workbooks: WorkspaceSummaryWorkbook[];
+  workbooks: WorkspaceNavigationWorkbook[];
 };
 
 type SheetResponse = {
@@ -106,13 +109,15 @@ function App() {
   const [hostInfo, setHostInfo] = useState<DesktopHostInfo | null>(null);
   const [hostHealth, setHostHealth] = useState<DesktopHostHealth | null>(null);
   const [workspacePath, setWorkspacePath] = useState<string>(() => localStorage.getItem(workspaceStorageKey) ?? "");
-  const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceNavigationResponse | null>(null);
   const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceReloadKey, setWorkspaceReloadKey] = useState(0);
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
   const [openTabs, setOpenTabs] = useState<SheetTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [sheetStateMap, setSheetStateMap] = useState<Record<string, SheetLoadState>>({});
+  const [sheetFilter, setSheetFilter] = useState("");
 
   useEffect(() => {
     let disposed = false;
@@ -170,7 +175,9 @@ function App() {
 
       try {
         const query = new URLSearchParams({ workspacePath });
-        const data = await fetchJson<WorkspaceResponse>(`${hostInfo.desktopHostUrl}/api/workspace?${query.toString()}`);
+        const data = await fetchJson<WorkspaceNavigationResponse>(
+          `${hostInfo.desktopHostUrl}/api/workspace/navigation?${query.toString()}`,
+        );
 
         if (canceled) {
           return;
@@ -181,6 +188,7 @@ function App() {
         setOpenTabs([]);
         setActiveTabId(null);
         setSheetStateMap({});
+        setSheetFilter("");
       } catch (error) {
         if (canceled) {
           return;
@@ -270,19 +278,52 @@ function App() {
       return [];
     }
 
-    return workspace.workbooks.map((workbook) => ({
-      name: workbook.Name,
-      sheets: workbook.sheets.map((sheet) => ({
-        workbookName: workbook.Name,
-        sheetName: sheet.metadata.Name,
-        rowCount: sheet.metadata.rowCount,
-        columnCount: sheet.metadata.columnCount,
-      })),
-    }));
-  }, [workspace]);
+    const search = workspaceSearch.trim().toLocaleLowerCase();
+
+    return workspace.workbooks
+      .map((workbook) => {
+        const sheets = workbook.sheets
+          .filter((sheet) => {
+            if (!search) {
+              return true;
+            }
+
+            return (
+              workbook.name.toLocaleLowerCase().includes(search) ||
+              sheet.name.toLocaleLowerCase().includes(search)
+            );
+          })
+          .map((sheet) => ({
+            workbookName: workbook.name,
+            sheetName: sheet.name,
+            rowCount: sheet.rowCount,
+            columnCount: sheet.columnCount,
+          }));
+
+        if (!search || workbook.name.toLocaleLowerCase().includes(search) || sheets.length > 0) {
+          return {
+            name: workbook.name,
+            sheets,
+          };
+        }
+
+        return null;
+      })
+      .filter((workbook): workbook is WorkspaceTreeWorkbook => workbook !== null);
+  }, [workspace, workspaceSearch]);
 
   const activeTab = openTabs.find((tab) => tab.id === activeTabId) ?? null;
   const activeSheetState = activeTab ? sheetStateMap[activeTab.id] : undefined;
+  const filteredSheetRows = useMemo(() => {
+    const rows = activeSheetState?.data?.rows ?? [];
+    const search = sheetFilter.trim().toLocaleLowerCase();
+
+    if (!search) {
+      return rows;
+    }
+
+    return rows.filter((row) => row.some((cell) => cell.toLocaleLowerCase().includes(search)));
+  }, [activeSheetState?.data?.rows, sheetFilter]);
   const hostStatusLabel = hostHealth?.ok ? "Connected" : "Starting";
   const hostStatusClassName = hostHealth?.ok ? "status-pill is-ok" : "status-pill";
   const totalSheetCount = workbookTree.reduce((count, workbook) => count + workbook.sheets.length, 0);
@@ -299,6 +340,7 @@ function App() {
     });
 
     setActiveTabId(id);
+    setSheetFilter("");
   }
 
   function closeTab(tabId: string) {
@@ -309,6 +351,7 @@ function App() {
         const closingIndex = current.findIndex((tab) => tab.id === tabId);
         const fallbackTab = nextTabs[Math.max(0, closingIndex - 1)] ?? nextTabs[0] ?? null;
         setActiveTabId(fallbackTab?.id ?? null);
+        setSheetFilter("");
       }
 
       return nextTabs;
@@ -319,6 +362,7 @@ function App() {
     const selectedPath = await window.lightyDesign.chooseWorkspaceDirectory();
     if (selectedPath) {
       setWorkspacePath(selectedPath);
+      setWorkspaceSearch("");
     }
   }
 
@@ -393,6 +437,16 @@ function App() {
             {workspaceStatus === "loading" ? <span className="badge">Loading</span> : null}
           </div>
 
+          <label className="search-field">
+            <span>搜索工作簿或 Sheet</span>
+            <input
+              onChange={(event) => setWorkspaceSearch(event.target.value)}
+              placeholder="例如 Item / Consumable"
+              type="text"
+              value={workspaceSearch}
+            />
+          </label>
+
           {workspaceStatus === "idle" ? (
             <div className="empty-panel">
               <strong>等待工作区</strong>
@@ -413,7 +467,7 @@ function App() {
           {workspaceStatus === "ready" && workbookTree.length === 0 ? (
             <div className="empty-panel">
               <strong>工作区为空</strong>
-              <p>已读取 headers.json，但暂未发现任何工作簿或 Sheet。</p>
+              <p>{workspaceSearch ? "当前搜索条件没有匹配结果。" : "已读取 headers.json，但暂未发现任何工作簿或 Sheet。"}</p>
             </div>
           ) : null}
 
@@ -457,7 +511,7 @@ function App() {
             <p className="eyebrow">Host Bridge</p>
             <h2>DesktopHost 已接入，前端开始消费真实工作区接口。</h2>
             <p className="hero-copy">
-              第一阶段的 app 目标是稳定打通选择目录、工作区导航、多标签打开和 Sheet 只读查看。后续编辑与保存将复用同一套宿主接口与前端状态结构。
+              第二批功能把导航树切换到轻量接口，并补充工作区搜索、Sheet 文本筛选和行号展示，减少初次加载成本并提高只读查看效率。
             </p>
           </div>
 
@@ -476,7 +530,7 @@ function App() {
             </div>
             <div>
               <span>Workspace Root</span>
-              <strong>{workspace?.RootPath ?? "Not loaded"}</strong>
+              <strong>{workspace?.rootPath ?? "Not loaded"}</strong>
             </div>
           </div>
         </section>
@@ -535,7 +589,7 @@ function App() {
                 <div className="viewer-header">
                   <div>
                     <p className="eyebrow">Sheet</p>
-                    <h3>{activeSheetState.data.metadata.Name}</h3>
+                    <h3>{activeSheetState.data.metadata.name}</h3>
                   </div>
                   <div className="viewer-metadata">
                     <span>{activeSheetState.data.metadata.columnCount} 列</span>
@@ -544,12 +598,22 @@ function App() {
                   </div>
                 </div>
 
+                <label className="search-field sheet-filter-field">
+                  <span>筛选当前 Sheet 的文本内容</span>
+                  <input
+                    onChange={(event) => setSheetFilter(event.target.value)}
+                    placeholder="按任意单元格文本过滤"
+                    type="text"
+                    value={sheetFilter}
+                  />
+                </label>
+
                 <div className="column-summary-grid">
                   {activeSheetState.data.metadata.columns.map((column) => (
-                    <article className="column-card" key={column.FieldName}>
-                      <strong>{column.DisplayName || column.FieldName}</strong>
-                      <span>{column.FieldName}</span>
-                      <em>{column.Type}</em>
+                    <article className="column-card" key={column.fieldName}>
+                      <strong>{column.displayName || column.fieldName}</strong>
+                      <span>{column.fieldName}</span>
+                      <em>{column.type}</em>
                     </article>
                   ))}
                 </div>
@@ -558,26 +622,28 @@ function App() {
                   <table className="sheet-table">
                     <thead>
                       <tr>
+                        <th className="row-number-cell is-header">#</th>
                         {activeSheetState.data.metadata.columns.map((column) => (
-                          <th key={column.FieldName}>
-                            <div>{column.DisplayName || column.FieldName}</div>
-                            <small>{column.Type}</small>
+                          <th key={column.fieldName}>
+                            <div>{column.displayName || column.fieldName}</div>
+                            <small>{column.type}</small>
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {activeSheetState.data.rows.length === 0 ? (
+                      {filteredSheetRows.length === 0 ? (
                         <tr>
-                          <td className="table-empty" colSpan={activeSheetState.data.metadata.columns.length || 1}>
-                            当前 Sheet 没有数据行。
+                          <td className="table-empty" colSpan={(activeSheetState.data.metadata.columns.length || 1) + 1}>
+                            {activeSheetState.data.rows.length === 0 ? "当前 Sheet 没有数据行。" : "没有匹配当前筛选条件的数据。"}
                           </td>
                         </tr>
                       ) : (
-                        activeSheetState.data.rows.map((row, rowIndex) => (
+                        filteredSheetRows.map((row, rowIndex) => (
                           <tr key={`${activeTab.id}-row-${rowIndex}`}>
+                            <td className="row-number-cell">{rowIndex + 1}</td>
                             {activeSheetState.data.metadata.columns.map((column, columnIndex) => (
-                              <td key={`${column.FieldName}-${rowIndex}`}>{row[columnIndex] ?? ""}</td>
+                              <td key={`${column.fieldName}-${rowIndex}`}>{row[columnIndex] ?? ""}</td>
                             ))}
                           </tr>
                         ))

@@ -159,6 +159,31 @@ button {
   letter-spacing: 0.14em;
 }
 
+.search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.search-field span {
+  font-size: 12px;
+  color: rgba(233, 240, 236, 0.62);
+}
+
+.search-field input {
+  border: 1px solid rgba(209, 229, 220, 0.12);
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: #eef4ef;
+  background: rgba(5, 12, 12, 0.48);
+  outline: none;
+}
+
+.search-field input:focus {
+  border-color: rgba(155, 217, 202, 0.34);
+}
+
 .workspace-path {
   margin: 0;
   word-break: break-all;
@@ -358,6 +383,10 @@ button {
   padding: 18px;
 }
 
+.sheet-filter-field {
+  margin-top: -4px;
+}
+
 .viewer-empty-state,
 .empty-panel {
   display: flex;
@@ -422,6 +451,21 @@ button {
   top: 0;
   z-index: 1;
   background: rgba(19, 34, 34, 0.98);
+}
+
+.row-number-cell {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 60px;
+  width: 60px;
+  text-align: right;
+  color: rgba(233, 240, 236, 0.58);
+  background: rgba(15, 29, 29, 0.98);
+}
+
+.row-number-cell.is-header {
+  z-index: 2;
 }
 
 .sheet-table th,

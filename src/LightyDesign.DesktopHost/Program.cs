@@ -100,6 +100,45 @@ app.MapGet("/api/workspace", (string workspacePath) =>
     }
 });
 
+app.MapGet("/api/workspace/navigation", (string workspacePath) =>
+{
+    if (string.IsNullOrWhiteSpace(workspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(workspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapGet("/api/workspace/workbooks/{workbookName}", (string workbookName, string workspacePath) =>
 {
     if (string.IsNullOrWhiteSpace(workspacePath))
@@ -448,6 +487,31 @@ static object ToWorkspaceResponse(LightyWorkspace workspace)
     };
 }
 
+static object ToWorkspaceNavigationResponse(LightyWorkspace workspace)
+{
+    return new
+    {
+        workspace.RootPath,
+        workspace.ConfigFilePath,
+        workspace.HeadersFilePath,
+        headerLayout = new
+        {
+            count = workspace.HeaderLayout.Count,
+            rows = workspace.HeaderLayout.Rows.Select(row => new
+            {
+                row.HeaderType,
+            }),
+        },
+        workbooks = workspace.Workbooks.Select(workbook => new
+        {
+            workbook.Name,
+            workbook.DirectoryPath,
+            sheetCount = workbook.Sheets.Count,
+            sheets = workbook.Sheets.Select(sheet => ToSheetNavigationResponse(workbook.Name, sheet)),
+        }),
+    };
+}
+
 static object ToWorkbookResponse(LightyWorkbook workbook, bool previewOnly)
 {
     return new
@@ -489,6 +553,19 @@ static object ToSheetMetadataResponse(string? workbookName, LightySheet sheet)
                 pair => pair.Key,
                 pair => JsonElementToObject(pair.Value)),
         }),
+    };
+}
+
+static object ToSheetNavigationResponse(string workbookName, LightySheet sheet)
+{
+    return new
+    {
+        workbookName,
+        sheet.Name,
+        sheet.DataFilePath,
+        sheet.HeaderFilePath,
+        rowCount = sheet.RowCount,
+        columnCount = sheet.Header.Count,
     };
 }
 

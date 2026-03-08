@@ -214,6 +214,146 @@ app.MapPost("/api/workspace/create", (CreateWorkspaceRequest request) =>
     }
 });
 
+app.MapPost("/api/workspace/workbooks/create", (CreateWorkbookRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkbookName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var workbookName = request.WorkbookName.Trim();
+    if (workbookName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName contains invalid path characters.",
+            workbookName,
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        LightyWorkbookScaffolder.CreateDefault(workspacePath, workspace.HeaderLayout, workbookName);
+        var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/workbooks/delete", (DeleteWorkbookRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkbookName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var workbookName = request.WorkbookName.Trim();
+
+    try
+    {
+        LightyWorkspaceLoader.Load(workspacePath);
+        LightyWorkbookScaffolder.Delete(workspacePath, workbookName);
+        var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapGet("/api/workspace/workbooks/{workbookName}", (string workbookName, string workspacePath) =>
 {
     if (string.IsNullOrWhiteSpace(workspacePath))
@@ -736,6 +876,20 @@ sealed class CreateWorkspaceRequest
     public string ParentDirectoryPath { get; set; } = string.Empty;
 
     public string WorkspaceName { get; set; } = string.Empty;
+}
+
+sealed class CreateWorkbookRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string WorkbookName { get; set; } = string.Empty;
+}
+
+sealed class DeleteWorkbookRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string WorkbookName { get; set; } = string.Empty;
 }
 
 sealed class WorkbookPayload

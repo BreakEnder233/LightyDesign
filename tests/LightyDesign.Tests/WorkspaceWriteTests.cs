@@ -12,6 +12,7 @@ public class WorkspaceWriteTests
 
         try
         {
+            Directory.CreateDirectory(workspaceRoot);
             File.WriteAllText(Path.Combine(workspaceRoot, "config.json"), "{}");
             File.WriteAllText(
                 Path.Combine(workspaceRoot, "headers.json"),
@@ -78,14 +79,86 @@ public class WorkspaceWriteTests
         }
         finally
         {
-            Directory.Delete(workspaceRoot, recursive: true);
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void WorkbookScaffolder_ShouldCreateDefaultWorkbookTemplate()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            var workspace = LightyWorkspaceScaffolder.Create(workspaceRoot);
+            var workbook = LightyWorkbookScaffolder.CreateDefault(workspaceRoot, workspace.HeaderLayout, "Item");
+
+            Assert.Equal("Item", workbook.Name);
+            var defaultSheet = Assert.Single(workbook.Sheets);
+            Assert.Equal(LightyWorkbookScaffolder.DefaultSheetName, defaultSheet.Name);
+            Assert.Equal(2, defaultSheet.Header.Count);
+
+            var idColumn = defaultSheet.Header[0];
+            Assert.Equal("ID", idColumn.FieldName);
+            Assert.Equal("int", idColumn.Type);
+            Assert.Equal("序号", idColumn.DisplayName);
+            Assert.True(idColumn.TryGetExportScope(out var idExportScope));
+            Assert.Equal(LightyExportScope.All, idExportScope);
+            Assert.False(idColumn.TryGetValidation(out _));
+
+            var annotationColumn = defaultSheet.Header[1];
+            Assert.Equal("Annotation", annotationColumn.FieldName);
+            Assert.Equal("string", annotationColumn.Type);
+            Assert.Equal("注释", annotationColumn.DisplayName);
+            Assert.True(annotationColumn.TryGetExportScope(out var annotationExportScope));
+            Assert.Equal(LightyExportScope.None, annotationExportScope);
+            Assert.False(annotationColumn.TryGetValidation(out _));
+
+            var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
+            var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks);
+            var reloadedSheet = Assert.Single(reloadedWorkbook.Sheets);
+            Assert.Equal(LightyWorkbookScaffolder.DefaultSheetName, reloadedSheet.Name);
+            Assert.Equal(2, reloadedSheet.Header.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void WorkbookScaffolder_ShouldDeleteWorkbookDirectory()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            var workspace = LightyWorkspaceScaffolder.Create(workspaceRoot);
+            LightyWorkbookScaffolder.CreateDefault(workspaceRoot, workspace.HeaderLayout, "Item");
+
+            LightyWorkbookScaffolder.Delete(workspaceRoot, "Item");
+
+            Assert.False(Directory.Exists(Path.Combine(workspaceRoot, "Item")));
+            var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
+            Assert.Empty(reloadedWorkspace.Workbooks);
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
         }
     }
 
     private static string CreateWorkspaceDirectory()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");
-        Directory.CreateDirectory(root);
-        return root;
+        return Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");
     }
 }

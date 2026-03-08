@@ -18,6 +18,7 @@ import {
 } from "../types/desktopApp";
 
 const workspaceStorageKey = "lightydesign.workspacePath";
+const defaultWorkbookSheetName = "Sheet1";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -30,6 +31,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
         message = payload.error;
       }
     } catch {
+      const defaultWorkbookSheetName = "Sheet1";
       // Ignore invalid JSON payloads and fall back to status-based message.
     }
 
@@ -51,6 +53,10 @@ function getDesktopBridge() {
 
 function isValidWorkspaceName(workspaceName: string) {
   return workspaceName.length > 0 && !/[\\/:*?"<>|]/.test(workspaceName);
+}
+
+function removeWorkbookTabs(openTabs: SheetTab[], workbookName: string) {
+  return openTabs.filter((tab) => tab.workbookName !== workbookName);
 }
 
 type UseWorkspaceEditorArgs = {
@@ -523,6 +529,175 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     }
   }
 
+  async function createWorkbook(workbookName: string) {
+    if (!hostInfo || !workspacePath) {
+      emitToast({
+        title: "无法新建工作簿",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const trimmedWorkbookName = workbookName.trim();
+    if (!isValidWorkspaceName(trimmedWorkbookName)) {
+      emitToast({
+        title: "工作簿名称无效",
+        detail: "工作簿名称不能为空，且不能包含 \\ / : * ? \" < > | 等非法字符。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    try {
+      const updatedWorkspace = await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/create`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+            workbookName: trimmedWorkbookName,
+          }),
+        },
+      );
+
+      setWorkspace(updatedWorkspace);
+      setWorkspaceStatus("ready");
+      setWorkspaceError(null);
+      setWorkbookSaveStateMap({});
+      setSheetFilter("");
+
+      const defaultSheetTabId = buildSheetTabId(trimmedWorkbookName, defaultWorkbookSheetName);
+      setOpenTabs((current) => {
+        if (current.some((tab) => tab.id === defaultSheetTabId)) {
+          return current;
+        }
+
+        return [...current, { id: defaultSheetTabId, workbookName: trimmedWorkbookName, sheetName: defaultWorkbookSheetName }];
+      });
+      setActiveTabId(defaultSheetTabId);
+      setSheetStateMap((current) => ({
+        ...current,
+        [defaultSheetTabId]: current[defaultSheetTabId] ?? { status: "idle" },
+      }));
+
+      emitToast({
+        title: `工作簿已创建: ${trimmedWorkbookName}`,
+        detail: "已创建默认 Sheet，并初始化 ID 与 Annotation 两列。",
+        source: "workspace",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4200,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "创建工作簿失败。";
+      emitToast({
+        title: "创建工作簿失败",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
+  async function deleteWorkbook(workbookName: string) {
+    if (!hostInfo || !workspacePath) {
+      emitToast({
+        title: "无法删除工作簿",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const shouldDelete = window.confirm(`确认删除工作簿 ${workbookName} 吗？该操作不会进入撤销/重做。`);
+    if (!shouldDelete) {
+      return false;
+    }
+
+    try {
+      const updatedWorkspace = await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/delete`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+            workbookName,
+          }),
+        },
+      );
+
+      const nextOpenTabs = removeWorkbookTabs(openTabs, workbookName);
+      setWorkspace(updatedWorkspace);
+      setWorkspaceStatus("ready");
+      setWorkspaceError(null);
+      setOpenTabs(nextOpenTabs);
+      setActiveTabId((current) => {
+        if (!current) {
+          return nextOpenTabs[0]?.id ?? null;
+        }
+
+        const currentTabStillExists = nextOpenTabs.some((tab) => tab.id === current);
+        return currentTabStillExists ? current : nextOpenTabs[0]?.id ?? null;
+      });
+      setSheetStateMap((current) => {
+        const nextStateMap: Record<string, SheetLoadState> = {};
+        nextOpenTabs.forEach((tab) => {
+          if (current[tab.id]) {
+            nextStateMap[tab.id] = current[tab.id];
+          }
+        });
+        return nextStateMap;
+      });
+      setWorkbookSaveStateMap((current) => {
+        const nextStateMap = { ...current };
+        delete nextStateMap[workbookName];
+        return nextStateMap;
+      });
+      setSheetFilter("");
+
+      emitToast({
+        title: `工作簿已删除: ${workbookName}`,
+        detail: "已从当前工作区移除该工作簿目录。",
+        source: "workspace",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4200,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "删除工作簿失败。";
+      emitToast({
+        title: "删除工作簿失败",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
   function retryWorkspaceLoad() {
     if (!workspacePath) {
       return;
@@ -922,6 +1097,8 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     closeTab,
     chooseParentDirectoryForWorkspaceCreation,
     createWorkspace,
+    createWorkbook,
+    deleteWorkbook,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,

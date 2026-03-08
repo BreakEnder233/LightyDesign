@@ -432,8 +432,24 @@ button {
 }
 
 .tree-workbook-header {
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+}
+
+.tree-workbook-title {
+  min-width: 0;
+}
+
+.tree-workbook-delete {
+  border: 1px solid rgba(239, 103, 86, 0.22);
+  border-radius: 12px;
+  padding: 8px 10px;
+  color: #ffd7d1;
+  background: rgba(94, 24, 24, 0.42);
+}
+
+.tree-workbook-delete:hover {
+  background: rgba(120, 31, 31, 0.52);
 }
 
 .tree-sheet-list {

@@ -46,6 +46,8 @@ function App() {
     closeTab,
     chooseParentDirectoryForWorkspaceCreation,
     createWorkspace,
+    createWorkbook,
+    deleteWorkbook,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,
@@ -73,6 +75,8 @@ function App() {
   const [isCreateWorkspaceDialogOpen, setIsCreateWorkspaceDialogOpen] = useState(false);
   const [createWorkspaceParentDirectoryPath, setCreateWorkspaceParentDirectoryPath] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("NewWorkspace");
+  const [isCreateWorkbookDialogOpen, setIsCreateWorkbookDialogOpen] = useState(false);
+  const [newWorkbookName, setNewWorkbookName] = useState("NewWorkbook");
 
   const shortcutBindings = useMemo<ShortcutBinding[]>(
     () => [
@@ -172,6 +176,23 @@ function App() {
     }
   }
 
+  function handleOpenCreateWorkbookDialog() {
+    setNewWorkbookName("NewWorkbook");
+    setIsCreateWorkbookDialogOpen(true);
+  }
+
+  function handleCloseCreateWorkbookDialog() {
+    setIsCreateWorkbookDialogOpen(false);
+    setNewWorkbookName("NewWorkbook");
+  }
+
+  async function handleConfirmCreateWorkbook() {
+    const created = await createWorkbook(newWorkbookName);
+    if (created) {
+      handleCloseCreateWorkbookDialog();
+    }
+  }
+
   return (
     <div className="app-shell">
       {isCreateWorkspaceDialogOpen ? (
@@ -217,6 +238,56 @@ function App() {
                 取消
               </button>
               <button className="primary-button" onClick={() => void handleConfirmCreateWorkspace()} type="button">
+                创建并打开
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isCreateWorkbookDialogOpen ? (
+        <div className="workspace-create-backdrop" onClick={handleCloseCreateWorkbookDialog} role="presentation">
+          <div
+            aria-labelledby="workbook-create-title"
+            aria-modal="true"
+            className="workspace-create-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">Workbook</p>
+                <h2 id="workbook-create-title">新建工作簿</h2>
+              </div>
+            </div>
+
+            <div className="workspace-create-body">
+              <p className="workspace-create-path-label">当前工作区</p>
+              <p className="workspace-create-path-value">{workspacePath || "尚未选择工作区"}</p>
+
+              <label className="search-field workspace-create-name-field">
+                <span>工作簿名称</span>
+                <input
+                  autoFocus
+                  onChange={(event) => setNewWorkbookName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleConfirmCreateWorkbook();
+                    }
+                  }}
+                  placeholder="例如 Item"
+                  type="text"
+                  value={newWorkbookName}
+                />
+              </label>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseCreateWorkbookDialog} type="button">
+                取消
+              </button>
+              <button className="primary-button" onClick={() => void handleConfirmCreateWorkbook()} type="button">
                 创建并打开
               </button>
             </div>
@@ -297,7 +368,17 @@ function App() {
               <p className="eyebrow">Navigator</p>
               <h2>工作簿树</h2>
             </div>
-            {workspaceStatus === "loading" ? <span className="badge">加载中</span> : null}
+            <div className="section-actions">
+              {workspaceStatus === "loading" ? <span className="badge">加载中</span> : null}
+              <button
+                className="secondary-button"
+                disabled={workspaceStatus !== "ready"}
+                onClick={handleOpenCreateWorkbookDialog}
+                type="button"
+              >
+                新建工作簿
+              </button>
+            </div>
           </div>
 
           <label className="search-field">
@@ -339,8 +420,18 @@ function App() {
               {workbookTree.map((workbook) => (
                 <div className="tree-workbook" key={workbook.name}>
                   <div className="tree-workbook-header">
-                    <strong>{workbook.name}</strong>
-                    <span>{workbook.sheets.length} sheets</span>
+                    <div className="tree-workbook-title">
+                      <strong>{workbook.name}</strong>
+                      <span>{workbook.sheets.length} sheets</span>
+                    </div>
+                    <button
+                      aria-label={`删除工作簿 ${workbook.name}`}
+                      className="tree-workbook-delete"
+                      onClick={() => void deleteWorkbook(workbook.name)}
+                      type="button"
+                    >
+                      删除
+                    </button>
                   </div>
 
                   <div className="tree-sheet-list">

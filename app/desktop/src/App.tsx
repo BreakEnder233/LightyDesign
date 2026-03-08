@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 type HeaderLayoutRow = {
   headerType: string;
@@ -55,6 +56,13 @@ type SheetResponse = {
   rows: string[][];
 };
 
+type WorkbookResponse = {
+  name: string;
+  directoryPath: string;
+  previewOnly: boolean;
+  sheets: SheetResponse[];
+};
+
 type WorkspaceTreeSheet = {
   workbookName: string;
   sheetName: string;
@@ -76,11 +84,31 @@ type SheetTab = {
 type SheetLoadState = {
   status: "idle" | "loading" | "ready" | "error";
   data?: SheetResponse;
+  draftRows?: string[][];
+  editedCells?: Record<string, string>;
+  undoStack?: CellEditRecord[];
+  redoStack?: CellEditRecord[];
+  dirty?: boolean;
   error?: string;
 };
 
+type WorkbookSaveState = {
+  status: "idle" | "saving" | "saved" | "error";
+  error?: string;
+};
+
+type CellEditRecord = {
+  rowIndex: number;
+  columnIndex: number;
+  previousValue: string;
+  nextValue: string;
+};
+
+type ColumnEditorKind = "text" | "number" | "boolean" | "reference" | "list";
+
 const workspaceStorageKey = "lightydesign.workspacePath";
-const sheetPageSize = 200;
+const rowHeight = 42;
+const overscanCount = 12;
 
 function buildSheetTabId(workbookName: string, sheetName: string) {
   return `${workbookName}::${sheetName}`;
@@ -111,8 +139,46 @@ function isSheetAvailable(workspace: WorkspaceNavigationResponse, tab: SheetTab)
   );
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+function buildCellKey(rowIndex: number, columnIndex: number) {
+  return `${rowIndex}:${columnIndex}`;
+}
+
+function cloneRows(rows: string[][]) {
+  return rows.map((row) => [...row]);
+}
+
+function updateRowsAtCell(rows: string[][], rowIndex: number, columnIndex: number, nextValue: string) {
+  const nextRows = [...rows];
+  const nextRow = [...(nextRows[rowIndex] ?? [])];
+  nextRow[columnIndex] = nextValue;
+  nextRows[rowIndex] = nextRow;
+  return nextRows;
+}
+
+function getColumnEditorKind(column: SheetColumn): ColumnEditorKind {
+  const normalizedType = column.type.trim().toLocaleLowerCase();
+
+  if (normalizedType === "bool" || normalizedType === "boolean") {
+    return "boolean";
+  }
+
+  if (["int", "long", "float", "double", "decimal", "short", "byte"].includes(normalizedType)) {
+    return "number";
+  }
+
+  if (column.isReferenceType) {
+    return "reference";
+  }
+
+  if (column.isListType) {
+    return "list";
+  }
+
+  return "text";
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
   if (!response.ok) {
     let message = `Request failed with status ${response.status}.`;
 
@@ -143,8 +209,12 @@ function App() {
   const [openTabs, setOpenTabs] = useState<SheetTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [sheetStateMap, setSheetStateMap] = useState<Record<string, SheetLoadState>>({});
+  const [workbookSaveStateMap, setWorkbookSaveStateMap] = useState<Record<string, WorkbookSaveState>>({});
   const [sheetFilter, setSheetFilter] = useState("");
-  const [sheetPage, setSheetPage] = useState(1);
+  const hasDirtyChanges = useMemo(
+    () => Object.values(sheetStateMap).some((sheetState) => sheetState.dirty),
+    [sheetStateMap],
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -213,8 +283,8 @@ function App() {
         setWorkspace(data);
         setWorkspaceStatus("ready");
         setSheetStateMap({});
+        setWorkbookSaveStateMap({});
         setSheetFilter("");
-        setSheetPage(1);
       } catch (error) {
         if (canceled) {
           return;
@@ -331,6 +401,11 @@ function App() {
           [resolvedActiveTab.id]: {
             status: "ready",
             data,
+            draftRows: cloneRows(data.rows),
+            editedCells: {},
+            undoStack: [],
+            redoStack: [],
+            dirty: false,
           },
         }));
       } catch (error) {
@@ -354,10 +429,6 @@ function App() {
       canceled = true;
     };
   }, [activeTabId, hostInfo, openTabs, sheetStateMap, workspacePath]);
-
-  useEffect(() => {
-    setSheetPage(1);
-  }, [activeTabId, sheetFilter]);
 
   const workbookTree = useMemo<WorkspaceTreeWorkbook[]>(() => {
     if (!workspace) {
@@ -401,35 +472,46 @@ function App() {
   const activeTab = openTabs.find((tab) => tab.id === activeTabId) ?? null;
   const activeSheetState = activeTab ? sheetStateMap[activeTab.id] : undefined;
   const activeSheetData = activeSheetState?.data;
-  const filteredSheetRows = useMemo(() => {
-    const rows = activeSheetData?.rows ?? [];
-    const search = sheetFilter.trim().toLocaleLowerCase();
-
-    if (!search) {
-      return rows;
-    }
-
-    return rows.filter((row) => row.some((cell) => cell.toLocaleLowerCase().includes(search)));
-  }, [activeSheetData?.rows, sheetFilter]);
-  const sheetPageCount = Math.max(1, Math.ceil(filteredSheetRows.length / sheetPageSize));
-  const safeSheetPage = Math.min(sheetPage, sheetPageCount);
-  const pagedSheetRows = useMemo(() => {
-    const startIndex = (safeSheetPage - 1) * sheetPageSize;
-    return filteredSheetRows.slice(startIndex, startIndex + sheetPageSize);
-  }, [filteredSheetRows, safeSheetPage]);
-  const pageStartRowNumber = filteredSheetRows.length === 0 ? 0 : (safeSheetPage - 1) * sheetPageSize + 1;
-  const pageEndRowNumber = filteredSheetRows.length === 0
-    ? 0
-    : Math.min(filteredSheetRows.length, safeSheetPage * sheetPageSize);
+  const activeSheetRows = activeSheetState?.draftRows ?? activeSheetData?.rows ?? [];
+  const deferredWorkspaceSearch = useDeferredValue(workspaceSearch);
+  const deferredSheetFilter = useDeferredValue(sheetFilter);
   const hostStatusLabel = hostHealth?.ok ? "Connected" : "Starting";
   const hostStatusClassName = hostHealth?.ok ? "status-pill is-ok" : "status-pill";
   const totalSheetCount = workbookTree.reduce((count, workbook) => count + workbook.sheets.length, 0);
+  const activeWorkbookSaveState = activeTab ? workbookSaveStateMap[activeTab.workbookName] : undefined;
+  const activeWorkbookDirtyTabs = useMemo(
+    () => openTabs.filter((tab) => tab.workbookName === activeTab?.workbookName && sheetStateMap[tab.id]?.dirty),
+    [activeTab?.workbookName, openTabs, sheetStateMap],
+  );
+  const filteredRowEntries = useMemo(() => {
+    const search = deferredSheetFilter.trim().toLocaleLowerCase();
+    const indexedRows = activeSheetRows.map((row, rowIndex) => ({
+      row,
+      rowIndex,
+    }));
+
+    if (!search) {
+      return indexedRows;
+    }
+
+    return indexedRows.filter(({ row }) => row.some((cell) => cell.toLocaleLowerCase().includes(search)));
+  }, [activeSheetRows, deferredSheetFilter]);
 
   useEffect(() => {
-    if (sheetPage !== safeSheetPage) {
-      setSheetPage(safeSheetPage);
+    if (!hasDirtyChanges) {
+      return;
     }
-  }, [safeSheetPage, sheetPage]);
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [hasDirtyChanges]);
 
   function openSheet(workbookName: string, sheetName: string) {
     const id = buildSheetTabId(workbookName, sheetName);
@@ -444,10 +526,17 @@ function App() {
 
     setActiveTabId(id);
     setSheetFilter("");
-    setSheetPage(1);
   }
 
   function closeTab(tabId: string) {
+    const closingSheetState = sheetStateMap[tabId];
+    if (closingSheetState?.dirty) {
+      const shouldClose = window.confirm("当前 Sheet 有未保存修改，确认关闭这个标签页吗？");
+      if (!shouldClose) {
+        return;
+      }
+    }
+
     setOpenTabs((current) => {
       const nextTabs = current.filter((tab) => tab.id !== tabId);
 
@@ -456,7 +545,6 @@ function App() {
         const fallbackTab = nextTabs[Math.max(0, closingIndex - 1)] ?? nextTabs[0] ?? null;
         setActiveTabId(fallbackTab?.id ?? null);
         setSheetFilter("");
-        setSheetPage(1);
       }
 
       return nextTabs;
@@ -464,6 +552,13 @@ function App() {
   }
 
   async function chooseWorkspaceDirectory() {
+    if (hasDirtyChanges) {
+      const shouldSwitch = window.confirm("当前存在未保存修改，确认切换工作区目录吗？");
+      if (!shouldSwitch) {
+        return;
+      }
+    }
+
     const selectedPath = await window.lightyDesign.chooseWorkspaceDirectory();
     if (selectedPath) {
       setWorkspacePath(selectedPath);
@@ -490,6 +585,323 @@ function App() {
         status: "idle",
       },
     }));
+  }
+
+  function updateCellValue(rowIndex: number, columnIndex: number, nextValue: string) {
+    if (!activeTab || !activeSheetState?.data) {
+      return;
+    }
+
+    const currentDraftRows = activeSheetState.draftRows ?? activeSheetState.data.rows;
+    const previousValue = currentDraftRows[rowIndex]?.[columnIndex] ?? "";
+    if (previousValue === nextValue) {
+      return;
+    }
+
+    const originalValue = activeSheetState.data.rows[rowIndex]?.[columnIndex] ?? "";
+    const cellKey = buildCellKey(rowIndex, columnIndex);
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!currentSheetState?.data) {
+        return current;
+      }
+
+      const nextDraftRows = updateRowsAtCell(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        rowIndex,
+        columnIndex,
+        nextValue,
+      );
+
+      const nextEditedCells = {
+        ...(currentSheetState.editedCells ?? {}),
+      };
+
+      if (nextValue === originalValue) {
+        delete nextEditedCells[cellKey];
+      } else {
+        nextEditedCells[cellKey] = nextValue;
+      }
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...currentSheetState,
+          draftRows: nextDraftRows,
+          editedCells: nextEditedCells,
+          undoStack: [
+            ...(currentSheetState.undoStack ?? []),
+            {
+              rowIndex,
+              columnIndex,
+              previousValue,
+              nextValue,
+            },
+          ],
+          redoStack: [],
+          dirty: Object.keys(nextEditedCells).length > 0,
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function undoActiveSheetEdit() {
+    if (!activeTab) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!currentSheetState?.data || !currentSheetState.undoStack?.length) {
+        return current;
+      }
+
+      const undoStack = [...currentSheetState.undoStack];
+      const lastEdit = undoStack.pop();
+      if (!lastEdit) {
+        return current;
+      }
+
+      const nextDraftRows = updateRowsAtCell(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        lastEdit.rowIndex,
+        lastEdit.columnIndex,
+        lastEdit.previousValue,
+      );
+
+      const originalValue = currentSheetState.data.rows[lastEdit.rowIndex]?.[lastEdit.columnIndex] ?? "";
+      const cellKey = buildCellKey(lastEdit.rowIndex, lastEdit.columnIndex);
+      const nextEditedCells = {
+        ...(currentSheetState.editedCells ?? {}),
+      };
+
+      if (lastEdit.previousValue === originalValue) {
+        delete nextEditedCells[cellKey];
+      } else {
+        nextEditedCells[cellKey] = lastEdit.previousValue;
+      }
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...currentSheetState,
+          draftRows: nextDraftRows,
+          editedCells: nextEditedCells,
+          undoStack,
+          redoStack: [...(currentSheetState.redoStack ?? []), lastEdit],
+          dirty: Object.keys(nextEditedCells).length > 0,
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function redoActiveSheetEdit() {
+    if (!activeTab) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!currentSheetState?.data || !currentSheetState.redoStack?.length) {
+        return current;
+      }
+
+      const redoStack = [...currentSheetState.redoStack];
+      const lastRedo = redoStack.pop();
+      if (!lastRedo) {
+        return current;
+      }
+
+      const nextDraftRows = updateRowsAtCell(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        lastRedo.rowIndex,
+        lastRedo.columnIndex,
+        lastRedo.nextValue,
+      );
+
+      const originalValue = currentSheetState.data.rows[lastRedo.rowIndex]?.[lastRedo.columnIndex] ?? "";
+      const cellKey = buildCellKey(lastRedo.rowIndex, lastRedo.columnIndex);
+      const nextEditedCells = {
+        ...(currentSheetState.editedCells ?? {}),
+      };
+
+      if (lastRedo.nextValue === originalValue) {
+        delete nextEditedCells[cellKey];
+      } else {
+        nextEditedCells[cellKey] = lastRedo.nextValue;
+      }
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...currentSheetState,
+          draftRows: nextDraftRows,
+          editedCells: nextEditedCells,
+          undoStack: [...(currentSheetState.undoStack ?? []), lastRedo],
+          redoStack,
+          dirty: Object.keys(nextEditedCells).length > 0,
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function restoreActiveSheetDraft() {
+    if (!activeTab) {
+      return;
+    }
+
+    const shouldRestore = window.confirm("确认恢复当前 Sheet 到最近一次保存状态吗？");
+    if (!shouldRestore) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!currentSheetState?.data) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...currentSheetState,
+          draftRows: cloneRows(currentSheetState.data.rows),
+          editedCells: {},
+          undoStack: [],
+          redoStack: [],
+          dirty: false,
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  async function saveActiveWorkbook() {
+    if (!activeTab || !hostInfo || !workspacePath || activeWorkbookDirtyTabs.length === 0) {
+      return;
+    }
+
+    const workbookName = activeTab.workbookName;
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [workbookName]: {
+        status: "saving",
+      },
+    }));
+
+    try {
+      const query = new URLSearchParams({ workspacePath });
+      const workbookResponse = await fetchJson<WorkbookResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/${encodeURIComponent(workbookName)}?${query.toString()}`,
+      );
+
+      const dirtySheetMap = new Map(
+        activeWorkbookDirtyTabs.map((tab) => [tab.sheetName, sheetStateMap[tab.id]]),
+      );
+
+      const payload = {
+        workspacePath,
+        workbook: {
+          name: workbookResponse.name,
+          sheets: workbookResponse.sheets.map((sheet) => {
+            const dirtySheetState = dirtySheetMap.get(sheet.metadata.name);
+            const rows = dirtySheetState?.draftRows ?? sheet.rows;
+
+            return {
+              name: sheet.metadata.name,
+              columns: sheet.metadata.columns.map((column) => ({
+                fieldName: column.fieldName,
+                type: column.type,
+                displayName: column.displayName,
+                attributes: column.attributes,
+              })),
+              rows,
+            };
+          }),
+        },
+      };
+
+      const savedWorkbook = await fetchJson<WorkbookResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/save`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      const savedSheetMap = new Map(savedWorkbook.sheets.map((sheet) => [sheet.metadata.name, sheet]));
+
+      setSheetStateMap((current) => {
+        const nextStateMap = { ...current };
+
+        openTabs
+          .filter((tab) => tab.workbookName === workbookName)
+          .forEach((tab) => {
+            const savedSheet = savedSheetMap.get(tab.sheetName);
+            if (!savedSheet) {
+              return;
+            }
+
+            nextStateMap[tab.id] = {
+              status: "ready",
+              data: savedSheet,
+              draftRows: cloneRows(savedSheet.rows),
+              editedCells: {},
+              undoStack: [],
+              redoStack: [],
+              dirty: false,
+            };
+          });
+
+        return nextStateMap;
+      });
+
+      setWorkbookSaveStateMap((current) => ({
+        ...current,
+        [workbookName]: {
+          status: "saved",
+        },
+      }));
+    } catch (error) {
+      setWorkbookSaveStateMap((current) => ({
+        ...current,
+        [workbookName]: {
+          status: "error",
+          error: error instanceof Error ? error.message : "保存工作簿失败。",
+        },
+      }));
+    }
   }
 
   return (
@@ -616,7 +1028,7 @@ function App() {
             <p className="eyebrow">Host Bridge</p>
             <h2>DesktopHost 已接入，前端开始消费真实工作区接口。</h2>
             <p className="hero-copy">
-              第三批功能开始处理真实使用形态：当前 workspace 的 tabs 和激活状态会被持久化，Sheet 查看区也加入分页，避免大表一次性渲染过重。
+              第四批功能开始把 viewer 演进成真正的编辑器基础：当前表格改为真实虚拟滚动，单元格可直接编辑，并可按工作簿调用保存接口写回工作区。
             </p>
           </div>
 
@@ -700,6 +1112,7 @@ function App() {
                     <span>{activeSheetData.metadata.columnCount} 列</span>
                     <span>{activeSheetData.metadata.rowCount} 行</span>
                     <span>{activeTab.workbookName}</span>
+                    <span>{activeWorkbookDirtyTabs.length} dirty tabs</span>
                   </div>
                 </div>
 
@@ -714,28 +1127,55 @@ function App() {
                     />
                   </label>
 
-                  <div className="pagination-panel">
-                    <span className="pagination-status">
-                      显示 {pageStartRowNumber}-{pageEndRowNumber} / {filteredSheetRows.length || 0} 行
-                    </span>
-                    <div className="pagination-controls">
+                  <div className="editor-actions-panel">
+                    <div className="edit-actions">
                       <button
                         className="secondary-button"
-                        disabled={safeSheetPage <= 1}
-                        onClick={() => setSheetPage((current) => Math.max(1, current - 1))}
+                        disabled={!activeSheetState.undoStack?.length}
+                        onClick={undoActiveSheetEdit}
                         type="button"
                       >
-                        上一页
+                        撤销
                       </button>
-                      <span className="pagination-page-indicator">第 {safeSheetPage} / {sheetPageCount} 页</span>
                       <button
                         className="secondary-button"
-                        disabled={safeSheetPage >= sheetPageCount}
-                        onClick={() => setSheetPage((current) => Math.min(sheetPageCount, current + 1))}
+                        disabled={!activeSheetState.redoStack?.length}
+                        onClick={redoActiveSheetEdit}
                         type="button"
                       >
-                        下一页
+                        恢复
                       </button>
+                      <button
+                        className="secondary-button"
+                        disabled={!activeSheetState.dirty}
+                        onClick={restoreActiveSheetDraft}
+                        type="button"
+                      >
+                        还原当前 Sheet
+                      </button>
+                    </div>
+
+                    <div className="save-panel">
+                      <span className="save-status">
+                        {activeWorkbookSaveState?.status === "saving"
+                          ? "正在保存..."
+                          : activeWorkbookSaveState?.status === "saved"
+                            ? "保存完成"
+                            : activeWorkbookSaveState?.status === "error"
+                              ? activeWorkbookSaveState.error ?? "保存失败"
+                              : `筛选后 ${filteredRowEntries.length} / ${activeSheetRows.length} 行，撤销栈 ${activeSheetState.undoStack?.length ?? 0}`}
+                      </span>
+                      <div className="save-actions">
+                        <span className="save-hint">虚拟滚动已启用</span>
+                        <button
+                          className="primary-button save-button"
+                          disabled={activeWorkbookDirtyTabs.length === 0 || activeWorkbookSaveState?.status === "saving"}
+                          onClick={() => void saveActiveWorkbook()}
+                          type="button"
+                        >
+                          保存当前工作簿
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -750,44 +1190,136 @@ function App() {
                   ))}
                 </div>
 
-                <div className="table-scroll">
-                  <table className="sheet-table">
-                    <thead>
-                      <tr>
-                        <th className="row-number-cell is-header">#</th>
-                        {activeSheetData.metadata.columns.map((column) => (
-                          <th key={column.fieldName}>
-                            <div>{column.displayName || column.fieldName}</div>
-                            <small>{column.type}</small>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedSheetRows.length === 0 ? (
-                        <tr>
-                          <td className="table-empty" colSpan={(activeSheetData.metadata.columns.length || 1) + 1}>
-                            {activeSheetData.rows.length === 0 ? "当前 Sheet 没有数据行。" : "没有匹配当前筛选条件的数据。"}
-                          </td>
-                        </tr>
-                      ) : (
-                        pagedSheetRows.map((row, rowIndex) => (
-                          <tr key={`${activeTab.id}-row-${pageStartRowNumber + rowIndex}`}>
-                            <td className="row-number-cell">{pageStartRowNumber + rowIndex}</td>
-                            {activeSheetData.metadata.columns.map((column, columnIndex) => (
-                              <td key={`${column.fieldName}-${pageStartRowNumber + rowIndex}`}>{row[columnIndex] ?? ""}</td>
-                            ))}
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <VirtualSheetTable
+                  columns={activeSheetData.metadata.columns}
+                  editedCells={activeSheetState.editedCells ?? {}}
+                  onEditCell={updateCellValue}
+                  rows={filteredRowEntries}
+                />
               </>
             ) : null}
           </div>
         </section>
       </main>
+    </div>
+  );
+}
+
+type VirtualSheetTableProps = {
+  columns: SheetColumn[];
+  rows: Array<{
+    row: string[];
+    rowIndex: number;
+  }>;
+  editedCells: Record<string, string>;
+  onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
+};
+
+function VirtualSheetTable({ columns, rows, editedCells, onEditCell }: VirtualSheetTableProps) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const gridTemplateColumns = useMemo(
+    () => `72px repeat(${columns.length}, minmax(180px, 1fr))`,
+    [columns.length],
+  );
+  const minTableWidth = `${72 + columns.length * 180}px`;
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => bodyRef.current,
+    estimateSize: () => rowHeight,
+    overscan: overscanCount,
+  });
+
+  function syncHeaderScroll() {
+    if (!bodyRef.current || !headerRef.current) {
+      return;
+    }
+
+    headerRef.current.scrollLeft = bodyRef.current.scrollLeft;
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="table-empty-panel">
+        没有匹配当前筛选条件的数据。
+      </div>
+    );
+  }
+
+  return (
+    <div className="virtual-table-shell">
+      <div className="virtual-table-header-scroll" ref={headerRef}>
+        <div className="virtual-table-header" style={{ gridTemplateColumns, minWidth: minTableWidth }}>
+          <div className="virtual-header-cell row-number-cell is-header">#</div>
+          {columns.map((column) => (
+            <div className="virtual-header-cell" key={column.fieldName}>
+              <div>{column.displayName || column.fieldName}</div>
+              <small>{column.type}</small>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="virtual-table-body-scroll" onScroll={syncHeaderScroll} ref={bodyRef}>
+        <div className="virtual-table-canvas" style={{ height: rowVirtualizer.getTotalSize(), minWidth: minTableWidth }}>
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const rowEntry = rows[virtualRow.index];
+            const visualRowNumber = rowEntry.rowIndex + 1;
+
+            return (
+              <div
+                className="virtual-table-row"
+                key={visualRowNumber}
+                style={{
+                  gridTemplateColumns,
+                  height: virtualRow.size,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <div className="virtual-row-number row-number-cell">{visualRowNumber}</div>
+                {columns.map((column, columnIndex) => {
+                  const cellKey = buildCellKey(rowEntry.rowIndex, columnIndex);
+                  const isDirty = Object.prototype.hasOwnProperty.call(editedCells, cellKey);
+                  const editorKind = getColumnEditorKind(column);
+                  const cellValue = rowEntry.row[columnIndex] ?? "";
+
+                  return (
+                    <label className={`virtual-cell is-${editorKind}${isDirty ? " is-dirty" : ""}`} key={`${column.fieldName}-${visualRowNumber}`}>
+                      {editorKind === "boolean" ? (
+                        <select
+                          className="virtual-cell-input virtual-cell-select"
+                          onChange={(event) => onEditCell(rowEntry.rowIndex, columnIndex, event.target.value)}
+                          value={cellValue}
+                        >
+                          <option value="">(empty)</option>
+                          <option value="true">true</option>
+                          <option value="false">false</option>
+                        </select>
+                      ) : (
+                        <input
+                          className={`virtual-cell-input${editorKind === "reference" || editorKind === "list" ? " is-code" : ""}`}
+                          inputMode={editorKind === "number" ? "decimal" : "text"}
+                          onChange={(event) => onEditCell(rowEntry.rowIndex, columnIndex, event.target.value)}
+                          placeholder={
+                            editorKind === "reference"
+                              ? "[[id]]"
+                              : editorKind === "list"
+                                ? "逗号分隔值"
+                                : undefined
+                          }
+                          spellCheck={editorKind === "reference" || editorKind === "list" ? false : true}
+                          type="text"
+                          value={cellValue}
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

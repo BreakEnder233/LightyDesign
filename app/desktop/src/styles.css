@@ -285,6 +285,13 @@ button {
   transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+}
+
 .primary-button {
   color: #081111;
   background: linear-gradient(135deg, #9bd9ca, #e8bd77);
@@ -472,6 +479,29 @@ button {
 
 .status-pill.is-ok {
   color: #8bd6ba;
+}
+
+.status-pill.is-error {
+  color: #ef816f;
+}
+
+.bridge-warning-panel {
+  grid-column: 1 / -1;
+  padding: 16px 18px;
+  border: 1px solid rgba(239, 103, 86, 0.28);
+  border-radius: 18px;
+  background: rgba(74, 18, 18, 0.56);
+}
+
+.bridge-warning-panel strong {
+  display: block;
+  color: #ffd7d1;
+}
+
+.bridge-warning-panel p {
+  margin: 8px 0 0;
+  color: rgba(255, 232, 228, 0.84);
+  word-break: break-word;
 }
 
 .editor-panel {

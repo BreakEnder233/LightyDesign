@@ -9,7 +9,7 @@ import { useWorkspaceEditor } from "./hooks/useWorkspaceEditor";
 import type { ShortcutBinding } from "./types/desktopApp";
 
 function App() {
-  const { hostInfo, hostHealth } = useDesktopHostConnection();
+  const { bridgeStatus, bridgeError, hostInfo, hostHealth } = useDesktopHostConnection();
   const {
     toastNotifications,
     selectedErrorToast,
@@ -58,13 +58,16 @@ function App() {
     onToast: pushToastNotification,
   });
 
-  const hostStatusLabel = hostHealth?.ok ? "Connected" : "Starting";
-  const hostStatusClassName = hostHealth?.ok ? "status-pill is-ok" : "status-pill";
+  const hostStatusLabel = bridgeStatus === "unavailable" ? "Bridge Unavailable" : hostHealth?.ok ? "Connected" : "Starting";
+  const hostStatusClassName = bridgeStatus === "unavailable" ? "status-pill is-error" : hostHealth?.ok ? "status-pill is-ok" : "status-pill";
   const canUndoActiveSheet = Boolean(activeSheetState?.undoStack?.length);
   const canRedoActiveSheet = Boolean(activeSheetState?.redoStack?.length);
   const canSaveActiveWorkbook = Boolean(
     activeTab && hostInfo && workspacePath && activeWorkbookDirtyTabs.length > 0 && activeWorkbookSaveState?.status !== "saving",
   );
+  const canChooseWorkspaceDirectory = bridgeStatus === "ready";
+  const hostUrlLabel = bridgeStatus === "unavailable" ? "Electron bridge 未就绪" : hostInfo?.desktopHostUrl ?? "Loading...";
+  const runtimeLabel = bridgeStatus === "unavailable" ? "Unavailable" : hostInfo?.shell ?? "Loading...";
 
   const shortcutBindings = useMemo<ShortcutBinding[]>(
     () => [
@@ -168,7 +171,13 @@ function App() {
               <p className="eyebrow">Workspace</p>
               <h2>选择工作区</h2>
             </div>
-            <button className="primary-button" onClick={chooseWorkspaceDirectory} type="button">
+            <button
+              className="primary-button"
+              disabled={!canChooseWorkspaceDirectory}
+              onClick={chooseWorkspaceDirectory}
+              title={canChooseWorkspaceDirectory ? "选择一个工作区目录" : bridgeError ?? "当前环境不支持原生目录选择"}
+              type="button"
+            >
               选择目录
             </button>
           </div>
@@ -273,20 +282,20 @@ function App() {
         <section className="hero-panel">
           <div>
             <p className="eyebrow">Host Bridge</p>
-            <h2>DesktopHost 已接入，前端开始消费真实工作区接口。</h2>
+            <h2>桌面壳通过 Electron bridge 连接 DesktopHost 与本地目录能力。</h2>
             <p className="hero-copy">
-              第四批功能开始把 viewer 演进成真正的编辑器基础：当前表格改为真实虚拟滚动，单元格可直接编辑，并可按工作簿调用保存接口写回工作区。
+              通过桌面壳启动时，这里会显示宿主地址、运行时状态以及当前工作区根目录；如果 bridge 缺失，界面会直接提示启动方式，而不是一直显示 Loading。
             </p>
           </div>
 
           <div className="host-metrics">
             <div>
               <span>Host URL</span>
-              <strong>{hostInfo?.desktopHostUrl ?? "Loading..."}</strong>
+              <strong>{hostUrlLabel}</strong>
             </div>
             <div>
               <span>Runtime</span>
-              <strong>{hostInfo?.shell ?? "Loading..."}</strong>
+              <strong>{runtimeLabel}</strong>
             </div>
             <div>
               <span>Status</span>
@@ -297,6 +306,13 @@ function App() {
               <strong>{workspace?.rootPath ?? "Not loaded"}</strong>
             </div>
           </div>
+
+          {bridgeError ? (
+            <div className="bridge-warning-panel">
+              <strong>Electron bridge 不可用</strong>
+              <p>{bridgeError}</p>
+            </div>
+          ) : null}
         </section>
 
         <section className="editor-panel">

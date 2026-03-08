@@ -39,6 +39,16 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+function getDesktopBridge() {
+  if (!window.lightyDesign) {
+    throw new Error(
+      "当前运行环境未注入 Electron bridge。请选择通过 Electron 桌面壳启动应用，例如执行 powershell -ExecutionPolicy Bypass -File .\\ShellFiles\\Bootstrap-LightyDesign.ps1 -RunDesktop。",
+    );
+  }
+
+  return window.lightyDesign;
+}
+
 type UseWorkspaceEditorArgs = {
   hostInfo: DesktopHostInfo | null;
   onToast: (toast: {
@@ -397,10 +407,22 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       }
     }
 
-    const selectedPath = await window.lightyDesign.chooseWorkspaceDirectory();
-    if (selectedPath) {
-      setWorkspacePath(selectedPath);
-      setWorkspaceSearch("");
+    try {
+      const selectedPath = await getDesktopBridge().chooseWorkspaceDirectory();
+      if (selectedPath) {
+        setWorkspacePath(selectedPath);
+        setWorkspaceSearch("");
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "无法打开工作区目录选择器。";
+      onToast({
+        title: "无法选择工作区目录",
+        detail: errorMessage,
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
     }
   }
 

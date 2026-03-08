@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -209,6 +209,20 @@ ipcMain.handle("desktop-host:info", async () => ({
 }));
 
 ipcMain.handle("desktop-host:health", async () => fetchDesktopHostHealth());
+
+ipcMain.handle("workspace:choose-directory", async () => {
+  const browserWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const result = await dialog.showOpenDialog(browserWindow, {
+    title: "选择 LightyDesign 工作区目录",
+    properties: ["openDirectory"],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0];
+});
 
 app.whenReady().then(async () => {
   startDesktopHost();

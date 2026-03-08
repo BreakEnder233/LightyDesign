@@ -21,5 +21,6 @@ interface Window {
   lightyDesign: {
     getDesktopHostInfo: () => Promise<DesktopHostInfo>;
     getDesktopHostHealth: () => Promise<DesktopHostHealth>;
+    chooseWorkspaceDirectory: () => Promise<string | null>;
   };
 }

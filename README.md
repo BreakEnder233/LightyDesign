@@ -25,6 +25,7 @@ LightyDesign/
     Bootstrap-LightyDesign.ps1
   src/
     LightyDesign.Core/
+      LightyDesign.FileProcess/
     LightyDesign.Generator/
     LightyDesign.DesktopHost/
   tests/
@@ -86,9 +87,10 @@ dotnet build .\LightyDesign.sln
 这一步会构建下面几个项目：
 
 1. LightyDesign.Core：核心领域模型与协议。
-2. LightyDesign.Generator：未来用于生成 LDD 代码。
-3. LightyDesign.DesktopHost：本地宿主 API。
-4. LightyDesign.Tests：测试项目。
+2. LightyDesign.FileProcess：xlsx 与工作簿模型之间的 Excel 转换层。
+3. LightyDesign.Generator：未来用于生成 LDD 代码。
+4. LightyDesign.DesktopHost：本地宿主 API。
+5. LightyDesign.Tests：测试项目。
 
 ### 2. 安装桌面前端依赖
 
@@ -215,5 +217,6 @@ dotnet run --project .\src\LightyDesign.DesktopHost\LightyDesign.DesktopHost.csp
 4. Core 已实现工作区、工作簿、表、列定义和数据行等基础模型。
 5. Core 已实现工作区扫描、header/txt 读取和基础引用解析。
 6. Core 已实现第一版惰性值解析，支持按需解析并在单元格修改后清除该格缓存。
+7. FileProcess 已实现 xlsx 与 `LightyWorkbook` 之间的基础双向转换。
 
-下一步最适合继续实现的是：工作区扫描、表结构读取和导出链路。
+下一步最适合继续实现的是：把 DesktopHost 接到真实工作区扫描与 FileProcess 的 Excel 导入导出链路上。

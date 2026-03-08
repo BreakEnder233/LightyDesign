@@ -6,7 +6,7 @@
 
 当前仓库已经完成第一阶段工程搭建，重点成果如下：
 
-1. 已创建 .NET 解决方案与基础项目：Core、Generator、DesktopHost、Tests。
+1. 已创建 .NET 解决方案与基础项目：Core、FileProcess、Generator、DesktopHost、Tests。
 2. 已创建 Electron + React + Vite 的桌面前端骨架。
 3. 已完成 Electron 与 DesktopHost 的本地接入，桌面端可自动拉起宿主并读取健康状态。
 4. 已补充一键引导脚本、根 README 和仓库级 .gitignore。
@@ -19,11 +19,12 @@
 为了让 Spec 不只描述理想设计，也能同步记录当前工程进展，Spec 目录已经按子系统拆分出独立文档：
 
 1. Core 子系统：见 [Core/README.md](Core/README.md)
-2. Generator 子系统：见 [Generator/README.md](Generator/README.md)
-3. DesktopHost 子系统：见 [DesktopHost/README.md](DesktopHost/README.md)
-4. DesktopApp 子系统：见 [DesktopApp/README.md](DesktopApp/README.md)
-5. Tests 子系统：见 [Tests/README.md](Tests/README.md)
-6. Tooling 子系统：见 [Tooling/README.md](Tooling/README.md)
+2. FileProcess 子系统：见 [FileProcess/README.md](FileProcess/README.md)
+3. Generator 子系统：见 [Generator/README.md](Generator/README.md)
+4. DesktopHost 子系统：见 [DesktopHost/README.md](DesktopHost/README.md)
+5. DesktopApp 子系统：见 [DesktopApp/README.md](DesktopApp/README.md)
+6. Tests 子系统：见 [Tests/README.md](Tests/README.md)
+7. Tooling 子系统：见 [Tooling/README.md](Tooling/README.md)
 
 建议阅读顺序：
 
@@ -43,6 +44,7 @@
 LightyDesign/
   Spec/                    <- 规格与当前子系统状态说明
   src/LightyDesign.Core/   <- 未来承载文件协议与领域模型
+  src/LightyDesign.FileProcess/ <- 当前承载 xlsx 与 Core 模型的双向转换
   src/LightyDesign.Generator/ <- 未来承载 C# 代码生成
   src/LightyDesign.DesktopHost/ <- 当前本地 .NET 宿主 API
   tests/LightyDesign.Tests/ <- 测试项目
@@ -61,6 +63,16 @@ LightyDesign/
 3. 已实现 txt 文件的转义/反转义、行列拆分与数据行加载。
 4. 已实现 `[[...]]` 引用语法的基础解析模型。
 5. 已实现按需触发的值解析层，支持单元格级缓存，且普通显示和普通编辑不会触发解析。
+
+## 当前 FileProcess 实施状态
+
+截至目前，FileProcess 子系统已完成以下第一阶段实现：
+
+1. 已实现一个 xlsx 文件映射为一个 `LightyWorkbook`。
+2. 已实现一个 Worksheet 映射为一个 `LightySheet`。
+3. 已实现由 `WorkspaceHeaderLayout` 驱动的多行表头导入导出。
+4. 已实现从 Excel 导入时重建 `ColumnDefine`，并允许表头变更回写到 Core 模型。
+5. 已补充 Excel workbook round-trip 和导入错误场景测试。
 
 这部分能力意味着后续 DesktopHost 已可以在 Core 之上继续实现真实工作区扫描 API，而不需要再重复定义文件协议。
 
@@ -140,6 +152,8 @@ Workspace/
 
 当前实现说明：值解析层采用惰性策略。表格在普通展示和普通文本编辑时不解析这些字面值；只有在显式请求真实值时，才按列类型解析为标量、列表、字典或引用对象。
 
+当前实现说明：Excel 导入导出当前以这些单元格的原始字符串表示为主，不依赖值解析层即可完成 xlsx 与工作区模型之间的转换。
+
 ## 策划数据引用语法
 
 - 单项引用/复合引用采用 `[[...]]` 包裹：
@@ -195,7 +209,7 @@ Workspace/
 1. 真实工作簿树与搜索。
 2. 多标签表格编辑器。
 3. 表头编辑器。
-4. Excel 导入导出界面。
+4. Excel 导入导出界面和与 FileProcess 的宿主接线。
 5. 验证规则编辑和脚本编辑界面。
 
 由于 Core 已经具备工作区读取和惰性值解析基础，后续 UI 接入时应优先复用宿主透出的 Core 模型，而不是在前端重写 txt 或 header 解析规则。
@@ -215,8 +229,9 @@ Workspace/
 
 1. 先在 Core 中实现工作区、工作簿、表和表头的基础模型。
 2. 再在 DesktopHost 中实现基于 Core 的真实工作区扫描与文件读取接口。
-3. 然后让 DesktopApp 消费真实接口数据，替换当前占位内容。
-4. 再在 Core 中补验证层与更完整的复杂值解析规则。
-5. 最后在 Generator 中补齐导出与代码生成链路。
+3. 然后接入 FileProcess 到 DesktopHost，暴露 Excel 导入导出能力。
+4. 再让 DesktopApp 消费真实接口数据，替换当前占位内容。
+5. 再在 Core 中补验证层与更完整的复杂值解析规则。
+6. 最后在 Generator 中补齐导出与代码生成链路。
 
 这样可以保证协议层、宿主层和 UI 层按依赖方向逐层落地，而不是在多个子系统里重复实现同一套规则。

@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\LightyDesign.Core\LightyDesign.Core.csproj" />
     <ProjectReference Include="..\..\src\LightyDesign.Generator\LightyDesign.Generator.csproj" />
+    <ProjectReference Include="..\..\src\LightyDesign.FileProcess\LightyDesign.FileProcess.csproj" />
   </ItemGroup>
 
 </Project>

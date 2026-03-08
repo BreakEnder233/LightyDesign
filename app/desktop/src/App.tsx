@@ -106,6 +106,15 @@ type CellEditRecord = {
 
 type ColumnEditorKind = "text" | "number" | "boolean" | "reference" | "list";
 
+type ShortcutBinding = {
+  id: string;
+  label: string;
+  hint: string;
+  enabled: boolean;
+  matches: (event: KeyboardEvent) => boolean;
+  run: () => void;
+};
+
 const workspaceStorageKey = "lightydesign.workspacePath";
 const rowHeight = 42;
 const overscanCount = 12;
@@ -175,6 +184,27 @@ function getColumnEditorKind(column: SheetColumn): ColumnEditorKind {
   }
 
   return "text";
+}
+
+function isShortcutModifierPressed(event: KeyboardEvent) {
+  return event.ctrlKey || event.metaKey;
+}
+
+function isShortcutTargetAllowed(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return true;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  if (tagName === "input" || tagName === "textarea" || tagName === "select") {
+    return target.classList.contains("virtual-cell-input");
+  }
+
+  if (target.isContentEditable) {
+    return false;
+  }
+
+  return true;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -483,6 +513,8 @@ function App() {
     () => openTabs.filter((tab) => tab.workbookName === activeTab?.workbookName && sheetStateMap[tab.id]?.dirty),
     [activeTab?.workbookName, openTabs, sheetStateMap],
   );
+  const canUndoActiveSheet = Boolean(activeSheetState?.undoStack?.length);
+  const canRedoActiveSheet = Boolean(activeSheetState?.redoStack?.length);
   const filteredRowEntries = useMemo(() => {
     const search = deferredSheetFilter.trim().toLocaleLowerCase();
     const indexedRows = activeSheetRows.map((row, rowIndex) => ({
@@ -512,6 +544,51 @@ function App() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [hasDirtyChanges]);
+
+  const shortcutBindings = useMemo<ShortcutBinding[]>(
+    () => [
+      {
+        id: "undo-sheet-edit",
+        label: "撤销当前 Sheet 编辑",
+        hint: "Ctrl+Z",
+        enabled: canUndoActiveSheet,
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "z",
+        run: undoActiveSheetEdit,
+      },
+      {
+        id: "redo-sheet-edit",
+        label: "恢复当前 Sheet 编辑",
+        hint: "Ctrl+Y / Ctrl+Shift+Z",
+        enabled: canRedoActiveSheet,
+        matches: (event) =>
+          isShortcutModifierPressed(event) &&
+          ((event.key.toLowerCase() === "y" && !event.shiftKey) || (event.key.toLowerCase() === "z" && event.shiftKey)),
+        run: redoActiveSheetEdit,
+      },
+    ],
+    [canRedoActiveSheet, canUndoActiveSheet, redoActiveSheetEdit, undoActiveSheetEdit],
+  );
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || !isShortcutTargetAllowed(event.target)) {
+        return;
+      }
+
+      const matchedShortcut = shortcutBindings.find((shortcut) => shortcut.enabled && shortcut.matches(event));
+      if (!matchedShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+      matchedShortcut.run();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [shortcutBindings]);
 
   function openSheet(workbookName: string, sheetName: string) {
     const id = buildSheetTabId(workbookName, sheetName);
@@ -1133,6 +1210,7 @@ function App() {
                         className="secondary-button"
                         disabled={!activeSheetState.undoStack?.length}
                         onClick={undoActiveSheetEdit}
+                        title="撤销当前 Sheet 编辑 (Ctrl+Z)"
                         type="button"
                       >
                         撤销
@@ -1141,6 +1219,7 @@ function App() {
                         className="secondary-button"
                         disabled={!activeSheetState.redoStack?.length}
                         onClick={redoActiveSheetEdit}
+                        title="恢复当前 Sheet 编辑 (Ctrl+Y / Ctrl+Shift+Z)"
                         type="button"
                       >
                         恢复
@@ -1163,7 +1242,7 @@ function App() {
                             ? "保存完成"
                             : activeWorkbookSaveState?.status === "error"
                               ? activeWorkbookSaveState.error ?? "保存失败"
-                              : `筛选后 ${filteredRowEntries.length} / ${activeSheetRows.length} 行，撤销栈 ${activeSheetState.undoStack?.length ?? 0}`}
+                              : `筛选后 ${filteredRowEntries.length} / ${activeSheetRows.length} 行，撤销栈 ${activeSheetState.undoStack?.length ?? 0}，快捷键 ${shortcutBindings.map((binding) => binding.hint).join(" · ")}`}
                       </span>
                       <div className="save-actions">
                         <span className="save-hint">虚拟滚动已启用</span>

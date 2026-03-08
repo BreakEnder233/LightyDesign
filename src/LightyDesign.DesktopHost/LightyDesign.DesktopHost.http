@@ -1,0 +1,6 @@
+@LightyDesign.DesktopHost_HostAddress = http://localhost:5065
+
+GET {{LightyDesign.DesktopHost_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

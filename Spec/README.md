@@ -10,6 +10,7 @@
 2. 已创建 Electron + React + Vite 的桌面前端骨架。
 3. 已完成 Electron 与 DesktopHost 的本地接入，桌面端可自动拉起宿主并读取健康状态。
 4. 已补充一键引导脚本、根 README 和仓库级 .gitignore。
+5. 已在 Core 中落地第一批工作区模型、协议加载器和惰性值解析基础设施。
 
 这意味着当前仓库已经具备“可构建、可运行、可继续迭代”的基础，但业务协议的大部分实现仍待补充。
 
@@ -51,6 +52,18 @@ LightyDesign/
 
 这份映射的目的是帮助实现者区分“规格写在哪里”和“代码应该落在哪里”。
 
+## 当前 Core 实施状态
+
+截至目前，Core 子系统已完成以下第一阶段实现：
+
+1. 已实现 `LightyWorkspace`、`LightyWorkbook`、`LightySheet`、`LightySheetHeader`、`ColumnDefine`、`LightySheetRow` 等核心对象。
+2. 已实现工作区级 headers.json 与 Sheet 级 _header.json 的文件读取与反序列化。
+3. 已实现 txt 文件的转义/反转义、行列拆分与数据行加载。
+4. 已实现 `[[...]]` 引用语法的基础解析模型。
+5. 已实现按需触发的值解析层，支持单元格级缓存，且普通显示和普通编辑不会触发解析。
+
+这部分能力意味着后续 DesktopHost 已可以在 Core 之上继续实现真实工作区扫描 API，而不需要再重复定义文件协议。
+
 ## 文件与目录约定
 
 - 工作区文件夹：任意名称的文件夹，代表整个工作空间，内含有若干个工作簿文件夹和一个config.json文件和一个headers.json文件
@@ -80,12 +93,19 @@ Workspace/
     Level_header.json
 ```
 
-## header.json（表头数组）
+## _header.json（Sheet 表头数组）
 
 每个表的 `_header.json` 文件结构为一个 JSON 对象，其中包含一个数组，数组每个元素为一个对象，必须包含字段：
 
 - `headerType` (string)：表示该表头条目的类型（例如 `FieldName`、`DisplayName`、`Type`、`Validation`、`ExportScope` 等）。
 - `value` (object)：与 `headerType` 对应的Json数据，用于反序列化为对应的表头类型。
+
+当前实现说明：Core 当前对 Sheet 表头支持两种输入形式：
+
+1. 直接给出列定义数组。
+2. 给出按 `headerType` 分行的数组，再由 Core 投影为 `ColumnDefine` 集合。
+
+无论输入形式如何，运行时公共模型都以“从左到右的列定义集合”为主。
 
 ## 数据文件格式（.txt）
 
@@ -117,6 +137,8 @@ Workspace/
   - 字符串数组示例：`"Hello","it's","fun"`（建议 CSV 风格的引号与转义规则）。
 - 简单字典（Dictionary<int,string>）：以 `{k, "v"}` 形式的逗号分隔项。
   - 示例：`{1, "Hello"}, {2, "it's"}, {6, "nice"}`
+
+当前实现说明：值解析层采用惰性策略。表格在普通展示和普通文本编辑时不解析这些字面值；只有在显式请求真实值时，才按列类型解析为标量、列表、字典或引用对象。
 
 ## 策划数据引用语法
 
@@ -176,6 +198,8 @@ Workspace/
 4. Excel 导入导出界面。
 5. 验证规则编辑和脚本编辑界面。
 
+由于 Core 已经具备工作区读取和惰性值解析基础，后续 UI 接入时应优先复用宿主透出的 Core 模型，而不是在前端重写 txt 或 header 解析规则。
+
 ## 例子
 
 - `Item.txt`（示例简化）：
@@ -190,8 +214,9 @@ Workspace/
 按照当前仓库状态，后续最合理的实施顺序是：
 
 1. 先在 Core 中实现工作区、工作簿、表和表头的基础模型。
-2. 再在 DesktopHost 中实现真实工作区扫描与文件读取接口。
+2. 再在 DesktopHost 中实现基于 Core 的真实工作区扫描与文件读取接口。
 3. 然后让 DesktopApp 消费真实接口数据，替换当前占位内容。
-4. 最后在 Generator 中补齐导出与代码生成链路。
+4. 再在 Core 中补验证层与更完整的复杂值解析规则。
+5. 最后在 Generator 中补齐导出与代码生成链路。
 
 这样可以保证协议层、宿主层和 UI 层按依赖方向逐层落地，而不是在多个子系统里重复实现同一套规则。

@@ -25,7 +25,7 @@ public sealed class LightyReferenceValue
             throw new LightyReferenceFormatException($"Invalid Lighty reference value: '{value}'.");
         }
 
-        return referenceValue;
+        return referenceValue!;
     }
 
     public static bool TryParse(string? value, out LightyReferenceValue? referenceValue)

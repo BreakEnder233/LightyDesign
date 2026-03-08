@@ -212,5 +212,8 @@ dotnet run --project .\src\LightyDesign.DesktopHost\LightyDesign.DesktopHost.csp
 1. .NET 解决方案可构建、可测试。
 2. Electron 前端可构建。
 3. Electron 已经能够自动启动 DesktopHost，并在界面上显示宿主状态。
+4. Core 已实现工作区、工作簿、表、列定义和数据行等基础模型。
+5. Core 已实现工作区扫描、header/txt 读取和基础引用解析。
+6. Core 已实现第一版惰性值解析，支持按需解析并在单元格修改后清除该格缓存。
 
 下一步最适合继续实现的是：工作区扫描、表结构读取和导出链路。

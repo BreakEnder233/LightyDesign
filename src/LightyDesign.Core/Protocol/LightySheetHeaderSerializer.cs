@@ -1,9 +1,33 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace LightyDesign.Core;
 
 public static class LightySheetHeaderSerializer
 {
+    public static void SaveToFile(string filePath, LightySheetHeader header, WorkspaceHeaderLayout? headerLayout = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        ArgumentNullException.ThrowIfNull(header);
+
+        File.WriteAllText(filePath, Serialize(header, headerLayout));
+    }
+
+    public static string Serialize(LightySheetHeader header, WorkspaceHeaderLayout? headerLayout = null)
+    {
+        ArgumentNullException.ThrowIfNull(header);
+
+        var rowTypes = BuildOrderedHeaderTypes(header, headerLayout);
+        var rows = rowTypes
+            .Select(headerType => new SerializedHeaderRow(headerType, BuildRowValues(header, headerType)))
+            .ToList();
+
+        return JsonSerializer.Serialize(new SerializedHeaderDocument(rows), new JsonSerializerOptions
+        {
+            WriteIndented = true,
+        });
+    }
+
     public static LightySheetHeader LoadFromFile(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
@@ -88,7 +112,13 @@ public static class LightySheetHeaderSerializer
                     continue;
                 }
 
-                attributes[pair.Key] = GetIndexedValue(pair.Value, index);
+                var indexedValue = GetIndexedValue(pair.Value, index);
+                if (IsEmptyExtendedAttribute(indexedValue))
+                {
+                    continue;
+                }
+
+                attributes[pair.Key] = indexedValue;
             }
 
             columns.Add(new ColumnDefine(fieldNames[index], types[index], displayNames[index], attributes));
@@ -261,5 +291,110 @@ public static class LightySheetHeaderSerializer
         }
 
         return JsonSerializer.SerializeToElement(valueElement[index]);
+    }
+
+    private static IReadOnlyList<string> BuildOrderedHeaderTypes(LightySheetHeader header, WorkspaceHeaderLayout? headerLayout)
+    {
+        var rowTypes = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        AddRowType(LightyHeaderTypes.FieldName, rowTypes, seen);
+        AddRowType(LightyHeaderTypes.DisplayName, rowTypes, seen);
+        AddRowType(LightyHeaderTypes.Type, rowTypes, seen);
+
+        if (headerLayout is not null)
+        {
+            foreach (var row in headerLayout.Rows)
+            {
+                AddRowType(row.HeaderType, rowTypes, seen);
+            }
+        }
+
+        var additionalAttributeKeys = header.Columns
+            .SelectMany(column => column.Attributes.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(key => key, StringComparer.Ordinal);
+
+        foreach (var key in additionalAttributeKeys)
+        {
+            AddRowType(key, rowTypes, seen);
+        }
+
+        return rowTypes.AsReadOnly();
+    }
+
+    private static JsonElement[] BuildRowValues(LightySheetHeader header, string headerType)
+    {
+        return header.Columns.Select(column => GetHeaderValue(column, headerType)).ToArray();
+    }
+
+    private static JsonElement GetHeaderValue(ColumnDefine column, string headerType)
+    {
+        if (string.Equals(headerType, LightyHeaderTypes.FieldName, StringComparison.Ordinal))
+        {
+            return JsonSerializer.SerializeToElement(column.FieldName);
+        }
+
+        if (string.Equals(headerType, LightyHeaderTypes.Type, StringComparison.Ordinal))
+        {
+            return JsonSerializer.SerializeToElement(column.Type);
+        }
+
+        if (string.Equals(headerType, LightyHeaderTypes.DisplayName, StringComparison.Ordinal))
+        {
+            return column.DisplayName is null
+                ? JsonSerializer.SerializeToElement<string?>(null)
+                : JsonSerializer.SerializeToElement(column.DisplayName);
+        }
+
+        return column.TryGetAttribute(headerType, out var value)
+            ? JsonSerializer.SerializeToElement(value)
+            : JsonSerializer.SerializeToElement<string?>(null);
+    }
+
+    private static bool IsEmptyExtendedAttribute(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null => true,
+            JsonValueKind.String => string.IsNullOrWhiteSpace(value.GetString()),
+            _ => false,
+        };
+    }
+
+    private static void AddRowType(string headerType, ICollection<string> rowTypes, ISet<string> seen)
+    {
+        if (string.IsNullOrWhiteSpace(headerType) || !seen.Add(headerType))
+        {
+            return;
+        }
+
+        rowTypes.Add(headerType);
+    }
+
+    private sealed class SerializedHeaderDocument
+    {
+        public SerializedHeaderDocument(IReadOnlyList<SerializedHeaderRow> rows)
+        {
+            Rows = rows;
+        }
+
+        [JsonPropertyName("rows")]
+        public IReadOnlyList<SerializedHeaderRow> Rows { get; }
+    }
+
+    private sealed class SerializedHeaderRow
+    {
+        public SerializedHeaderRow(string headerType, JsonElement[] value)
+        {
+            HeaderType = headerType;
+            Value = value;
+        }
+
+        [JsonPropertyName("headerType")]
+        public string HeaderType { get; }
+
+        [JsonPropertyName("value")]
+        public JsonElement[] Value { get; }
     }
 }

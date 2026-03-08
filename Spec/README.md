@@ -1,80 +1,33 @@
-# LightyDesign 策划表编辑器 — 规范说明
+# LightyDesign 规范说明
 
-本文件为 LightyDesign 项目的规格与数据约定（用于前端编辑器、后端解析、导出与代码生成）。本项目采用 Web + Electron 方案，后端以 C# 为主。
+本文件描述工作区目录、Sheet 文件协议、表头语义以及导出约束。实现状态请分别查看各子系统文档。
 
-## 当前仓库状态
+## 文档导航
 
-当前仓库已经完成第一阶段工程搭建，重点成果如下：
+1. [Core/README.md](Core/README.md)
+2. [FileProcess/README.md](FileProcess/README.md)
+3. [DesktopHost/README.md](DesktopHost/README.md)
+4. [DesktopApp/README.md](DesktopApp/README.md)
+5. [Tooling/README.md](Tooling/README.md)
 
-1. 已创建 .NET 解决方案与基础项目：Core、FileProcess、Generator、DesktopHost、Tests。
-2. 已创建 Electron + React + Vite 的桌面前端骨架。
-3. 已完成 Electron 与 DesktopHost 的本地接入，桌面端可自动拉起宿主并读取健康状态。
-4. 已补充一键引导脚本、根 README 和仓库级 .gitignore。
-5. 已在 Core 中落地第一批工作区模型、协议加载器和惰性值解析基础设施。
+## 工作区结构
 
-这意味着当前仓库已经具备“可构建、可运行、可继续迭代”的基础，但业务协议的大部分实现仍待补充。
+- 工作区：一个目录，包含 `config.json`、`headers.json` 和多个工作簿子目录。
+- 工作簿：一个目录，对应一个 `LightyWorkbook`。
+- Sheet：每个表由一对文件组成，分别是 `.txt` 数据文件和 `_header.json` 表头文件。
 
-## 子系统文档导航
-
-为了让 Spec 不只描述理想设计，也能同步记录当前工程进展，Spec 目录已经按子系统拆分出独立文档：
-
-1. Core 子系统：见 [Core/README.md](Core/README.md)
-2. FileProcess 子系统：见 [FileProcess/README.md](FileProcess/README.md)
-3. Generator 子系统：见 [Generator/README.md](Generator/README.md)
-4. DesktopHost 子系统：见 [DesktopHost/README.md](DesktopHost/README.md)
-5. DesktopApp 子系统：见 [DesktopApp/README.md](DesktopApp/README.md)
-6. Tests 子系统：见 [Tests/README.md](Tests/README.md)
-7. Tooling 子系统：见 [Tooling/README.md](Tooling/README.md)
-
-建议阅读顺序：
-
-1. 先读本文件，理解整体协议和目录约定。
-2. 再读 DesktopApp 与 DesktopHost，理解当前可运行链路。
-3. 最后读 Core 与 Generator，规划协议实现和导出实现。
-
-## 概览
-- 名称：LightyDesign（策划表编辑器）
-- 工作区：一个文件夹，每个工作簿（LightyWorkbook）对应一个子文件夹，内含多个表格文件（LightySheet）及对应表头文件。
-
-## 当前工程对应关系
-
-当前仓库中的主要实现目录与本规格的关系如下：
+示例：
 
 ```text
-LightyDesign/
-  Spec/                    <- 规格与当前子系统状态说明
-  src/LightyDesign.Core/   <- 未来承载文件协议与领域模型
-  src/LightyDesign.FileProcess/ <- 当前承载 xlsx 与 Core 模型的双向转换
-  src/LightyDesign.Generator/ <- 未来承载 C# 代码生成
-  src/LightyDesign.DesktopHost/ <- 当前本地 .NET 宿主 API
-  tests/LightyDesign.Tests/ <- 测试项目
-  app/desktop/             <- Electron + React + Vite 桌面应用
-  ShellFiles/              <- 一键引导和后续脚本入口
+Workspace/
+  config.json
+  headers.json
+  Item/
+    Consumable.txt
+    Consumable_header.json
+    Weapon.txt
+    Weapon_header.json
 ```
-
-这份映射的目的是帮助实现者区分“规格写在哪里”和“代码应该落在哪里”。
-
-## 当前 Core 实施状态
-
-截至目前，Core 子系统已完成以下第一阶段实现：
-
-1. 已实现 `LightyWorkspace`、`LightyWorkbook`、`LightySheet`、`LightySheetHeader`、`ColumnDefine`、`LightySheetRow` 等核心对象。
-2. 已实现工作区级 headers.json 与 Sheet 级 _header.json 的文件读取与反序列化。
-3. 已实现 txt 文件的转义/反转义、行列拆分与数据行加载。
-4. 已实现 `[[...]]` 引用语法的基础解析模型。
-5. 已实现按需触发的值解析层，支持单元格级缓存，且普通显示和普通编辑不会触发解析。
-
-## 当前 FileProcess 实施状态
-
-截至目前，FileProcess 子系统已完成以下第一阶段实现：
-
-1. 已实现一个 xlsx 文件映射为一个 `LightyWorkbook`。
-2. 已实现一个 Worksheet 映射为一个 `LightySheet`。
-3. 已实现由 `WorkspaceHeaderLayout` 驱动的多行表头导入导出。
-4. 已实现从 Excel 导入时重建 `ColumnDefine`，并允许表头变更回写到 Core 模型。
-5. 已补充 Excel workbook round-trip 和导入错误场景测试。
-
-这部分能力意味着后续 DesktopHost 已可以在 Core 之上继续实现真实工作区扫描 API，而不需要再重复定义文件协议。
 
 ## 文件与目录约定
 
@@ -105,14 +58,11 @@ Workspace/
     Level_header.json
 ```
 
-## _header.json（Sheet 表头数组）
+## 表头文件
 
-每个表的 `_header.json` 文件结构为一个 JSON 对象，其中包含一个数组，数组每个元素为一个对象，必须包含字段：
+工作区级 `headers.json` 描述表头从上到下每一行的语义和配置。
 
-- `headerType` (string)：表示该表头条目的类型（例如 `FieldName`、`DisplayName`、`Type`、`Validation`、`ExportScope` 等）。
-- `value` (object)：与 `headerType` 对应的Json数据，用于反序列化为对应的表头类型。
-
-当前实现说明：Core 当前对 Sheet 表头支持两种输入形式：
+Sheet 级 `_header.json` 描述从左到右每一列的定义。当前支持两种输入形式：
 
 1. 直接给出列定义数组。
 2. 给出按 `headerType` 分行的数组，再由 Core 投影为 `ColumnDefine` 集合。
@@ -133,12 +83,14 @@ Workspace/
 1001	Sword of Dawn	1,2,3	[[2001]]
 ```
 
-## 表头类型（必须项与可选项）
+## 关键表头类型
 
 1. `FieldName`（必须）：英文标识符，用于代码导出时的字段名。
 2. `Type`（必须）：英文字符串或泛型形式，表示字段类型（如 `int`、`string`、`List<int>`、`List<Ref:OtherSheet>`）。其中，我们使用Ref:Item.Consumable表示引用来自于Item工作簿的Consumable表。
 3. `DisplayName`（可选）：UTF-8 字符串，用于 UI 表头显示。
-4. 其它可选类型：`Validation`（字段验证规则）、`ExportScope`（导出范围：Client/Server/All）等，均以 `headerType` 进行扩展。
+4. 其它可选类型：`Validation`、`ExportScope` 等，均以 `headerType` 进行扩展。
+
+`ExportScope` 当前取值约定：`Client`、`Server`、`All`、`None`。其中 `None` 表示代码导出时忽略该列。
 
 实现者应把表头按语义行（多行）解析为列的元信息集合，支持复数行不同作用（例如第1行为 `FieldName`，第2行为 `DisplayName`，第3行为 `Type`）。
 
@@ -150,9 +102,7 @@ Workspace/
 - 简单字典（Dictionary<int,string>）：以 `{k, "v"}` 形式的逗号分隔项。
   - 示例：`{1, "Hello"}, {2, "it's"}, {6, "nice"}`
 
-当前实现说明：值解析层采用惰性策略。表格在普通展示和普通文本编辑时不解析这些字面值；只有在显式请求真实值时，才按列类型解析为标量、列表、字典或引用对象。
-
-当前实现说明：Excel 导入导出当前以这些单元格的原始字符串表示为主，不依赖值解析层即可完成 xlsx 与工作区模型之间的转换。
+值解析层采用惰性策略。普通展示和普通文本编辑不解析这些字面值；只有验证流程或专用编辑器显式请求时，才按列类型解析为标量、列表、字典或引用对象。
 
 ## 策划数据引用语法
 
@@ -195,43 +145,11 @@ Workspace/
 - 支持在单元格或列级别编辑脚本（脚本在后端执行并受沙箱限制）。
 - 遇到一对多的情况下，可以弹出界面以快速跳转到目标工作簿对应表格的对应位置，或是快速添加对应项目。
 
-## 当前 UI 实施状态
+## 导出约束
 
-当前 UI 侧已经完成的是“桌面壳与宿主接线”，尚未进入“完整编辑器功能”：
+1. 每个表导出到 `LDD.<WorkbookName>.<TableName>`。
+2. 单列 `ID` 表支持按 ID 索引访问。
+3. 复合 ID 表支持多级索引访问。
+4. `List<Ref:...>` 等引用列在导出阶段需要映射到强类型引用对象。
 
-1. 已有 Electron 主进程。
-2. 已有 React + Vite 渲染层。
-3. 已有 preload 安全桥接层。
-4. 已有宿主状态展示界面。
-
-尚未完成的部分包括：
-
-1. 真实工作簿树与搜索。
-2. 多标签表格编辑器。
-3. 表头编辑器。
-4. Excel 导入导出界面和与 FileProcess 的宿主接线。
-5. 验证规则编辑和脚本编辑界面。
-
-由于 Core 已经具备工作区读取和惰性值解析基础，后续 UI 接入时应优先复用宿主透出的 Core 模型，而不是在前端重写 txt 或 header 解析规则。
-
-## 例子
-
-- `Item.txt`（示例简化）：
-
-```
-1001	Sword of Dawn	"weapon","rare"
-1002	Shield of Dawn	"armor","common"
-```
-
-## 下一步建议
-
-按照当前仓库状态，后续最合理的实施顺序是：
-
-1. 先在 Core 中实现工作区、工作簿、表和表头的基础模型。
-2. 再在 DesktopHost 中实现基于 Core 的真实工作区扫描与文件读取接口。
-3. 然后接入 FileProcess 到 DesktopHost，暴露 Excel 导入导出能力。
-4. 再让 DesktopApp 消费真实接口数据，替换当前占位内容。
-5. 再在 Core 中补验证层与更完整的复杂值解析规则。
-6. 最后在 Generator 中补齐导出与代码生成链路。
-
-这样可以保证协议层、宿主层和 UI 层按依赖方向逐层落地，而不是在多个子系统里重复实现同一套规则。
+后续实现应继续以 Core 为协议唯一来源，避免在 DesktopHost 或前端重复实现 txt、header 或引用规则。

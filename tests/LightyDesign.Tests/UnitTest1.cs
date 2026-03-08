@@ -89,127 +89,142 @@ public class UnitTest1
         Assert.Equal("Consumable", referenceTarget.SheetName);
     }
 
-        [Fact]
-        public void SheetHeaderSerializer_ShouldReadColumnBasedHeader()
+    [Fact]
+    public void ColumnDefine_ShouldParseNoneExportScope()
+    {
+        var column = new ColumnDefine(
+            fieldName: "InternalNote",
+            type: "string",
+            attributes: new Dictionary<string, JsonElement>
+            {
+                [LightyHeaderTypes.ExportScope] = JsonSerializer.SerializeToElement("None")
+            });
+
+        Assert.True(column.TryGetExportScope(out var exportScope));
+        Assert.Equal(LightyExportScope.None, exportScope);
+    }
+
+    [Fact]
+    public void SheetHeaderSerializer_ShouldReadColumnBasedHeader()
+    {
+        const string json = """
         {
-                const string json = """
+            "columns": [
                 {
-                    "columns": [
-                        {
-                            "FieldName": "Id",
-                            "Type": "int",
-                            "DisplayName": "ID",
-                            "ExportScope": "All"
-                        },
-                        {
-                            "FieldName": "Name",
-                            "Type": "string"
-                        }
-                    ]
+                    "FieldName": "Id",
+                    "Type": "int",
+                    "DisplayName": "ID",
+                    "ExportScope": "All"
+                },
+                {
+                    "FieldName": "Name",
+                    "Type": "string"
                 }
-                """;
-
-                var header = LightySheetHeaderSerializer.Deserialize(json);
-
-                Assert.Equal(2, header.Count);
-                Assert.Equal("Id", header[0].FieldName);
-                Assert.True(header[0].TryGetAttribute(LightyHeaderTypes.ExportScope, out var exportScope));
-                Assert.Equal("All", exportScope.GetString());
+            ]
         }
+        """;
 
-        [Fact]
-        public void SheetHeaderSerializer_ShouldReadRowBasedHeader()
+        var header = LightySheetHeaderSerializer.Deserialize(json);
+
+        Assert.Equal(2, header.Count);
+        Assert.Equal("Id", header[0].FieldName);
+        Assert.True(header[0].TryGetAttribute(LightyHeaderTypes.ExportScope, out var exportScope));
+        Assert.Equal("All", exportScope.GetString());
+    }
+
+    [Fact]
+    public void SheetHeaderSerializer_ShouldReadRowBasedHeader()
+    {
+        const string json = """
         {
-                const string json = """
+            "rows": [
+                {
+                    "headerType": "FieldName",
+                    "value": ["Id", "Name"]
+                },
+                {
+                    "headerType": "Type",
+                    "value": ["int", "string"]
+                },
+                {
+                    "headerType": "DisplayName",
+                    "value": ["编号", "名称"]
+                },
+                {
+                    "headerType": "ExportScope",
+                    "value": ["All", "Client"]
+                }
+            ]
+        }
+        """;
+
+        var header = LightySheetHeaderSerializer.Deserialize(json);
+
+        Assert.Equal(2, header.Count);
+        Assert.Equal("编号", header[0].DisplayName);
+        Assert.True(header[1].TryGetAttribute(LightyHeaderTypes.ExportScope, out var exportScope));
+        Assert.Equal("Client", exportScope.GetString());
+    }
+
+    [Fact]
+    public void WorkspaceLoader_ShouldLoadWorkbooksSheetsAndDecodedRows()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            File.WriteAllText(Path.Combine(workspaceRoot, "config.json"), "{}");
+            File.WriteAllText(
+                Path.Combine(workspaceRoot, "headers.json"),
+                """
                 {
                     "rows": [
-                        {
-                            "headerType": "FieldName",
-                            "value": ["Id", "Name"]
-                        },
-                        {
-                            "headerType": "Type",
-                            "value": ["int", "string"]
-                        },
-                        {
-                            "headerType": "DisplayName",
-                            "value": ["编号", "名称"]
-                        },
-                        {
-                            "headerType": "ExportScope",
-                            "value": ["All", "Client"]
-                        }
+                        { "headerType": "FieldName", "configuration": {} },
+                        { "headerType": "DisplayName", "configuration": {} },
+                        { "headerType": "Type", "configuration": {} }
                     ]
                 }
-                """;
+                """);
 
-                var header = LightySheetHeaderSerializer.Deserialize(json);
+            var workbookPath = Path.Combine(workspaceRoot, "Item");
+            Directory.CreateDirectory(workbookPath);
 
-                Assert.Equal(2, header.Count);
-                Assert.Equal("编号", header[0].DisplayName);
-                Assert.True(header[1].TryGetAttribute(LightyHeaderTypes.ExportScope, out var exportScope));
-                Assert.Equal("Client", exportScope.GetString());
-        }
-
-        [Fact]
-        public void WorkspaceLoader_ShouldLoadWorkbooksSheetsAndDecodedRows()
-        {
-                var workspaceRoot = CreateWorkspaceDirectory();
-
-                try
+            File.WriteAllText(
+                Path.Combine(workbookPath, "Consumable_header.json"),
+                """
                 {
-                        File.WriteAllText(Path.Combine(workspaceRoot, "config.json"), "{}");
-                        File.WriteAllText(
-                                Path.Combine(workspaceRoot, "headers.json"),
-                                """
-                                {
-                                    "rows": [
-                                        { "headerType": "FieldName", "configuration": {} },
-                                        { "headerType": "DisplayName", "configuration": {} },
-                                        { "headerType": "Type", "configuration": {} }
-                                    ]
-                                }
-                                """);
-
-                        var workbookPath = Path.Combine(workspaceRoot, "Item");
-                        Directory.CreateDirectory(workbookPath);
-
-                        File.WriteAllText(
-                                Path.Combine(workbookPath, "Consumable_header.json"),
-                                """
-                                {
-                                    "columns": [
-                                        { "FieldName": "Id", "Type": "int", "DisplayName": "编号" },
-                                        { "FieldName": "Name", "Type": "string", "DisplayName": "名称" },
-                                        { "FieldName": "Desc", "Type": "string" }
-                                    ]
-                                }
-                                """);
-
-                        File.WriteAllText(
-                                Path.Combine(workbookPath, "Consumable.txt"),
-                                $"1001\tPotion\t{LightyTextCodec.Encode("Line1\nLine2")}");
-
-                        var workspace = LightyWorkspaceLoader.Load(workspaceRoot);
-
-                        Assert.True(workspace.TryGetWorkbook("Item", out var workbook));
-                        Assert.NotNull(workbook);
-                        Assert.True(workbook.TryGetSheet("Consumable", out var sheet));
-                        Assert.NotNull(sheet);
-                        Assert.Equal(3, sheet.Header.Count);
-                        Assert.Single(sheet.Rows);
-                        Assert.Equal("Line1\nLine2", sheet.Rows[0][2]);
+                    "columns": [
+                        { "FieldName": "Id", "Type": "int", "DisplayName": "编号" },
+                        { "FieldName": "Name", "Type": "string", "DisplayName": "名称" },
+                        { "FieldName": "Desc", "Type": "string" }
+                    ]
                 }
-                finally
-                {
-                        Directory.Delete(workspaceRoot, recursive: true);
-                }
+                """);
+
+            File.WriteAllText(
+                Path.Combine(workbookPath, "Consumable.txt"),
+                $"1001\tPotion\t{LightyTextCodec.Encode("Line1\nLine2")}");
+
+            var workspace = LightyWorkspaceLoader.Load(workspaceRoot);
+
+            Assert.True(workspace.TryGetWorkbook("Item", out var workbook));
+            Assert.NotNull(workbook);
+            Assert.True(workbook.TryGetSheet("Consumable", out var sheet));
+            Assert.NotNull(sheet);
+            Assert.Equal(3, sheet.Header.Count);
+            Assert.Single(sheet.Rows);
+            Assert.Equal("Line1\nLine2", sheet.Rows[0][2]);
         }
-
-        private static string CreateWorkspaceDirectory()
+        finally
         {
-                var root = Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");
-                Directory.CreateDirectory(root);
-                return root;
+            Directory.Delete(workspaceRoot, recursive: true);
         }
+    }
+
+    private static string CreateWorkspaceDirectory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        return root;
+    }
 }

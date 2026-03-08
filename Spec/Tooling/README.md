@@ -6,20 +6,19 @@ Tooling 子系统主要对应 ShellFiles 和仓库级开发辅助配置，用于
 
 ## 当前已完成的工作
 
-1. 已创建 ShellFiles/Bootstrap-LightyDesign.ps1。
-2. 该脚本可以还原并构建 .NET 解决方案。
-3. 该脚本可以安装并构建 Electron 前端。
-4. 该脚本支持在构建完成后直接启动桌面开发模式。
-5. 已补充仓库级 .gitignore，用于忽略 .NET、Node、Electron 构建产物和常见 IDE 缓存。
-6. 已补充根 README，说明环境准备、启动方式、常见问题和开发顺序。
+1. 已创建 ShellFiles/Bootstrap-LightyDesign.ps1，用于本地引导和开发启动。
+2. 已创建 ShellFiles/Deploy-LightyDesign.ps1，用于生成可运行部署目录。
+3. 引导脚本会优先使用 `npm ci`，并支持构建完成后直接启动 Electron 开发模式。
+4. 部署脚本会发布 DesktopHost、构建桌面前端、安装 Electron 运行时，并生成 `Start-LightyDesign.ps1`。
+5. 已补充仓库级 .gitignore 和根 README，覆盖基本开发与交付说明。
 
 ## 当前尚未实现的业务能力
 
-1. 一键打包脚本。
+1. 安装包生成，例如 MSI 或 NSIS。
 2. CI 配置。
 3. 发布说明生成。
 4. 自动化版本号管理。
 
 ## 当前状态结论
 
-Tooling 已经具备“新开发者可以快速拉起仓库”的基础能力。对于没有 Electron 和 Web 经验的成员，当前脚本和 README 已足够支撑第一次本地启动。
+Tooling 已经同时覆盖“本地开发引导”和“目录级部署产物生成”两条链路。当前仍未进入真正安装包分发阶段，但已经可以稳定产出一份独立的运行目录。

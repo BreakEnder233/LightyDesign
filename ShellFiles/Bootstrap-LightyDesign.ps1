@@ -1,7 +1,10 @@
 param(
     [switch]$SkipDotnet,
     [switch]$SkipFrontend,
-    [switch]$RunDesktop
+    [switch]$RunDesktop,
+    [switch]$UseChinaMirror,
+    [string]$NpmRegistry = "",
+    [string]$ElectronMirror = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +22,38 @@ function Assert-Command {
     }
 }
 
+function Set-FrontendMirrorEnvironment {
+    param(
+        [switch]$UseChinaMirror,
+        [string]$NpmRegistry,
+        [string]$ElectronMirror
+    )
+
+    $resolvedNpmRegistry = $NpmRegistry
+    $resolvedElectronMirror = $ElectronMirror
+
+    if ($UseChinaMirror) {
+        if ([string]::IsNullOrWhiteSpace($resolvedNpmRegistry)) {
+            $resolvedNpmRegistry = "https://registry.npmmirror.com/"
+        }
+
+        if ([string]::IsNullOrWhiteSpace($resolvedElectronMirror)) {
+            $resolvedElectronMirror = "https://npmmirror.com/mirrors/electron/"
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($resolvedNpmRegistry)) {
+        $env:npm_config_registry = $resolvedNpmRegistry
+        Write-Host "使用 npm 镜像: $resolvedNpmRegistry" -ForegroundColor DarkCyan
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($resolvedElectronMirror)) {
+        $env:ELECTRON_MIRROR = $resolvedElectronMirror
+        $env:npm_config_electron_mirror = $resolvedElectronMirror
+        Write-Host "使用 Electron 镜像: $resolvedElectronMirror" -ForegroundColor DarkCyan
+    }
+}
+
 Write-Host "LightyDesign 引导脚本" -ForegroundColor Cyan
 Write-Host "仓库目录: $repoRoot"
 
@@ -27,6 +62,7 @@ Assert-Command dotnet
 if (-not $SkipFrontend) {
     Assert-Command node
     Assert-Command npm
+    Set-FrontendMirrorEnvironment -UseChinaMirror:$UseChinaMirror -NpmRegistry $NpmRegistry -ElectronMirror $ElectronMirror
 }
 
 Push-Location $repoRoot
@@ -45,7 +81,12 @@ try {
 
         try {
             Write-Host "[3/4] 安装 Electron 前端依赖" -ForegroundColor Yellow
-            npm install
+            if (Test-Path (Join-Path $desktopRoot "package-lock.json")) {
+                npm ci
+            }
+            else {
+                npm install
+            }
 
             Write-Host "[4/4] 构建 Electron 前端" -ForegroundColor Yellow
             npm run build
@@ -65,6 +106,9 @@ try {
         Write-Host "下一步可以执行："
         Write-Host "  cd app\desktop"
         Write-Host "  npm run dev"
+        Write-Host "或生成发布目录："
+        Write-Host "  powershell -ExecutionPolicy Bypass -File .\ShellFiles\Deploy-LightyDesign.ps1"
+        Write-Host "大陆网络可追加：-UseChinaMirror"
     }
 }
 finally {

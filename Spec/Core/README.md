@@ -12,7 +12,8 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 4. 已实现 txt 数据文件的读取、行列拆分、转义/反转义以及基础引用语法解析。
 5. 已实现 ColumnDefine 的类型描述与已知属性访问器，包括 ExportScope、Validation 和引用目标读取。
 6. 已实现第一版惰性值解析层，支持按需解析与单元格级缓存失效。
-7. 已补充覆盖核心模型、协议读取和值解析行为的单元测试，并验证解决方案构建与测试通过。
+7. 已实现 `LightyWorkbook` 写回能力，可将工作簿保存为工作区目录下的 `.txt` 和 `_header.json` 文件。
+8. 已补充覆盖核心模型、协议读取、写回和值解析行为的单元测试，并验证解决方案构建与测试通过。
 
 ## 当前尚未实现的业务能力
 
@@ -33,6 +34,12 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 5. `WorkspaceHeaderLayout` 与 `WorkspaceHeaderRowDefinition`：工作区级 headers.json 模型，用于描述表头行语义和全局配置。
 6. `LightyTextCodec`：负责 txt 协议中的转义、反转义、行拆分和列拆分。
 7. `LightyReferenceValue`：负责 `[[...]]` 引用语法的结构化表示。
+8. `LightyWorkbookWriter`：负责把内存中的 workbook 写回工作区文件结构。
+
+## 当前已落地的已知语义
+
+1. `ExportScope` 当前支持 `Client`、`Server`、`All`、`None`。
+2. `ExportScope.None` 表示该列在代码导出阶段应被忽略，而不是导出到任一目标端。
 
 ## 当前已落地的加载与解析能力
 
@@ -43,6 +50,7 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 3. 可读取 Sheet 级 _header.json，并兼容“列定义格式”和“按语义行描述再投影为列定义”的两种输入形式。
 4. 可读取 txt 数据文件并完成反转义，生成 `LightySheetRow`。
 5. 可按需解析单元格值，当前支持基础标量、List、Dictionary、单引用和引用列表。
+6. 可将 `LightyWorkbook` 写回为工作区目录结构，并清理当前工作簿目录下过期的 sheet 文件。
 
 ## 当前值解析边界
 
@@ -55,4 +63,4 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 
 ## 当前状态结论
 
-Core 已经从“工程骨架”进入“协议层可用”的状态，当前已经具备工作区读取、表头建模、txt 协议处理、引用结构化和惰性值解析等基础能力。后续所有文件协议、值语义和验证逻辑仍应继续优先沉淀在这里，而不是直接写进 UI 或宿主层。
+Core 已经从“工程骨架”进入“协议层可用”的状态，当前已经具备工作区读取、表头建模、txt 协议处理、引用结构化、workbook 写回和惰性值解析等基础能力。后续所有文件协议、值语义和验证逻辑仍应继续优先沉淀在这里，而不是直接写进 UI 或宿主层。

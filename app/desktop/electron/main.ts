@@ -8,14 +8,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const desktopHostUrl = process.env.LDD_DESKTOP_HOST_URL ?? "http://127.0.0.1:5000";
 const desktopRoot = path.resolve(__dirname, "..", "..");
-const repositoryRoot = path.resolve(desktopRoot, "..", "..");
-const desktopHostProjectPath = path.join(
+const defaultRepositoryRoot = path.resolve(desktopRoot, "..", "..");
+const repositoryRoot = process.env.LDD_REPOSITORY_ROOT ?? defaultRepositoryRoot;
+const deployedDesktopHostDirectoryPath = path.join(desktopRoot, "desktop-host");
+const defaultDesktopHostProjectPath = path.join(
   repositoryRoot,
   "src",
   "LightyDesign.DesktopHost",
   "LightyDesign.DesktopHost.csproj",
 );
-const desktopHostDllPath = path.join(
+const defaultDesktopHostDllPath = path.join(
   repositoryRoot,
   "src",
   "LightyDesign.DesktopHost",
@@ -39,6 +41,7 @@ type DesktopHostHealth = {
 let desktopHostProcess: ChildProcessWithoutNullStreams | null = null;
 
 function resolveDesktopHostLaunch() {
+  const desktopHostProjectPath = process.env.LDD_DESKTOP_HOST_PROJECT_PATH ?? defaultDesktopHostProjectPath;
   if (fs.existsSync(desktopHostProjectPath)) {
     return {
       command: "dotnet",
@@ -54,11 +57,18 @@ function resolveDesktopHostLaunch() {
     };
   }
 
-  if (fs.existsSync(desktopHostDllPath)) {
+  const desktopHostDllCandidates = [
+    process.env.LDD_DESKTOP_HOST_DLL_PATH,
+    path.join(deployedDesktopHostDirectoryPath, "LightyDesign.DesktopHost.dll"),
+    defaultDesktopHostDllPath,
+  ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
+
+  const desktopHostDllPath = desktopHostDllCandidates.find((candidate) => fs.existsSync(candidate));
+  if (desktopHostDllPath) {
     return {
       command: "dotnet",
       args: [desktopHostDllPath, "--urls", desktopHostUrl],
-      cwd: repositoryRoot,
+      cwd: process.env.LDD_DESKTOP_HOST_WORKING_DIRECTORY ?? path.dirname(desktopHostDllPath),
     };
   }
 

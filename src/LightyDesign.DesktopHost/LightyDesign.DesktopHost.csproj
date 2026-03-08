@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LightyDesign.Core\LightyDesign.Core.csproj" />
+    <ProjectReference Include="..\LightyDesign.FileProcess\LightyDesign.FileProcess.csproj" />
     <ProjectReference Include="..\LightyDesign.Generator\LightyDesign.Generator.csproj" />
   </ItemGroup>
 

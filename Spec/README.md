@@ -154,6 +154,8 @@ Workspace/
 - 工作区文件夹：任意名称的文件夹，代表整个工作空间，内含有若干个工作簿文件夹和一个config.json文件和一个headers.json文件
   - config.json文件（目前无作用）：用于工作空间全局设置。
   - headers.json：表示该工作区的表头从上到下每一行的类型和配置。
+  - 通过桌面端“新建工作区”功能初始化时，系统会自动创建空工作区目录，并写入默认的 `config.json` 与 `headers.json`。
+  - 默认工作区表头顺序固定为：`fieldName`、`displayName`、`type`、`validation`、`exportscope`。
 
 - 工作簿文件夹：任意名称的文件夹，代表一个工作簿（LightyWorkbook）。示例：Item/
   - 工作簿内包含数个表格，每个表格对应两个文件，例如Consumable表格对应Consumable.txt文件和Consumable_header.json文件。
@@ -181,6 +183,14 @@ Workspace/
 ## 表头文件
 
 工作区级 `headers.json` 描述表头从上到下每一行的语义和配置。
+
+当前系统内置并默认初始化以下工作区表头行：
+
+1. `fieldName`：每一列对应导出代码时的字段名称。
+2. `displayName`：每一列对应开发者参考注释。
+3. `type`：每一列对应导出代码时的字段类型。
+4. `validation`：每一列对应合法性校验参数；当前版本仅保存和读取，不执行实际校验。
+5. `exportscope`：每一列对应代码导出范围、目标文件夹和预编译指令配置；当值为 `None` 时，该列在代码导出阶段应被跳过。
 
 Sheet 级 `_header.json` 描述从左到右每一列的定义。当前支持两种输入形式：
 

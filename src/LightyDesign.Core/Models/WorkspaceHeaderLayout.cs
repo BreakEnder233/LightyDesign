@@ -8,7 +8,26 @@ public sealed class WorkspaceHeaderLayout
     {
         ArgumentNullException.ThrowIfNull(rows);
 
-        _rows = rows.ToList().AsReadOnly();
+        var resolvedRows = rows.ToList();
+        var duplicatedHeaderType = resolvedRows
+            .GroupBy(row => row.HeaderType, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1)?
+            .Key;
+
+        if (duplicatedHeaderType is not null)
+        {
+            throw new ArgumentException($"Duplicated workspace header type '{duplicatedHeaderType}' is not allowed.", nameof(rows));
+        }
+
+        _rows = resolvedRows.AsReadOnly();
+    }
+
+    public static WorkspaceHeaderLayout CreateDefault()
+    {
+        return new WorkspaceHeaderLayout(
+            LightyHeaderTypes.DefaultWorkspaceHeaderTypes.Select(headerType => new WorkspaceHeaderRowDefinition(
+                headerType,
+                System.Text.Json.JsonSerializer.SerializeToElement(new { }))));
     }
 
     public IReadOnlyList<WorkspaceHeaderRowDefinition> Rows => _rows;
@@ -21,7 +40,8 @@ public sealed class WorkspaceHeaderLayout
     {
         ArgumentException.ThrowIfNullOrEmpty(headerType);
 
-        row = _rows.FirstOrDefault(candidate => string.Equals(candidate.HeaderType, headerType, StringComparison.Ordinal));
+        var normalizedHeaderType = LightyHeaderTypes.Normalize(headerType);
+        row = _rows.FirstOrDefault(candidate => string.Equals(candidate.HeaderType, normalizedHeaderType, StringComparison.Ordinal));
         return row is not null;
     }
 }

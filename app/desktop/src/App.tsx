@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { ToastCenter } from "./components/ToastCenter";
 import { VirtualSheetTable } from "./components/VirtualSheetTable";
@@ -44,6 +44,8 @@ function App() {
     filteredRowEntries,
     openSheet,
     closeTab,
+    chooseParentDirectoryForWorkspaceCreation,
+    createWorkspace,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,
@@ -58,7 +60,7 @@ function App() {
     onToast: pushToastNotification,
   });
 
-  const hostStatusLabel = bridgeStatus === "unavailable" ? "Bridge Unavailable" : hostHealth?.ok ? "Connected" : "Starting";
+  const hostStatusLabel = bridgeStatus === "unavailable" ? "桥接不可用" : hostHealth?.ok ? "已连接" : "启动中";
   const hostStatusClassName = bridgeStatus === "unavailable" ? "status-pill is-error" : hostHealth?.ok ? "status-pill is-ok" : "status-pill";
   const canUndoActiveSheet = Boolean(activeSheetState?.undoStack?.length);
   const canRedoActiveSheet = Boolean(activeSheetState?.redoStack?.length);
@@ -66,8 +68,11 @@ function App() {
     activeTab && hostInfo && workspacePath && activeWorkbookDirtyTabs.length > 0 && activeWorkbookSaveState?.status !== "saving",
   );
   const canChooseWorkspaceDirectory = bridgeStatus === "ready";
-  const hostUrlLabel = bridgeStatus === "unavailable" ? "Electron bridge 未就绪" : hostInfo?.desktopHostUrl ?? "Loading...";
-  const runtimeLabel = bridgeStatus === "unavailable" ? "Unavailable" : hostInfo?.shell ?? "Loading...";
+  const hostUrlLabel = bridgeStatus === "unavailable" ? "Electron bridge 未就绪" : hostInfo?.desktopHostUrl ?? "加载中...";
+  const runtimeLabel = bridgeStatus === "unavailable" ? "不可用" : hostInfo?.shell ?? "加载中...";
+  const [isCreateWorkspaceDialogOpen, setIsCreateWorkspaceDialogOpen] = useState(false);
+  const [createWorkspaceParentDirectoryPath, setCreateWorkspaceParentDirectoryPath] = useState("");
+  const [newWorkspaceName, setNewWorkspaceName] = useState("NewWorkspace");
 
   const shortcutBindings = useMemo<ShortcutBinding[]>(
     () => [
@@ -143,8 +148,82 @@ function App() {
     dismissToast(toastId);
   }
 
+  async function handleOpenCreateWorkspaceDialog() {
+    const parentDirectoryPath = await chooseParentDirectoryForWorkspaceCreation();
+    if (!parentDirectoryPath) {
+      return;
+    }
+
+    setCreateWorkspaceParentDirectoryPath(parentDirectoryPath);
+    setNewWorkspaceName("NewWorkspace");
+    setIsCreateWorkspaceDialogOpen(true);
+  }
+
+  function handleCloseCreateWorkspaceDialog() {
+    setIsCreateWorkspaceDialogOpen(false);
+    setCreateWorkspaceParentDirectoryPath("");
+    setNewWorkspaceName("NewWorkspace");
+  }
+
+  async function handleConfirmCreateWorkspace() {
+    const created = await createWorkspace(createWorkspaceParentDirectoryPath, newWorkspaceName);
+    if (created) {
+      handleCloseCreateWorkspaceDialog();
+    }
+  }
+
   return (
     <div className="app-shell">
+      {isCreateWorkspaceDialogOpen ? (
+        <div className="workspace-create-backdrop" onClick={handleCloseCreateWorkspaceDialog} role="presentation">
+          <div
+            aria-labelledby="workspace-create-title"
+            aria-modal="true"
+            className="workspace-create-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">Workspace</p>
+                <h2 id="workspace-create-title">新建工作区</h2>
+              </div>
+            </div>
+
+            <div className="workspace-create-body">
+              <p className="workspace-create-path-label">父目录</p>
+              <p className="workspace-create-path-value">{createWorkspaceParentDirectoryPath}</p>
+
+              <label className="search-field workspace-create-name-field">
+                <span>工作区文件夹名称</span>
+                <input
+                  autoFocus
+                  onChange={(event) => setNewWorkspaceName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleConfirmCreateWorkspace();
+                    }
+                  }}
+                  placeholder="例如 GameData"
+                  type="text"
+                  value={newWorkspaceName}
+                />
+              </label>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseCreateWorkspaceDialog} type="button">
+                取消
+              </button>
+              <button className="primary-button" onClick={() => void handleConfirmCreateWorkspace()} type="button">
+                创建并打开
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ToastCenter
         onCloseSelectedToast={() => setSelectedErrorToastId(null)}
         onCopySelectedDetail={() => void handleCopySelectedDetail()}
@@ -171,15 +250,26 @@ function App() {
               <p className="eyebrow">Workspace</p>
               <h2>选择工作区</h2>
             </div>
-            <button
-              className="primary-button"
-              disabled={!canChooseWorkspaceDirectory}
-              onClick={chooseWorkspaceDirectory}
-              title={canChooseWorkspaceDirectory ? "选择一个工作区目录" : bridgeError ?? "当前环境不支持原生目录选择"}
-              type="button"
-            >
-              选择目录
-            </button>
+            <div className="section-actions">
+              <button
+                className="secondary-button"
+                disabled={!canChooseWorkspaceDirectory}
+                onClick={() => void handleOpenCreateWorkspaceDialog()}
+                title={canChooseWorkspaceDirectory ? "选择父目录并新建工作区" : bridgeError ?? "当前环境不支持原生目录选择"}
+                type="button"
+              >
+                新建工作区
+              </button>
+              <button
+                className="primary-button"
+                disabled={!canChooseWorkspaceDirectory}
+                onClick={chooseWorkspaceDirectory}
+                title={canChooseWorkspaceDirectory ? "选择一个工作区目录" : bridgeError ?? "当前环境不支持原生目录选择"}
+                type="button"
+              >
+                选择目录
+              </button>
+            </div>
           </div>
 
           <p className="path-label">当前路径</p>
@@ -207,7 +297,7 @@ function App() {
               <p className="eyebrow">Navigator</p>
               <h2>工作簿树</h2>
             </div>
-            {workspaceStatus === "loading" ? <span className="badge">Loading</span> : null}
+            {workspaceStatus === "loading" ? <span className="badge">加载中</span> : null}
           </div>
 
           <label className="search-field">
@@ -303,7 +393,7 @@ function App() {
             </div>
             <div>
               <span>Workspace Root</span>
-              <strong>{workspace?.rootPath ?? "Not loaded"}</strong>
+              <strong>{workspace?.rootPath ?? "未加载"}</strong>
             </div>
           </div>
 

@@ -18,10 +18,11 @@ public class WorkspaceWriteTests
                 """
                 {
                   "rows": [
-                    { "headerType": "FieldName", "configuration": {} },
-                    { "headerType": "DisplayName", "configuration": {} },
-                    { "headerType": "Type", "configuration": {} },
-                    { "headerType": "ExportScope", "configuration": {} }
+                                        { "headerType": "fieldName", "configuration": {} },
+                                        { "headerType": "displayName", "configuration": {} },
+                                        { "headerType": "type", "configuration": {} },
+                                        { "headerType": "validation", "configuration": {} },
+                                        { "headerType": "exportscope", "configuration": {} }
                   ]
                 }
                 """);

@@ -11,7 +11,7 @@ public sealed class WorkspaceHeaderRowDefinition
             throw new ArgumentException("Header type cannot be null or whitespace.", nameof(headerType));
         }
 
-        HeaderType = headerType;
+        HeaderType = LightyHeaderTypes.Normalize(headerType);
         Configuration = Clone(configuration);
     }
 

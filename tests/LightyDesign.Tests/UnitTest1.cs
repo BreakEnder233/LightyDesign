@@ -139,19 +139,19 @@ public class UnitTest1
         {
             "rows": [
                 {
-                    "headerType": "FieldName",
+                    "headerType": "fieldName",
                     "value": ["Id", "Name"]
                 },
                 {
-                    "headerType": "Type",
+                    "headerType": "type",
                     "value": ["int", "string"]
                 },
                 {
-                    "headerType": "DisplayName",
+                    "headerType": "displayName",
                     "value": ["编号", "名称"]
                 },
                 {
-                    "headerType": "ExportScope",
+                    "headerType": "exportscope",
                     "value": ["All", "Client"]
                 }
             ]
@@ -167,6 +167,46 @@ public class UnitTest1
     }
 
     [Fact]
+    public void WorkspaceHeaderLayoutSerializer_ShouldRoundTripDefaultLayoutUsingWorkspaceNames()
+    {
+        var layout = WorkspaceHeaderLayout.CreateDefault();
+
+        var json = WorkspaceHeaderLayoutSerializer.Serialize(layout);
+        var reloaded = WorkspaceHeaderLayoutSerializer.Deserialize(json);
+
+        Assert.Contains("\"headerType\": \"fieldName\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"headerType\": \"displayName\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"headerType\": \"type\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"headerType\": \"validation\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"headerType\": \"exportscope\"", json, StringComparison.Ordinal);
+        Assert.Equal(LightyHeaderTypes.DefaultWorkspaceHeaderTypes, reloaded.Rows.Select(row => row.HeaderType).ToArray());
+    }
+
+    [Fact]
+    public void WorkspaceScaffolder_ShouldCreateWorkspaceWithDefaultHeaders()
+    {
+        var workspaceRoot = Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");
+
+        try
+        {
+            var workspace = LightyWorkspaceScaffolder.Create(workspaceRoot);
+
+            Assert.True(Directory.Exists(workspaceRoot));
+            Assert.True(File.Exists(Path.Combine(workspaceRoot, "config.json")));
+            Assert.True(File.Exists(Path.Combine(workspaceRoot, "headers.json")));
+            Assert.Empty(workspace.Workbooks);
+            Assert.Equal(LightyHeaderTypes.DefaultWorkspaceHeaderTypes, workspace.HeaderLayout.Rows.Select(row => row.HeaderType).ToArray());
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void WorkspaceLoader_ShouldLoadWorkbooksSheetsAndDecodedRows()
     {
         var workspaceRoot = CreateWorkspaceDirectory();
@@ -179,9 +219,9 @@ public class UnitTest1
                 """
                 {
                     "rows": [
-                        { "headerType": "FieldName", "configuration": {} },
-                        { "headerType": "DisplayName", "configuration": {} },
-                        { "headerType": "Type", "configuration": {} }
+                        { "headerType": "fieldName", "configuration": {} },
+                        { "headerType": "displayName", "configuration": {} },
+                        { "headerType": "type", "configuration": {} }
                     ]
                 }
                 """);

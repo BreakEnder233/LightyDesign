@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import {
   buildCellKey,
@@ -49,6 +49,10 @@ function getDesktopBridge() {
   return window.lightyDesign;
 }
 
+function isValidWorkspaceName(workspaceName: string) {
+  return workspaceName.length > 0 && !/[\\/:*?"<>|]/.test(workspaceName);
+}
+
 type UseWorkspaceEditorArgs = {
   hostInfo: DesktopHostInfo | null;
   onToast: (toast: {
@@ -83,6 +87,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     () => Object.values(sheetStateMap).some((sheetState) => sheetState.dirty),
     [sheetStateMap],
   );
+  const emitToast = useEffectEvent(onToast);
 
   useEffect(() => {
     if (!workspacePath) {
@@ -132,7 +137,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         setWorkspace(null);
         setWorkspaceStatus("error");
         setWorkspaceError(errorMessage);
-        onToast({
+        emitToast({
           title: "工作区加载失败",
           detail: errorMessage,
           source: "workspace",
@@ -148,7 +153,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     return () => {
       canceled = true;
     };
-  }, [hostInfo, onToast, workspacePath, workspaceReloadKey]);
+  }, [hostInfo, workspacePath, workspaceReloadKey]);
 
   useEffect(() => {
     if (!workspacePath || !workspace || workspaceStatus !== "ready") {
@@ -208,6 +213,8 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       return;
     }
 
+    const currentHostInfo = hostInfo;
+
     const resolvedActiveTab = openTabs.find((tab) => tab.id === activeTabId);
     if (!resolvedActiveTab) {
       return;
@@ -234,7 +241,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         const workbookName = encodeURIComponent(activeTabToLoad.workbookName);
         const sheetName = encodeURIComponent(activeTabToLoad.sheetName);
         const data = await fetchJson<SheetResponse>(
-          `${hostInfo.desktopHostUrl}/api/workspace/workbooks/${workbookName}/sheets/${sheetName}?${query.toString()}`,
+          `${currentHostInfo.desktopHostUrl}/api/workspace/workbooks/${workbookName}/sheets/${sheetName}?${query.toString()}`,
         );
 
         if (canceled) {
@@ -266,7 +273,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
             error: errorMessage,
           },
         }));
-        onToast({
+        emitToast({
           title: `Sheet 加载失败: ${activeTabToLoad.sheetName}`,
           detail: errorMessage,
           source: "sheet",
@@ -282,7 +289,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     return () => {
       canceled = true;
     };
-  }, [activeTabId, hostInfo, onToast, openTabs, sheetStateMap, workspacePath]);
+  }, [activeTabId, hostInfo, openTabs, sheetStateMap, workspacePath]);
 
   const workbookTree = useMemo<WorkspaceTreeWorkbook[]>(() => {
     if (!workspace) {
@@ -415,7 +422,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "无法打开工作区目录选择器。";
-      onToast({
+      emitToast({
         title: "无法选择工作区目录",
         detail: errorMessage,
         source: "system",
@@ -423,6 +430,96 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         canOpenDetail: true,
         durationMs: 8000,
       });
+    }
+  }
+
+  async function chooseParentDirectoryForWorkspaceCreation() {
+    if (hasDirtyChanges) {
+      const shouldSwitch = window.confirm("当前存在未保存修改，确认新建并切换工作区目录吗？");
+      if (!shouldSwitch) {
+        return null;
+      }
+    }
+
+    try {
+      return await getDesktopBridge().chooseWorkspaceDirectory();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "创建工作区失败。";
+      emitToast({
+        title: "无法选择新工作区父目录",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return null;
+    }
+  }
+
+  async function createWorkspace(parentDirectoryPath: string, workspaceName: string) {
+    if (!hostInfo) {
+      emitToast({
+        title: "无法新建工作区",
+        detail: "DesktopHost 尚未连接，当前无法创建工作区。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const trimmedWorkspaceName = workspaceName.trim();
+    if (!isValidWorkspaceName(trimmedWorkspaceName)) {
+      emitToast({
+        title: "工作区名称无效",
+        detail: "工作区名称不能为空，且不能包含 \\ / : * ? \" < > | 等非法字符。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    try {
+      const createdWorkspace = await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/create`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            parentDirectoryPath,
+            workspaceName: trimmedWorkspaceName,
+          }),
+        },
+      );
+
+      setWorkspacePath(createdWorkspace.rootPath);
+      setWorkspaceSearch("");
+      emitToast({
+        title: `工作区已创建: ${trimmedWorkspaceName}`,
+        detail: `已在 ${parentDirectoryPath} 下创建新工作区，并写入默认 headers.json。`,
+        source: "workspace",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4200,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "创建工作区失败。";
+      emitToast({
+        title: "创建工作区失败",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
     }
   }
 
@@ -765,7 +862,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
           status: "saved",
         },
       }));
-      onToast({
+      emitToast({
         title: `工作簿保存成功: ${workbookName}`,
         detail: `已成功保存 ${activeWorkbookDirtyTabs.length} 个脏 Sheet。`,
         source: "save",
@@ -787,7 +884,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
           error: errorMessage,
         },
       }));
-      onToast({
+      emitToast({
         title: `工作簿保存失败: ${workbookName}`,
         detail: errorMessage,
         source: "save",
@@ -823,6 +920,8 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     hasDirtyChanges,
     openSheet,
     closeTab,
+    chooseParentDirectoryForWorkspaceCreation,
+    createWorkspace,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,

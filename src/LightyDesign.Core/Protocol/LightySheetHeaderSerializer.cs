@@ -81,7 +81,7 @@ public static class LightySheetHeaderSerializer
                 throw new LightyTextFormatException("Sheet header rows must be JSON objects.");
             }
 
-            var headerType = JsonElementHelper.GetRequiredString(rowElement, "headerType");
+            var headerType = LightyHeaderTypes.Normalize(JsonElementHelper.GetRequiredString(rowElement, "headerType"));
             var valueElement = JsonElementHelper.GetOptionalProperty(rowElement, "value")
                 ?? throw new LightyTextFormatException($"Sheet header row '{headerType}' must contain a value.");
 

@@ -139,6 +139,81 @@ app.MapGet("/api/workspace/navigation", (string workspacePath) =>
     }
 });
 
+app.MapPost("/api/workspace/create", (CreateWorkspaceRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.ParentDirectoryPath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "parentDirectoryPath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkspaceName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspaceName is required.",
+        });
+    }
+
+    var parentDirectoryPath = request.ParentDirectoryPath.Trim();
+    var workspaceName = request.WorkspaceName.Trim();
+
+    if (!Directory.Exists(parentDirectoryPath))
+    {
+        return Results.NotFound(new
+        {
+            error = "The specified parent directory was not found.",
+            parentDirectoryPath,
+        });
+    }
+
+    if (workspaceName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspaceName contains invalid path characters.",
+            workspaceName,
+        });
+    }
+
+    try
+    {
+        var workspaceRootPath = Path.Combine(parentDirectoryPath, workspaceName);
+        var workspace = LightyWorkspaceScaffolder.Create(workspaceRootPath);
+        return Results.Ok(ToWorkspaceNavigationResponse(workspace));
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapGet("/api/workspace/workbooks/{workbookName}", (string workbookName, string workspacePath) =>
 {
     if (string.IsNullOrWhiteSpace(workspacePath))
@@ -654,6 +729,13 @@ sealed class SaveWorkbookRequest
     public string WorkspacePath { get; set; } = string.Empty;
 
     public WorkbookPayload? Workbook { get; set; }
+}
+
+sealed class CreateWorkspaceRequest
+{
+    public string ParentDirectoryPath { get; set; } = string.Empty;
+
+    public string WorkspaceName { get; set; } = string.Empty;
 }
 
 sealed class WorkbookPayload

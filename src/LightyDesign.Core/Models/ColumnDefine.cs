@@ -97,10 +97,10 @@ public sealed class ColumnDefine
     {
         if (attributes is null || attributes.Count == 0)
         {
-            return new ReadOnlyDictionary<string, JsonElement>(new Dictionary<string, JsonElement>(StringComparer.Ordinal));
+            return new ReadOnlyDictionary<string, JsonElement>(new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase));
         }
 
-        var cloned = new Dictionary<string, JsonElement>(attributes.Count, StringComparer.Ordinal);
+        var cloned = new Dictionary<string, JsonElement>(attributes.Count, StringComparer.OrdinalIgnoreCase);
 
         foreach (var pair in attributes)
         {

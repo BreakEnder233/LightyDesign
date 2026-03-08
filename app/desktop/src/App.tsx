@@ -80,9 +80,35 @@ type SheetLoadState = {
 };
 
 const workspaceStorageKey = "lightydesign.workspacePath";
+const sheetPageSize = 200;
 
 function buildSheetTabId(workbookName: string, sheetName: string) {
   return `${workbookName}::${sheetName}`;
+}
+
+function buildWorkspaceScopedStorageKey(workspacePath: string, key: string) {
+  return `${workspaceStorageKey}:${workspacePath}:${key}`;
+}
+
+function isSheetTab(value: unknown): value is SheetTab {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<SheetTab>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.workbookName === "string" &&
+    typeof candidate.sheetName === "string"
+  );
+}
+
+function isSheetAvailable(workspace: WorkspaceNavigationResponse, tab: SheetTab) {
+  return workspace.workbooks.some(
+    (workbook) =>
+      workbook.name === tab.workbookName &&
+      workbook.sheets.some((sheet) => sheet.name === tab.sheetName),
+  );
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -118,6 +144,7 @@ function App() {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [sheetStateMap, setSheetStateMap] = useState<Record<string, SheetLoadState>>({});
   const [sheetFilter, setSheetFilter] = useState("");
+  const [sheetPage, setSheetPage] = useState(1);
 
   useEffect(() => {
     let disposed = false;
@@ -185,10 +212,9 @@ function App() {
 
         setWorkspace(data);
         setWorkspaceStatus("ready");
-        setOpenTabs([]);
-        setActiveTabId(null);
         setSheetStateMap({});
         setSheetFilter("");
+        setSheetPage(1);
       } catch (error) {
         if (canceled) {
           return;
@@ -208,16 +234,72 @@ function App() {
   }, [hostInfo, workspacePath, workspaceReloadKey]);
 
   useEffect(() => {
+    if (!workspacePath || !workspace || workspaceStatus !== "ready") {
+      return;
+    }
+
+    const tabsStorageKey = buildWorkspaceScopedStorageKey(workspacePath, "openTabs");
+    const activeTabStorageKey = buildWorkspaceScopedStorageKey(workspacePath, "activeTabId");
+
+    let restoredTabs: SheetTab[] = [];
+    const rawTabs = localStorage.getItem(tabsStorageKey);
+    if (rawTabs) {
+      try {
+        const parsed = JSON.parse(rawTabs) as unknown;
+        if (Array.isArray(parsed)) {
+          restoredTabs = parsed.filter(isSheetTab).filter((tab) => isSheetAvailable(workspace, tab));
+        }
+      } catch {
+        restoredTabs = [];
+      }
+    }
+
+    const restoredActiveTabId = localStorage.getItem(activeTabStorageKey);
+    const nextActiveTabId = restoredTabs.some((tab) => tab.id === restoredActiveTabId)
+      ? restoredActiveTabId
+      : restoredTabs[0]?.id ?? null;
+
+    setOpenTabs(restoredTabs);
+    setActiveTabId(nextActiveTabId);
+    setSheetStateMap((current) => {
+      const nextStateMap: Record<string, SheetLoadState> = {};
+      restoredTabs.forEach((tab) => {
+        nextStateMap[tab.id] = current[tab.id] ?? { status: "idle" };
+      });
+      return nextStateMap;
+    });
+  }, [workspace, workspacePath, workspaceStatus]);
+
+  useEffect(() => {
+    if (!workspacePath) {
+      return;
+    }
+
+    const tabsStorageKey = buildWorkspaceScopedStorageKey(workspacePath, "openTabs");
+    const activeTabStorageKey = buildWorkspaceScopedStorageKey(workspacePath, "activeTabId");
+
+    localStorage.setItem(tabsStorageKey, JSON.stringify(openTabs));
+    if (activeTabId) {
+      localStorage.setItem(activeTabStorageKey, activeTabId);
+    } else {
+      localStorage.removeItem(activeTabStorageKey);
+    }
+  }, [activeTabId, openTabs, workspacePath]);
+
+  useEffect(() => {
     if (!hostInfo || !workspacePath || !activeTabId) {
       return;
     }
 
-    const activeTab = openTabs.find((tab) => tab.id === activeTabId);
-    if (!activeTab) {
+    const currentHostInfo = hostInfo;
+    const currentActiveTab = openTabs.find((tab) => tab.id === activeTabId);
+    if (!currentActiveTab) {
       return;
     }
 
-    const existingState = sheetStateMap[activeTab.id];
+    const resolvedActiveTab = currentActiveTab;
+
+    const existingState = sheetStateMap[resolvedActiveTab.id];
     if (existingState?.status === "loading" || existingState?.status === "ready") {
       return;
     }
@@ -227,17 +309,17 @@ function App() {
     async function loadSheet() {
       setSheetStateMap((current) => ({
         ...current,
-        [activeTab.id]: {
+        [resolvedActiveTab.id]: {
           status: "loading",
         },
       }));
 
       try {
         const query = new URLSearchParams({ workspacePath });
-        const workbookName = encodeURIComponent(activeTab.workbookName);
-        const sheetName = encodeURIComponent(activeTab.sheetName);
+        const workbookName = encodeURIComponent(resolvedActiveTab.workbookName);
+        const sheetName = encodeURIComponent(resolvedActiveTab.sheetName);
         const data = await fetchJson<SheetResponse>(
-          `${hostInfo.desktopHostUrl}/api/workspace/workbooks/${workbookName}/sheets/${sheetName}?${query.toString()}`,
+          `${currentHostInfo.desktopHostUrl}/api/workspace/workbooks/${workbookName}/sheets/${sheetName}?${query.toString()}`,
         );
 
         if (canceled) {
@@ -246,7 +328,7 @@ function App() {
 
         setSheetStateMap((current) => ({
           ...current,
-          [activeTab.id]: {
+          [resolvedActiveTab.id]: {
             status: "ready",
             data,
           },
@@ -258,7 +340,7 @@ function App() {
 
         setSheetStateMap((current) => ({
           ...current,
-          [activeTab.id]: {
+          [resolvedActiveTab.id]: {
             status: "error",
             error: error instanceof Error ? error.message : "Sheet 读取失败。",
           },
@@ -272,6 +354,10 @@ function App() {
       canceled = true;
     };
   }, [activeTabId, hostInfo, openTabs, sheetStateMap, workspacePath]);
+
+  useEffect(() => {
+    setSheetPage(1);
+  }, [activeTabId, sheetFilter]);
 
   const workbookTree = useMemo<WorkspaceTreeWorkbook[]>(() => {
     if (!workspace) {
@@ -314,8 +400,9 @@ function App() {
 
   const activeTab = openTabs.find((tab) => tab.id === activeTabId) ?? null;
   const activeSheetState = activeTab ? sheetStateMap[activeTab.id] : undefined;
+  const activeSheetData = activeSheetState?.data;
   const filteredSheetRows = useMemo(() => {
-    const rows = activeSheetState?.data?.rows ?? [];
+    const rows = activeSheetData?.rows ?? [];
     const search = sheetFilter.trim().toLocaleLowerCase();
 
     if (!search) {
@@ -323,10 +410,26 @@ function App() {
     }
 
     return rows.filter((row) => row.some((cell) => cell.toLocaleLowerCase().includes(search)));
-  }, [activeSheetState?.data?.rows, sheetFilter]);
+  }, [activeSheetData?.rows, sheetFilter]);
+  const sheetPageCount = Math.max(1, Math.ceil(filteredSheetRows.length / sheetPageSize));
+  const safeSheetPage = Math.min(sheetPage, sheetPageCount);
+  const pagedSheetRows = useMemo(() => {
+    const startIndex = (safeSheetPage - 1) * sheetPageSize;
+    return filteredSheetRows.slice(startIndex, startIndex + sheetPageSize);
+  }, [filteredSheetRows, safeSheetPage]);
+  const pageStartRowNumber = filteredSheetRows.length === 0 ? 0 : (safeSheetPage - 1) * sheetPageSize + 1;
+  const pageEndRowNumber = filteredSheetRows.length === 0
+    ? 0
+    : Math.min(filteredSheetRows.length, safeSheetPage * sheetPageSize);
   const hostStatusLabel = hostHealth?.ok ? "Connected" : "Starting";
   const hostStatusClassName = hostHealth?.ok ? "status-pill is-ok" : "status-pill";
   const totalSheetCount = workbookTree.reduce((count, workbook) => count + workbook.sheets.length, 0);
+
+  useEffect(() => {
+    if (sheetPage !== safeSheetPage) {
+      setSheetPage(safeSheetPage);
+    }
+  }, [safeSheetPage, sheetPage]);
 
   function openSheet(workbookName: string, sheetName: string) {
     const id = buildSheetTabId(workbookName, sheetName);
@@ -341,6 +444,7 @@ function App() {
 
     setActiveTabId(id);
     setSheetFilter("");
+    setSheetPage(1);
   }
 
   function closeTab(tabId: string) {
@@ -352,6 +456,7 @@ function App() {
         const fallbackTab = nextTabs[Math.max(0, closingIndex - 1)] ?? nextTabs[0] ?? null;
         setActiveTabId(fallbackTab?.id ?? null);
         setSheetFilter("");
+        setSheetPage(1);
       }
 
       return nextTabs;
@@ -511,7 +616,7 @@ function App() {
             <p className="eyebrow">Host Bridge</p>
             <h2>DesktopHost 已接入，前端开始消费真实工作区接口。</h2>
             <p className="hero-copy">
-              第二批功能把导航树切换到轻量接口，并补充工作区搜索、Sheet 文本筛选和行号展示，减少初次加载成本并提高只读查看效率。
+              第三批功能开始处理真实使用形态：当前 workspace 的 tabs 和激活状态会被持久化，Sheet 查看区也加入分页，避免大表一次性渲染过重。
             </p>
           </div>
 
@@ -584,32 +689,59 @@ function App() {
               </div>
             ) : null}
 
-            {activeTab && activeSheetState?.status === "ready" && activeSheetState.data ? (
+            {activeTab && activeSheetState?.status === "ready" && activeSheetData ? (
               <>
                 <div className="viewer-header">
                   <div>
                     <p className="eyebrow">Sheet</p>
-                    <h3>{activeSheetState.data.metadata.name}</h3>
+                    <h3>{activeSheetData.metadata.name}</h3>
                   </div>
                   <div className="viewer-metadata">
-                    <span>{activeSheetState.data.metadata.columnCount} 列</span>
-                    <span>{activeSheetState.data.metadata.rowCount} 行</span>
+                    <span>{activeSheetData.metadata.columnCount} 列</span>
+                    <span>{activeSheetData.metadata.rowCount} 行</span>
                     <span>{activeTab.workbookName}</span>
                   </div>
                 </div>
 
-                <label className="search-field sheet-filter-field">
-                  <span>筛选当前 Sheet 的文本内容</span>
-                  <input
-                    onChange={(event) => setSheetFilter(event.target.value)}
-                    placeholder="按任意单元格文本过滤"
-                    type="text"
-                    value={sheetFilter}
-                  />
-                </label>
+                <div className="viewer-toolbar">
+                  <label className="search-field sheet-filter-field">
+                    <span>筛选当前 Sheet 的文本内容</span>
+                    <input
+                      onChange={(event) => setSheetFilter(event.target.value)}
+                      placeholder="按任意单元格文本过滤"
+                      type="text"
+                      value={sheetFilter}
+                    />
+                  </label>
+
+                  <div className="pagination-panel">
+                    <span className="pagination-status">
+                      显示 {pageStartRowNumber}-{pageEndRowNumber} / {filteredSheetRows.length || 0} 行
+                    </span>
+                    <div className="pagination-controls">
+                      <button
+                        className="secondary-button"
+                        disabled={safeSheetPage <= 1}
+                        onClick={() => setSheetPage((current) => Math.max(1, current - 1))}
+                        type="button"
+                      >
+                        上一页
+                      </button>
+                      <span className="pagination-page-indicator">第 {safeSheetPage} / {sheetPageCount} 页</span>
+                      <button
+                        className="secondary-button"
+                        disabled={safeSheetPage >= sheetPageCount}
+                        onClick={() => setSheetPage((current) => Math.min(sheetPageCount, current + 1))}
+                        type="button"
+                      >
+                        下一页
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
                 <div className="column-summary-grid">
-                  {activeSheetState.data.metadata.columns.map((column) => (
+                  {activeSheetData.metadata.columns.map((column) => (
                     <article className="column-card" key={column.fieldName}>
                       <strong>{column.displayName || column.fieldName}</strong>
                       <span>{column.fieldName}</span>
@@ -623,7 +755,7 @@ function App() {
                     <thead>
                       <tr>
                         <th className="row-number-cell is-header">#</th>
-                        {activeSheetState.data.metadata.columns.map((column) => (
+                        {activeSheetData.metadata.columns.map((column) => (
                           <th key={column.fieldName}>
                             <div>{column.displayName || column.fieldName}</div>
                             <small>{column.type}</small>
@@ -632,18 +764,18 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSheetRows.length === 0 ? (
+                      {pagedSheetRows.length === 0 ? (
                         <tr>
-                          <td className="table-empty" colSpan={(activeSheetState.data.metadata.columns.length || 1) + 1}>
-                            {activeSheetState.data.rows.length === 0 ? "当前 Sheet 没有数据行。" : "没有匹配当前筛选条件的数据。"}
+                          <td className="table-empty" colSpan={(activeSheetData.metadata.columns.length || 1) + 1}>
+                            {activeSheetData.rows.length === 0 ? "当前 Sheet 没有数据行。" : "没有匹配当前筛选条件的数据。"}
                           </td>
                         </tr>
                       ) : (
-                        filteredSheetRows.map((row, rowIndex) => (
-                          <tr key={`${activeTab.id}-row-${rowIndex}`}>
-                            <td className="row-number-cell">{rowIndex + 1}</td>
-                            {activeSheetState.data.metadata.columns.map((column, columnIndex) => (
-                              <td key={`${column.fieldName}-${rowIndex}`}>{row[columnIndex] ?? ""}</td>
+                        pagedSheetRows.map((row, rowIndex) => (
+                          <tr key={`${activeTab.id}-row-${pageStartRowNumber + rowIndex}`}>
+                            <td className="row-number-cell">{pageStartRowNumber + rowIndex}</td>
+                            {activeSheetData.metadata.columns.map((column, columnIndex) => (
+                              <td key={`${column.fieldName}-${pageStartRowNumber + rowIndex}`}>{row[columnIndex] ?? ""}</td>
                             ))}
                           </tr>
                         ))

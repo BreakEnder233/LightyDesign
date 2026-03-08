@@ -1,605 +1,70 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 
-type HeaderLayoutRow = {
-  headerType: string;
-};
-
-type SheetColumn = {
-  fieldName: string;
-  type: string;
-  displayName?: string | null;
-  isListType: boolean;
-  isReferenceType: boolean;
-  attributes: Record<string, unknown>;
-};
-
-type SheetMetadata = {
-  workbookName?: string | null;
-  name: string;
-  dataFilePath: string;
-  headerFilePath: string;
-  rowCount: number;
-  columnCount: number;
-  columns: SheetColumn[];
-};
-
-type WorkspaceNavigationSheet = {
-  workbookName: string;
-  name: string;
-  dataFilePath: string;
-  headerFilePath: string;
-  rowCount: number;
-  columnCount: number;
-};
-
-type WorkspaceNavigationWorkbook = {
-  name: string;
-  directoryPath: string;
-  sheetCount: number;
-  sheets: WorkspaceNavigationSheet[];
-};
-
-type WorkspaceNavigationResponse = {
-  rootPath: string;
-  configFilePath: string;
-  headersFilePath: string;
-  headerLayout: {
-    count: number;
-    rows: HeaderLayoutRow[];
-  };
-  workbooks: WorkspaceNavigationWorkbook[];
-};
-
-type SheetResponse = {
-  metadata: SheetMetadata;
-  rows: string[][];
-};
-
-type WorkbookResponse = {
-  name: string;
-  directoryPath: string;
-  previewOnly: boolean;
-  sheets: SheetResponse[];
-};
-
-type WorkspaceTreeSheet = {
-  workbookName: string;
-  sheetName: string;
-  rowCount: number;
-  columnCount: number;
-};
-
-type WorkspaceTreeWorkbook = {
-  name: string;
-  sheets: WorkspaceTreeSheet[];
-};
-
-type SheetTab = {
-  id: string;
-  workbookName: string;
-  sheetName: string;
-};
-
-type SheetLoadState = {
-  status: "idle" | "loading" | "ready" | "error";
-  data?: SheetResponse;
-  draftRows?: string[][];
-  editedCells?: Record<string, string>;
-  undoStack?: CellEditRecord[];
-  redoStack?: CellEditRecord[];
-  dirty?: boolean;
-  error?: string;
-};
-
-type WorkbookSaveState = {
-  status: "idle" | "saving" | "saved" | "error";
-  error?: string;
-};
-
-type CellEditRecord = {
-  rowIndex: number;
-  columnIndex: number;
-  previousValue: string;
-  nextValue: string;
-};
-
-type ColumnEditorKind = "text" | "number" | "boolean" | "reference" | "list";
-
-type ShortcutBinding = {
-  id: string;
-  label: string;
-  hint: string;
-  enabled: boolean;
-  allowInEditableTarget?: boolean;
-  matches: (event: KeyboardEvent) => boolean;
-  run: () => void;
-};
-
-type ToastNotification = {
-  id: number;
-  title: string;
-  summary: string;
-  detail?: string;
-  source: "workspace" | "sheet" | "save" | "system";
-  variant: "error" | "success";
-  canOpenDetail: boolean;
-  durationMs?: number;
-  action?: {
-    label: string;
-    kind: "activate-workbook";
-    workbookName: string;
-  };
-  timestamp: string;
-};
-
-const workspaceStorageKey = "lightydesign.workspacePath";
-const rowHeight = 42;
-const overscanCount = 12;
-
-function buildSheetTabId(workbookName: string, sheetName: string) {
-  return `${workbookName}::${sheetName}`;
-}
-
-function buildWorkspaceScopedStorageKey(workspacePath: string, key: string) {
-  return `${workspaceStorageKey}:${workspacePath}:${key}`;
-}
-
-function isSheetTab(value: unknown): value is SheetTab {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const candidate = value as Partial<SheetTab>;
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.workbookName === "string" &&
-    typeof candidate.sheetName === "string"
-  );
-}
-
-function isSheetAvailable(workspace: WorkspaceNavigationResponse, tab: SheetTab) {
-  return workspace.workbooks.some(
-    (workbook) =>
-      workbook.name === tab.workbookName &&
-      workbook.sheets.some((sheet) => sheet.name === tab.sheetName),
-  );
-}
-
-function buildCellKey(rowIndex: number, columnIndex: number) {
-  return `${rowIndex}:${columnIndex}`;
-}
-
-function cloneRows(rows: string[][]) {
-  return rows.map((row) => [...row]);
-}
-
-function updateRowsAtCell(rows: string[][], rowIndex: number, columnIndex: number, nextValue: string) {
-  const nextRows = [...rows];
-  const nextRow = [...(nextRows[rowIndex] ?? [])];
-  nextRow[columnIndex] = nextValue;
-  nextRows[rowIndex] = nextRow;
-  return nextRows;
-}
-
-function getColumnEditorKind(column: SheetColumn): ColumnEditorKind {
-  const normalizedType = column.type.trim().toLocaleLowerCase();
-
-  if (normalizedType === "bool" || normalizedType === "boolean") {
-    return "boolean";
-  }
-
-  if (["int", "long", "float", "double", "decimal", "short", "byte"].includes(normalizedType)) {
-    return "number";
-  }
-
-  if (column.isReferenceType) {
-    return "reference";
-  }
-
-  if (column.isListType) {
-    return "list";
-  }
-
-  return "text";
-}
-
-function isShortcutModifierPressed(event: KeyboardEvent) {
-  return event.ctrlKey || event.metaKey;
-}
-
-function isShortcutTargetAllowed(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return true;
-  }
-
-  const tagName = target.tagName.toLowerCase();
-  if (tagName === "input" || tagName === "textarea" || tagName === "select") {
-    return target.classList.contains("virtual-cell-input");
-  }
-
-  if (target.isContentEditable) {
-    return false;
-  }
-
-  return true;
-}
-
-function shouldHandleShortcutTarget(shortcut: ShortcutBinding, target: EventTarget | null) {
-  if (shortcut.allowInEditableTarget) {
-    return true;
-  }
-
-  return isShortcutTargetAllowed(target);
-}
-
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}.`;
-
-    try {
-      const payload = (await response.json()) as { error?: string };
-      if (payload.error) {
-        message = payload.error;
-      }
-    } catch {
-      // Ignore invalid JSON payloads and fall back to status-based message.
-    }
-
-    throw new Error(message);
-  }
-
-  return (await response.json()) as T;
-}
+import { ToastCenter } from "./components/ToastCenter";
+import { VirtualSheetTable } from "./components/VirtualSheetTable";
+import { useDesktopHostConnection } from "./hooks/useDesktopHostConnection";
+import { useEditorShortcuts, isShortcutModifierPressed } from "./hooks/useEditorShortcuts";
+import { useToastCenter } from "./hooks/useToastCenter";
+import { useWorkspaceEditor } from "./hooks/useWorkspaceEditor";
+import type { ShortcutBinding } from "./types/desktopApp";
 
 function App() {
-  const [hostInfo, setHostInfo] = useState<DesktopHostInfo | null>(null);
-  const [hostHealth, setHostHealth] = useState<DesktopHostHealth | null>(null);
-  const [workspacePath, setWorkspacePath] = useState<string>(() => localStorage.getItem(workspaceStorageKey) ?? "");
-  const [workspace, setWorkspace] = useState<WorkspaceNavigationResponse | null>(null);
-  const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
-  const [workspaceReloadKey, setWorkspaceReloadKey] = useState(0);
-  const [workspaceSearch, setWorkspaceSearch] = useState("");
-  const [openTabs, setOpenTabs] = useState<SheetTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [sheetStateMap, setSheetStateMap] = useState<Record<string, SheetLoadState>>({});
-  const [workbookSaveStateMap, setWorkbookSaveStateMap] = useState<Record<string, WorkbookSaveState>>({});
-  const [sheetFilter, setSheetFilter] = useState("");
-  const [toastNotifications, setToastNotifications] = useState<ToastNotification[]>([]);
-  const [selectedErrorToastId, setSelectedErrorToastId] = useState<number | null>(null);
-  const [hoveredToastId, setHoveredToastId] = useState<number | null>(null);
-  const nextToastIdRef = useRef(1);
-  const toastTimerMapRef = useRef<Map<number, number>>(new Map());
-  const hasDirtyChanges = useMemo(
-    () => Object.values(sheetStateMap).some((sheetState) => sheetState.dirty),
-    [sheetStateMap],
-  );
+  const { hostInfo, hostHealth } = useDesktopHostConnection();
+  const {
+    toastNotifications,
+    selectedErrorToast,
+    setHoveredToastId,
+    setSelectedErrorToastId,
+    pushToastNotification,
+    openToastDetail,
+    dismissToast,
+    copySelectedErrorDetail,
+  } = useToastCenter();
 
-  useEffect(() => {
-    let disposed = false;
+  const {
+    workspacePath,
+    workspace,
+    workspaceStatus,
+    workspaceError,
+    workspaceSearch,
+    setWorkspaceSearch,
+    openTabs,
+    activeTabId,
+    setActiveTabId,
+    sheetFilter,
+    setSheetFilter,
+    workbookTree,
+    totalSheetCount,
+    activeTab,
+    activeSheetState,
+    activeSheetData,
+    activeSheetRows,
+    activeWorkbookSaveState,
+    activeWorkbookDirtyTabs,
+    filteredRowEntries,
+    openSheet,
+    closeTab,
+    chooseWorkspaceDirectory,
+    retryWorkspaceLoad,
+    retryActiveSheetLoad,
+    updateCellValue,
+    activateWorkbook,
+    undoActiveSheetEdit,
+    redoActiveSheetEdit,
+    restoreActiveSheetDraft,
+    saveActiveWorkbook,
+  } = useWorkspaceEditor({
+    hostInfo,
+    onToast: pushToastNotification,
+  });
 
-    async function loadInfo() {
-      const info = await window.lightyDesign.getDesktopHostInfo();
-      if (!disposed) {
-        setHostInfo(info);
-      }
-    }
-
-    async function loadHealth() {
-      const health = await window.lightyDesign.getDesktopHostHealth();
-      if (!disposed) {
-        setHostHealth(health);
-      }
-    }
-
-    void loadInfo();
-    void loadHealth();
-
-    const timer = window.setInterval(() => {
-      void loadHealth();
-    }, 3000);
-
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!workspacePath) {
-      localStorage.removeItem(workspaceStorageKey);
-      setWorkspace(null);
-      setWorkspaceStatus("idle");
-      setWorkspaceError(null);
-      setOpenTabs([]);
-      setActiveTabId(null);
-      setSheetStateMap({});
-      return;
-    }
-
-    localStorage.setItem(workspaceStorageKey, workspacePath);
-
-    let canceled = false;
-
-    async function loadWorkspace() {
-      if (!hostInfo) {
-        return;
-      }
-
-      setWorkspaceStatus("loading");
-      setWorkspaceError(null);
-
-      try {
-        const query = new URLSearchParams({ workspacePath });
-        const data = await fetchJson<WorkspaceNavigationResponse>(
-          `${hostInfo.desktopHostUrl}/api/workspace/navigation?${query.toString()}`,
-        );
-
-        if (canceled) {
-          return;
-        }
-
-        setWorkspace(data);
-        setWorkspaceStatus("ready");
-        setSheetStateMap({});
-        setWorkbookSaveStateMap({});
-        setSheetFilter("");
-      } catch (error) {
-        if (canceled) {
-          return;
-        }
-
-        setWorkspace(null);
-        setWorkspaceStatus("error");
-        const errorMessage = error instanceof Error ? error.message : "工作区读取失败。";
-        setWorkspaceError(errorMessage);
-        pushToastNotification({
-          title: "工作区加载失败",
-          detail: errorMessage,
-          source: "workspace",
-          variant: "error",
-          canOpenDetail: true,
-          durationMs: 8000,
-        });
-      }
-    }
-
-    void loadWorkspace();
-
-    return () => {
-      canceled = true;
-    };
-  }, [hostInfo, workspacePath, workspaceReloadKey]);
-
-  useEffect(() => {
-    if (!workspacePath || !workspace || workspaceStatus !== "ready") {
-      return;
-    }
-
-    const tabsStorageKey = buildWorkspaceScopedStorageKey(workspacePath, "openTabs");
-    const activeTabStorageKey = buildWorkspaceScopedStorageKey(workspacePath, "activeTabId");
-
-    let restoredTabs: SheetTab[] = [];
-    const rawTabs = localStorage.getItem(tabsStorageKey);
-    if (rawTabs) {
-      try {
-        const parsed = JSON.parse(rawTabs) as unknown;
-        if (Array.isArray(parsed)) {
-          restoredTabs = parsed.filter(isSheetTab).filter((tab) => isSheetAvailable(workspace, tab));
-        }
-      } catch {
-        restoredTabs = [];
-      }
-    }
-
-    const restoredActiveTabId = localStorage.getItem(activeTabStorageKey);
-    const nextActiveTabId = restoredTabs.some((tab) => tab.id === restoredActiveTabId)
-      ? restoredActiveTabId
-      : restoredTabs[0]?.id ?? null;
-
-    setOpenTabs(restoredTabs);
-    setActiveTabId(nextActiveTabId);
-    setSheetStateMap((current) => {
-      const nextStateMap: Record<string, SheetLoadState> = {};
-      restoredTabs.forEach((tab) => {
-        nextStateMap[tab.id] = current[tab.id] ?? { status: "idle" };
-      });
-      return nextStateMap;
-    });
-  }, [workspace, workspacePath, workspaceStatus]);
-
-  useEffect(() => {
-    if (!workspacePath) {
-      return;
-    }
-
-    const tabsStorageKey = buildWorkspaceScopedStorageKey(workspacePath, "openTabs");
-    const activeTabStorageKey = buildWorkspaceScopedStorageKey(workspacePath, "activeTabId");
-
-    localStorage.setItem(tabsStorageKey, JSON.stringify(openTabs));
-    if (activeTabId) {
-      localStorage.setItem(activeTabStorageKey, activeTabId);
-    } else {
-      localStorage.removeItem(activeTabStorageKey);
-    }
-  }, [activeTabId, openTabs, workspacePath]);
-
-  useEffect(() => {
-    if (!hostInfo || !workspacePath || !activeTabId) {
-      return;
-    }
-
-    const currentHostInfo = hostInfo;
-    const currentActiveTab = openTabs.find((tab) => tab.id === activeTabId);
-    if (!currentActiveTab) {
-      return;
-    }
-
-    const resolvedActiveTab = currentActiveTab;
-
-    const existingState = sheetStateMap[resolvedActiveTab.id];
-    if (existingState?.status === "loading" || existingState?.status === "ready") {
-      return;
-    }
-
-    let canceled = false;
-
-    async function loadSheet() {
-      setSheetStateMap((current) => ({
-        ...current,
-        [resolvedActiveTab.id]: {
-          status: "loading",
-        },
-      }));
-
-      try {
-        const query = new URLSearchParams({ workspacePath });
-        const workbookName = encodeURIComponent(resolvedActiveTab.workbookName);
-        const sheetName = encodeURIComponent(resolvedActiveTab.sheetName);
-        const data = await fetchJson<SheetResponse>(
-          `${currentHostInfo.desktopHostUrl}/api/workspace/workbooks/${workbookName}/sheets/${sheetName}?${query.toString()}`,
-        );
-
-        if (canceled) {
-          return;
-        }
-
-        setSheetStateMap((current) => ({
-          ...current,
-          [resolvedActiveTab.id]: {
-            status: "ready",
-            data,
-            draftRows: cloneRows(data.rows),
-            editedCells: {},
-            undoStack: [],
-            redoStack: [],
-            dirty: false,
-          },
-        }));
-      } catch (error) {
-        if (canceled) {
-          return;
-        }
-
-        setSheetStateMap((current) => ({
-          ...current,
-          [resolvedActiveTab.id]: {
-            status: "error",
-            error: error instanceof Error ? error.message : "Sheet 读取失败。",
-          },
-        }));
-
-        pushToastNotification({
-          title: `Sheet 加载失败: ${resolvedActiveTab.sheetName}`,
-          detail: error instanceof Error ? error.message : "Sheet 读取失败。",
-          source: "sheet",
-          variant: "error",
-          canOpenDetail: true,
-          durationMs: 8000,
-        });
-      }
-    }
-
-    void loadSheet();
-
-    return () => {
-      canceled = true;
-    };
-  }, [activeTabId, hostInfo, openTabs, sheetStateMap, workspacePath]);
-
-  const workbookTree = useMemo<WorkspaceTreeWorkbook[]>(() => {
-    if (!workspace) {
-      return [];
-    }
-
-    const search = workspaceSearch.trim().toLocaleLowerCase();
-
-    return workspace.workbooks
-      .map((workbook) => {
-        const sheets = workbook.sheets
-          .filter((sheet) => {
-            if (!search) {
-              return true;
-            }
-
-            return (
-              workbook.name.toLocaleLowerCase().includes(search) ||
-              sheet.name.toLocaleLowerCase().includes(search)
-            );
-          })
-          .map((sheet) => ({
-            workbookName: workbook.name,
-            sheetName: sheet.name,
-            rowCount: sheet.rowCount,
-            columnCount: sheet.columnCount,
-          }));
-
-        if (!search || workbook.name.toLocaleLowerCase().includes(search) || sheets.length > 0) {
-          return {
-            name: workbook.name,
-            sheets,
-          };
-        }
-
-        return null;
-      })
-      .filter((workbook): workbook is WorkspaceTreeWorkbook => workbook !== null);
-  }, [workspace, workspaceSearch]);
-
-  const activeTab = openTabs.find((tab) => tab.id === activeTabId) ?? null;
-  const activeSheetState = activeTab ? sheetStateMap[activeTab.id] : undefined;
-  const activeSheetData = activeSheetState?.data;
-  const activeSheetRows = activeSheetState?.draftRows ?? activeSheetData?.rows ?? [];
-  const deferredWorkspaceSearch = useDeferredValue(workspaceSearch);
-  const deferredSheetFilter = useDeferredValue(sheetFilter);
   const hostStatusLabel = hostHealth?.ok ? "Connected" : "Starting";
   const hostStatusClassName = hostHealth?.ok ? "status-pill is-ok" : "status-pill";
-  const totalSheetCount = workbookTree.reduce((count, workbook) => count + workbook.sheets.length, 0);
-  const activeWorkbookSaveState = activeTab ? workbookSaveStateMap[activeTab.workbookName] : undefined;
-  const activeWorkbookDirtyTabs = useMemo(
-    () => openTabs.filter((tab) => tab.workbookName === activeTab?.workbookName && sheetStateMap[tab.id]?.dirty),
-    [activeTab?.workbookName, openTabs, sheetStateMap],
-  );
   const canUndoActiveSheet = Boolean(activeSheetState?.undoStack?.length);
   const canRedoActiveSheet = Boolean(activeSheetState?.redoStack?.length);
   const canSaveActiveWorkbook = Boolean(
     activeTab && hostInfo && workspacePath && activeWorkbookDirtyTabs.length > 0 && activeWorkbookSaveState?.status !== "saving",
   );
-  const selectedErrorToast = useMemo(
-    () => toastNotifications.find((toast) => toast.id === selectedErrorToastId && toast.canOpenDetail) ?? null,
-    [toastNotifications, selectedErrorToastId],
-  );
-  const filteredRowEntries = useMemo(() => {
-    const search = deferredSheetFilter.trim().toLocaleLowerCase();
-    const indexedRows = activeSheetRows.map((row, rowIndex) => ({
-      row,
-      rowIndex,
-    }));
-
-    if (!search) {
-      return indexedRows;
-    }
-
-    return indexedRows.filter(({ row }) => row.some((cell) => cell.toLocaleLowerCase().includes(search)));
-  }, [activeSheetRows, deferredSheetFilter]);
-
-  useEffect(() => {
-    if (!hasDirtyChanges) {
-      return;
-    }
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
-  }, [hasDirtyChanges]);
 
   const shortcutBindings = useMemo<ShortcutBinding[]>(
     () => [
@@ -633,659 +98,60 @@ function App() {
         run: redoActiveSheetEdit,
       },
     ],
-    [canRedoActiveSheet, canSaveActiveWorkbook, canUndoActiveSheet, redoActiveSheetEdit, undoActiveSheetEdit],
+    [canRedoActiveSheet, canSaveActiveWorkbook, canUndoActiveSheet, redoActiveSheetEdit, saveActiveWorkbook, undoActiveSheetEdit],
   );
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing) {
-        return;
-      }
+  useEditorShortcuts(shortcutBindings);
 
-      const matchedShortcut = shortcutBindings.find(
-        (shortcut) => shortcut.enabled && shouldHandleShortcutTarget(shortcut, event.target) && shortcut.matches(event),
-      );
-      if (!matchedShortcut) {
-        return;
-      }
-
-      event.preventDefault();
-      matchedShortcut.run();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [shortcutBindings]);
-
-  useEffect(() => {
-    const activeToastIds = new Set(toastNotifications.map((toast) => toast.id));
-
-    for (const [toastId, timeoutId] of toastTimerMapRef.current.entries()) {
-      if (!activeToastIds.has(toastId) || hoveredToastId === toastId || selectedErrorToastId === toastId) {
-        window.clearTimeout(timeoutId);
-        toastTimerMapRef.current.delete(toastId);
-      }
+  async function handleCopySelectedDetail() {
+    const result = await copySelectedErrorDetail();
+    if (result.ok) {
+      pushToastNotification({
+        title: "错误详情已复制",
+        detail: `已复制 ${result.title} 的完整错误信息。`,
+        source: "system",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 3200,
+      });
+      return;
     }
 
-    toastNotifications.forEach((toast) => {
-      if (!toast.durationMs || hoveredToastId === toast.id || selectedErrorToastId === toast.id) {
-        return;
-      }
-
-      if (toastTimerMapRef.current.has(toast.id)) {
-        return;
-      }
-
-      const timeoutId = window.setTimeout(() => {
-        dismissErrorToast(toast.id);
-      }, toast.durationMs);
-
-      toastTimerMapRef.current.set(toast.id, timeoutId);
-    });
-  }, [hoveredToastId, selectedErrorToastId, toastNotifications]);
-
-  useEffect(() => {
-    return () => {
-      for (const timeoutId of toastTimerMapRef.current.values()) {
-        window.clearTimeout(timeoutId);
-      }
-
-      toastTimerMapRef.current.clear();
-    };
-  }, []);
-
-  function openSheet(workbookName: string, sheetName: string) {
-    const id = buildSheetTabId(workbookName, sheetName);
-
-    setOpenTabs((current) => {
-      if (current.some((tab) => tab.id === id)) {
-        return current;
-      }
-
-      return [...current, { id, workbookName, sheetName }];
-    });
-
-    setActiveTabId(id);
-    setSheetFilter("");
-  }
-
-  function closeTab(tabId: string) {
-    const closingSheetState = sheetStateMap[tabId];
-    if (closingSheetState?.dirty) {
-      const shouldClose = window.confirm("当前 Sheet 有未保存修改，确认关闭这个标签页吗？");
-      if (!shouldClose) {
-        return;
-      }
-    }
-
-    setOpenTabs((current) => {
-      const nextTabs = current.filter((tab) => tab.id !== tabId);
-
-      if (tabId === activeTabId) {
-        const closingIndex = current.findIndex((tab) => tab.id === tabId);
-        const fallbackTab = nextTabs[Math.max(0, closingIndex - 1)] ?? nextTabs[0] ?? null;
-        setActiveTabId(fallbackTab?.id ?? null);
-        setSheetFilter("");
-      }
-
-      return nextTabs;
+    pushToastNotification({
+      title: "复制错误详情失败",
+      detail: result.errorMessage ?? "剪贴板写入失败。",
+      source: "system",
+      variant: "error",
+      canOpenDetail: true,
+      durationMs: 8000,
     });
   }
 
-  async function chooseWorkspaceDirectory() {
-    if (hasDirtyChanges) {
-      const shouldSwitch = window.confirm("当前存在未保存修改，确认切换工作区目录吗？");
-      if (!shouldSwitch) {
-        return;
-      }
-    }
-
-    const selectedPath = await window.lightyDesign.chooseWorkspaceDirectory();
-    if (selectedPath) {
-      setWorkspacePath(selectedPath);
-      setWorkspaceSearch("");
-    }
-  }
-
-  function retryWorkspaceLoad() {
-    if (!workspacePath) {
-      return;
-    }
-
-    setWorkspaceReloadKey((current) => current + 1);
-  }
-
-  function retryActiveSheetLoad() {
-    if (!activeTab) {
-      return;
-    }
-
-    setSheetStateMap((current) => ({
-      ...current,
-      [activeTab.id]: {
-        status: "idle",
-      },
-    }));
-  }
-
-  function updateCellValue(rowIndex: number, columnIndex: number, nextValue: string) {
-    if (!activeTab || !activeSheetState?.data) {
-      return;
-    }
-
-    const currentDraftRows = activeSheetState.draftRows ?? activeSheetState.data.rows;
-    const previousValue = currentDraftRows[rowIndex]?.[columnIndex] ?? "";
-    if (previousValue === nextValue) {
-      return;
-    }
-
-    const originalValue = activeSheetState.data.rows[rowIndex]?.[columnIndex] ?? "";
-    const cellKey = buildCellKey(rowIndex, columnIndex);
-
-    setSheetStateMap((current) => {
-      const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data) {
-        return current;
-      }
-
-      const nextDraftRows = updateRowsAtCell(
-        currentSheetState.draftRows ?? currentSheetState.data.rows,
-        rowIndex,
-        columnIndex,
-        nextValue,
-      );
-
-      const nextEditedCells = {
-        ...(currentSheetState.editedCells ?? {}),
-      };
-
-      if (nextValue === originalValue) {
-        delete nextEditedCells[cellKey];
-      } else {
-        nextEditedCells[cellKey] = nextValue;
-      }
-
-      return {
-        ...current,
-        [activeTab.id]: {
-          ...currentSheetState,
-          draftRows: nextDraftRows,
-          editedCells: nextEditedCells,
-          undoStack: [
-            ...(currentSheetState.undoStack ?? []),
-            {
-              rowIndex,
-              columnIndex,
-              previousValue,
-              nextValue,
-            },
-          ],
-          redoStack: [],
-          dirty: Object.keys(nextEditedCells).length > 0,
-        },
-      };
-    });
-
-    setWorkbookSaveStateMap((current) => ({
-      ...current,
-      [activeTab.workbookName]: {
-        status: "idle",
-      },
-    }));
-  }
-
-  function pushToastNotification({
-    title,
-    detail,
-    source,
-    variant,
-    canOpenDetail,
-    durationMs,
-    action,
-  }: Omit<ToastNotification, "id" | "summary" | "timestamp">) {
-    const normalizedDetail = detail?.trim();
-    const summarySource = normalizedDetail ?? title;
-    const nextToast: ToastNotification = {
-      id: nextToastIdRef.current,
-      title,
-      summary: summarySource.length > 120 ? `${summarySource.slice(0, 117)}...` : summarySource,
-      detail: normalizedDetail,
-      source,
-      variant,
-      canOpenDetail,
-      durationMs,
-      action,
-      timestamp: new Date().toLocaleString("zh-CN", { hour12: false }),
-    };
-
-    nextToastIdRef.current += 1;
-
-    setToastNotifications((current) => [nextToast, ...current].slice(0, 5));
-  }
-
-  function openErrorToastDetail(toastId: number) {
-    const targetToast = toastNotifications.find((toast) => toast.id === toastId);
-    if (!targetToast?.canOpenDetail) {
-      return;
-    }
-
-    setSelectedErrorToastId(toastId);
-  }
-
-  function dismissErrorToast(toastId: number) {
-    const timeoutId = toastTimerMapRef.current.get(toastId);
-    if (timeoutId) {
-      window.clearTimeout(timeoutId);
-      toastTimerMapRef.current.delete(toastId);
-    }
-
-    setToastNotifications((current) => current.filter((toast) => toast.id !== toastId));
-    setSelectedErrorToastId((current) => (current === toastId ? null : current));
-    setHoveredToastId((current) => (current === toastId ? null : current));
-  }
-
-  function activateWorkbookFromToast(workbookName: string) {
-    const existingTab = openTabs.find((tab) => tab.workbookName === workbookName);
-    if (existingTab) {
-      setActiveTabId(existingTab.id);
-      return;
-    }
-
-    const targetWorkbook = workspace?.workbooks.find((workbook) => workbook.name === workbookName);
-    const firstSheet = targetWorkbook?.sheets[0];
-    if (firstSheet) {
-      openSheet(firstSheet.workbookName, firstSheet.name);
-    }
-  }
-
-  function runToastAction(toastId: number) {
+  function handleRunToastAction(toastId: number) {
     const targetToast = toastNotifications.find((toast) => toast.id === toastId);
     if (!targetToast?.action) {
       return;
     }
 
     if (targetToast.action.kind === "activate-workbook") {
-      activateWorkbookFromToast(targetToast.action.workbookName);
+      activateWorkbook(targetToast.action.workbookName);
     }
 
-    dismissErrorToast(toastId);
-  }
-
-  async function copySelectedErrorDetail() {
-    if (!selectedErrorToast?.detail) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(selectedErrorToast.detail);
-      pushToastNotification({
-        title: "错误详情已复制",
-        detail: `已复制 ${selectedErrorToast.title} 的完整错误信息。`,
-        source: "system",
-        variant: "success",
-        canOpenDetail: false,
-        durationMs: 3200,
-      });
-    } catch (error) {
-      pushToastNotification({
-        title: "复制错误详情失败",
-        detail: error instanceof Error ? error.message : "剪贴板写入失败。",
-        source: "system",
-        variant: "error",
-        canOpenDetail: true,
-        durationMs: 8000,
-      });
-    }
-  }
-
-  function undoActiveSheetEdit() {
-    if (!activeTab) {
-      return;
-    }
-
-    setSheetStateMap((current) => {
-      const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data || !currentSheetState.undoStack?.length) {
-        return current;
-      }
-
-      const undoStack = [...currentSheetState.undoStack];
-      const lastEdit = undoStack.pop();
-      if (!lastEdit) {
-        return current;
-      }
-
-      const nextDraftRows = updateRowsAtCell(
-        currentSheetState.draftRows ?? currentSheetState.data.rows,
-        lastEdit.rowIndex,
-        lastEdit.columnIndex,
-        lastEdit.previousValue,
-      );
-
-      const originalValue = currentSheetState.data.rows[lastEdit.rowIndex]?.[lastEdit.columnIndex] ?? "";
-      const cellKey = buildCellKey(lastEdit.rowIndex, lastEdit.columnIndex);
-      const nextEditedCells = {
-        ...(currentSheetState.editedCells ?? {}),
-      };
-
-      if (lastEdit.previousValue === originalValue) {
-        delete nextEditedCells[cellKey];
-      } else {
-        nextEditedCells[cellKey] = lastEdit.previousValue;
-      }
-
-      return {
-        ...current,
-        [activeTab.id]: {
-          ...currentSheetState,
-          draftRows: nextDraftRows,
-          editedCells: nextEditedCells,
-          undoStack,
-          redoStack: [...(currentSheetState.redoStack ?? []), lastEdit],
-          dirty: Object.keys(nextEditedCells).length > 0,
-        },
-      };
-    });
-
-    setWorkbookSaveStateMap((current) => ({
-      ...current,
-      [activeTab.workbookName]: {
-        status: "idle",
-      },
-    }));
-  }
-
-  function redoActiveSheetEdit() {
-    if (!activeTab) {
-      return;
-    }
-
-    setSheetStateMap((current) => {
-      const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data || !currentSheetState.redoStack?.length) {
-        return current;
-      }
-
-      const redoStack = [...currentSheetState.redoStack];
-      const lastRedo = redoStack.pop();
-      if (!lastRedo) {
-        return current;
-      }
-
-      const nextDraftRows = updateRowsAtCell(
-        currentSheetState.draftRows ?? currentSheetState.data.rows,
-        lastRedo.rowIndex,
-        lastRedo.columnIndex,
-        lastRedo.nextValue,
-      );
-
-      const originalValue = currentSheetState.data.rows[lastRedo.rowIndex]?.[lastRedo.columnIndex] ?? "";
-      const cellKey = buildCellKey(lastRedo.rowIndex, lastRedo.columnIndex);
-      const nextEditedCells = {
-        ...(currentSheetState.editedCells ?? {}),
-      };
-
-      if (lastRedo.nextValue === originalValue) {
-        delete nextEditedCells[cellKey];
-      } else {
-        nextEditedCells[cellKey] = lastRedo.nextValue;
-      }
-
-      return {
-        ...current,
-        [activeTab.id]: {
-          ...currentSheetState,
-          draftRows: nextDraftRows,
-          editedCells: nextEditedCells,
-          undoStack: [...(currentSheetState.undoStack ?? []), lastRedo],
-          redoStack,
-          dirty: Object.keys(nextEditedCells).length > 0,
-        },
-      };
-    });
-
-    setWorkbookSaveStateMap((current) => ({
-      ...current,
-      [activeTab.workbookName]: {
-        status: "idle",
-      },
-    }));
-  }
-
-  function restoreActiveSheetDraft() {
-    if (!activeTab) {
-      return;
-    }
-
-    const shouldRestore = window.confirm("确认恢复当前 Sheet 到最近一次保存状态吗？");
-    if (!shouldRestore) {
-      return;
-    }
-
-    setSheetStateMap((current) => {
-      const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [activeTab.id]: {
-          ...currentSheetState,
-          draftRows: cloneRows(currentSheetState.data.rows),
-          editedCells: {},
-          undoStack: [],
-          redoStack: [],
-          dirty: false,
-        },
-      };
-    });
-
-    setWorkbookSaveStateMap((current) => ({
-      ...current,
-      [activeTab.workbookName]: {
-        status: "idle",
-      },
-    }));
-  }
-
-  async function saveActiveWorkbook() {
-    if (!activeTab || !hostInfo || !workspacePath || activeWorkbookDirtyTabs.length === 0) {
-      return;
-    }
-
-    const workbookName = activeTab.workbookName;
-    setWorkbookSaveStateMap((current) => ({
-      ...current,
-      [workbookName]: {
-        status: "saving",
-      },
-    }));
-
-    try {
-      const query = new URLSearchParams({ workspacePath });
-      const workbookResponse = await fetchJson<WorkbookResponse>(
-        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/${encodeURIComponent(workbookName)}?${query.toString()}`,
-      );
-
-      const dirtySheetMap = new Map(
-        activeWorkbookDirtyTabs.map((tab) => [tab.sheetName, sheetStateMap[tab.id]]),
-      );
-
-      const payload = {
-        workspacePath,
-        workbook: {
-          name: workbookResponse.name,
-          sheets: workbookResponse.sheets.map((sheet) => {
-            const dirtySheetState = dirtySheetMap.get(sheet.metadata.name);
-            const rows = dirtySheetState?.draftRows ?? sheet.rows;
-
-            return {
-              name: sheet.metadata.name,
-              columns: sheet.metadata.columns.map((column) => ({
-                fieldName: column.fieldName,
-                type: column.type,
-                displayName: column.displayName,
-                attributes: column.attributes,
-              })),
-              rows,
-            };
-          }),
-        },
-      };
-
-      const savedWorkbook = await fetchJson<WorkbookResponse>(
-        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/save`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        },
-      );
-
-      const savedSheetMap = new Map(savedWorkbook.sheets.map((sheet) => [sheet.metadata.name, sheet]));
-
-      setSheetStateMap((current) => {
-        const nextStateMap = { ...current };
-
-        openTabs
-          .filter((tab) => tab.workbookName === workbookName)
-          .forEach((tab) => {
-            const savedSheet = savedSheetMap.get(tab.sheetName);
-            if (!savedSheet) {
-              return;
-            }
-
-            nextStateMap[tab.id] = {
-              status: "ready",
-              data: savedSheet,
-              draftRows: cloneRows(savedSheet.rows),
-              editedCells: {},
-              undoStack: [],
-              redoStack: [],
-              dirty: false,
-            };
-          });
-
-        return nextStateMap;
-      });
-
-      setWorkbookSaveStateMap((current) => ({
-        ...current,
-        [workbookName]: {
-          status: "saved",
-        },
-      }));
-      pushToastNotification({
-        title: `工作簿保存成功: ${workbookName}`,
-        detail: `已成功保存 ${activeWorkbookDirtyTabs.length} 个脏 Sheet。`,
-        source: "save",
-        variant: "success",
-        canOpenDetail: false,
-        durationMs: 4200,
-        action: {
-          label: "定位到工作簿",
-          kind: "activate-workbook",
-          workbookName,
-        },
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "保存工作簿失败。";
-      setWorkbookSaveStateMap((current) => ({
-        ...current,
-        [workbookName]: {
-          status: "error",
-          error: errorMessage,
-        },
-      }));
-      pushToastNotification({
-        title: `工作簿保存失败: ${workbookName}`,
-        detail: errorMessage,
-        source: "save",
-        variant: "error",
-        canOpenDetail: true,
-        durationMs: 8000,
-      });
-    }
+    dismissToast(toastId);
   }
 
   return (
     <div className="app-shell">
-      <div className="toast-stack" role="status" aria-live="polite">
-        {toastNotifications.map((toast) => (
-          <div
-            className={`toast-message is-${toast.variant}`}
-            key={toast.id}
-            onMouseEnter={() => setHoveredToastId(toast.id)}
-            onMouseLeave={() => setHoveredToastId((current) => (current === toast.id ? null : current))}
-          >
-            <div className="toast-message-main">
-              {toast.canOpenDetail ? (
-                <button className="toast-message-trigger" onClick={() => openErrorToastDetail(toast.id)} type="button">
-                  <span className="toast-message-title">{toast.title}</span>
-                  <span className="toast-message-summary">{toast.summary}</span>
-                  <span className="toast-message-meta">点击查看详情</span>
-                </button>
-              ) : (
-                <div className="toast-message-body">
-                  <span className="toast-message-title">{toast.title}</span>
-                  <span className="toast-message-summary">{toast.summary}</span>
-                  <span className="toast-message-meta">{toast.timestamp}</span>
-                </div>
-              )}
-
-              {toast.action ? (
-                <button className="toast-message-action" onClick={() => runToastAction(toast.id)} type="button">
-                  {toast.action.label}
-                </button>
-              ) : null}
-            </div>
-            <button
-              aria-label="关闭消息气泡"
-              className="toast-message-dismiss"
-              onClick={() => dismissErrorToast(toast.id)}
-              type="button"
-            >
-              ×
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {selectedErrorToast ? (
-        <div className="error-detail-backdrop" onClick={() => setSelectedErrorToastId(null)} role="presentation">
-          <section
-            aria-labelledby="error-detail-title"
-            className="error-detail-dialog"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-          >
-            <div className="error-detail-header">
-              <div>
-                <p className="eyebrow">Error Detail</p>
-                <h2 id="error-detail-title">{selectedErrorToast.title}</h2>
-              </div>
-              <div className="error-detail-actions">
-                <button className="secondary-button" onClick={() => void copySelectedErrorDetail()} type="button">
-                  复制详情
-                </button>
-                <button className="secondary-button" onClick={() => setSelectedErrorToastId(null)} type="button">
-                  关闭
-                </button>
-              </div>
-            </div>
-            <div className="error-detail-meta">
-              <span>来源: {selectedErrorToast.source}</span>
-              <span>时间: {selectedErrorToast.timestamp}</span>
-            </div>
-            <pre className="error-detail-body">{selectedErrorToast.detail}</pre>
-          </section>
-        </div>
-      ) : null}
+      <ToastCenter
+        onCloseSelectedToast={() => setSelectedErrorToastId(null)}
+        onCopySelectedDetail={() => void handleCopySelectedDetail()}
+        onDismissToast={dismissToast}
+        onHoverToast={setHoveredToastId}
+        onOpenToastDetail={openToastDetail}
+        onRunToastAction={handleRunToastAction}
+        selectedToast={selectedErrorToast}
+        toasts={toastNotifications}
+      />
 
       <aside className="workspace-sidebar">
         <div className="brand-block">
@@ -1380,7 +246,7 @@ function App() {
 
                   <div className="tree-sheet-list">
                     {workbook.sheets.map((sheet) => {
-                      const tabId = buildSheetTabId(sheet.workbookName, sheet.sheetName);
+                      const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
                       const isActive = activeTabId === tabId;
 
                       return (
@@ -1439,10 +305,7 @@ function App() {
               <div className="tab-strip-empty">打开左侧任意 Sheet，开始查看数据。</div>
             ) : (
               openTabs.map((tab) => (
-                <div
-                  className={`sheet-tab${tab.id === activeTabId ? " is-active" : ""}`}
-                  key={tab.id}
-                >
+                <div className={`sheet-tab${tab.id === activeTabId ? " is-active" : ""}`} key={tab.id}>
                   <button className="sheet-tab-trigger" onClick={() => setActiveTabId(tab.id)} type="button">
                     <span>{tab.sheetName}</span>
                     <em>{tab.workbookName}</em>
@@ -1585,125 +448,6 @@ function App() {
           </div>
         </section>
       </main>
-    </div>
-  );
-}
-
-type VirtualSheetTableProps = {
-  columns: SheetColumn[];
-  rows: Array<{
-    row: string[];
-    rowIndex: number;
-  }>;
-  editedCells: Record<string, string>;
-  onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
-};
-
-function VirtualSheetTable({ columns, rows, editedCells, onEditCell }: VirtualSheetTableProps) {
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const headerRef = useRef<HTMLDivElement | null>(null);
-  const gridTemplateColumns = useMemo(
-    () => `72px repeat(${columns.length}, minmax(180px, 1fr))`,
-    [columns.length],
-  );
-  const minTableWidth = `${72 + columns.length * 180}px`;
-  const rowVirtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => bodyRef.current,
-    estimateSize: () => rowHeight,
-    overscan: overscanCount,
-  });
-
-  function syncHeaderScroll() {
-    if (!bodyRef.current || !headerRef.current) {
-      return;
-    }
-
-    headerRef.current.scrollLeft = bodyRef.current.scrollLeft;
-  }
-
-  if (rows.length === 0) {
-    return (
-      <div className="table-empty-panel">
-        没有匹配当前筛选条件的数据。
-      </div>
-    );
-  }
-
-  return (
-    <div className="virtual-table-shell">
-      <div className="virtual-table-header-scroll" ref={headerRef}>
-        <div className="virtual-table-header" style={{ gridTemplateColumns, minWidth: minTableWidth }}>
-          <div className="virtual-header-cell row-number-cell is-header">#</div>
-          {columns.map((column) => (
-            <div className="virtual-header-cell" key={column.fieldName}>
-              <div>{column.displayName || column.fieldName}</div>
-              <small>{column.type}</small>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="virtual-table-body-scroll" onScroll={syncHeaderScroll} ref={bodyRef}>
-        <div className="virtual-table-canvas" style={{ height: rowVirtualizer.getTotalSize(), minWidth: minTableWidth }}>
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const rowEntry = rows[virtualRow.index];
-            const visualRowNumber = rowEntry.rowIndex + 1;
-
-            return (
-              <div
-                className="virtual-table-row"
-                key={visualRowNumber}
-                style={{
-                  gridTemplateColumns,
-                  height: virtualRow.size,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                <div className="virtual-row-number row-number-cell">{visualRowNumber}</div>
-                {columns.map((column, columnIndex) => {
-                  const cellKey = buildCellKey(rowEntry.rowIndex, columnIndex);
-                  const isDirty = Object.prototype.hasOwnProperty.call(editedCells, cellKey);
-                  const editorKind = getColumnEditorKind(column);
-                  const cellValue = rowEntry.row[columnIndex] ?? "";
-
-                  return (
-                    <label className={`virtual-cell is-${editorKind}${isDirty ? " is-dirty" : ""}`} key={`${column.fieldName}-${visualRowNumber}`}>
-                      {editorKind === "boolean" ? (
-                        <select
-                          className="virtual-cell-input virtual-cell-select"
-                          onChange={(event) => onEditCell(rowEntry.rowIndex, columnIndex, event.target.value)}
-                          value={cellValue}
-                        >
-                          <option value="">(empty)</option>
-                          <option value="true">true</option>
-                          <option value="false">false</option>
-                        </select>
-                      ) : (
-                        <input
-                          className={`virtual-cell-input${editorKind === "reference" || editorKind === "list" ? " is-code" : ""}`}
-                          inputMode={editorKind === "number" ? "decimal" : "text"}
-                          onChange={(event) => onEditCell(rowEntry.rowIndex, columnIndex, event.target.value)}
-                          placeholder={
-                            editorKind === "reference"
-                              ? "[[id]]"
-                              : editorKind === "list"
-                                ? "逗号分隔值"
-                                : undefined
-                          }
-                          spellCheck={editorKind === "reference" || editorKind === "list" ? false : true}
-                          type="text"
-                          value={cellValue}
-                        />
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 }

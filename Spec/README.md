@@ -10,6 +10,126 @@
 4. [DesktopApp/README.md](DesktopApp/README.md)
 5. [Tooling/README.md](Tooling/README.md)
 
+## 试运行方法
+
+以下步骤用于把整个解决方案在本地跑起来，并完成基本验证。
+
+### 环境准备
+
+在 Windows 环境下，先安装以下依赖：
+
+1. .NET SDK 9
+2. Node.js LTS
+3. PowerShell 5.1 或更高版本
+
+### 方式一：一键引导并启动桌面端
+
+在仓库根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1 -RunDesktop
+```
+
+该命令会完成以下工作：
+
+1. 还原并构建 .NET 解决方案
+2. 安装桌面端前端依赖
+3. 构建桌面端前端
+4. 启动 Electron 开发模式
+
+如果你位于中国大陆，依赖下载较慢或失败，可以改用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1 -RunDesktop -UseChinaMirror
+```
+
+### 方式二：分步手动试运行
+
+#### 1. 构建和测试整个解决方案
+
+在仓库根目录执行：
+
+```powershell
+dotnet restore .\LightyDesign.sln
+dotnet build .\LightyDesign.sln
+dotnet test .\LightyDesign.sln
+```
+
+这一步用于验证 Core、DesktopHost、Generator 和测试项目都能正常编译和通过测试。
+
+#### 2. 构建桌面端前端
+
+在 `app\desktop` 目录执行：
+
+```powershell
+npm ci
+npm run build
+```
+
+如果只想启动前端开发模式，可执行：
+
+```powershell
+npm run dev
+```
+
+#### 3. 单独启动 DesktopHost
+
+在仓库根目录执行：
+
+```powershell
+dotnet run --project .\src\LightyDesign.DesktopHost\LightyDesign.DesktopHost.csproj --no-launch-profile --urls http://127.0.0.1:5000
+```
+
+该宿主启动后，可用于单独验证本地 API。
+
+#### 4. 启动桌面端开发壳
+
+推荐仍然使用引导脚本启动：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1 -RunDesktop
+```
+
+### 方式三：生成部署目录并试跑
+
+在仓库根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Deploy-LightyDesign.ps1
+```
+
+如在中国大陆网络环境下需要镜像支持，可执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Deploy-LightyDesign.ps1 -UseChinaMirror
+```
+
+生成完成后，到部署输出目录执行：
+
+```powershell
+.\Start-LightyDesign.ps1
+```
+
+这用于验证发布目录中的 DesktopHost、Electron 前端和本地 Electron 运行时是否能够协同启动。
+
+### 建议的最小验证顺序
+
+如果你只是想快速确认当前仓库可用，建议按以下顺序执行：
+
+1. `dotnet test .\LightyDesign.sln`
+2. 进入 `app\desktop` 后执行 `npm run build`
+3. 执行 `powershell -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1 -RunDesktop`
+
+### 试运行结果判断
+
+满足以下条件时，可认为当前解决方案已成功试运行：
+
+1. `dotnet test .\LightyDesign.sln` 通过
+2. `app\desktop` 下 `npm run build` 通过
+3. Electron 桌面端窗口能够打开
+4. 桌面端内能显示 DesktopHost 已连接状态
+5. 选择一个有效工作区目录后，能够正常加载工作簿树和 Sheet 数据
+
 ## 工作区结构
 
 - 工作区：一个目录，包含 `config.json`、`headers.json` 和多个工作簿子目录。

@@ -111,8 +111,26 @@ type ShortcutBinding = {
   label: string;
   hint: string;
   enabled: boolean;
+  allowInEditableTarget?: boolean;
   matches: (event: KeyboardEvent) => boolean;
   run: () => void;
+};
+
+type ToastNotification = {
+  id: number;
+  title: string;
+  summary: string;
+  detail?: string;
+  source: "workspace" | "sheet" | "save" | "system";
+  variant: "error" | "success";
+  canOpenDetail: boolean;
+  durationMs?: number;
+  action?: {
+    label: string;
+    kind: "activate-workbook";
+    workbookName: string;
+  };
+  timestamp: string;
 };
 
 const workspaceStorageKey = "lightydesign.workspacePath";
@@ -207,6 +225,14 @@ function isShortcutTargetAllowed(target: EventTarget | null) {
   return true;
 }
 
+function shouldHandleShortcutTarget(shortcut: ShortcutBinding, target: EventTarget | null) {
+  if (shortcut.allowInEditableTarget) {
+    return true;
+  }
+
+  return isShortcutTargetAllowed(target);
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   if (!response.ok) {
@@ -241,6 +267,11 @@ function App() {
   const [sheetStateMap, setSheetStateMap] = useState<Record<string, SheetLoadState>>({});
   const [workbookSaveStateMap, setWorkbookSaveStateMap] = useState<Record<string, WorkbookSaveState>>({});
   const [sheetFilter, setSheetFilter] = useState("");
+  const [toastNotifications, setToastNotifications] = useState<ToastNotification[]>([]);
+  const [selectedErrorToastId, setSelectedErrorToastId] = useState<number | null>(null);
+  const [hoveredToastId, setHoveredToastId] = useState<number | null>(null);
+  const nextToastIdRef = useRef(1);
+  const toastTimerMapRef = useRef<Map<number, number>>(new Map());
   const hasDirtyChanges = useMemo(
     () => Object.values(sheetStateMap).some((sheetState) => sheetState.dirty),
     [sheetStateMap],
@@ -322,7 +353,16 @@ function App() {
 
         setWorkspace(null);
         setWorkspaceStatus("error");
-        setWorkspaceError(error instanceof Error ? error.message : "工作区读取失败。");
+        const errorMessage = error instanceof Error ? error.message : "工作区读取失败。";
+        setWorkspaceError(errorMessage);
+        pushToastNotification({
+          title: "工作区加载失败",
+          detail: errorMessage,
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: true,
+          durationMs: 8000,
+        });
       }
     }
 
@@ -450,6 +490,15 @@ function App() {
             error: error instanceof Error ? error.message : "Sheet 读取失败。",
           },
         }));
+
+        pushToastNotification({
+          title: `Sheet 加载失败: ${resolvedActiveTab.sheetName}`,
+          detail: error instanceof Error ? error.message : "Sheet 读取失败。",
+          source: "sheet",
+          variant: "error",
+          canOpenDetail: true,
+          durationMs: 8000,
+        });
       }
     }
 
@@ -515,6 +564,13 @@ function App() {
   );
   const canUndoActiveSheet = Boolean(activeSheetState?.undoStack?.length);
   const canRedoActiveSheet = Boolean(activeSheetState?.redoStack?.length);
+  const canSaveActiveWorkbook = Boolean(
+    activeTab && hostInfo && workspacePath && activeWorkbookDirtyTabs.length > 0 && activeWorkbookSaveState?.status !== "saving",
+  );
+  const selectedErrorToast = useMemo(
+    () => toastNotifications.find((toast) => toast.id === selectedErrorToastId && toast.canOpenDetail) ?? null,
+    [toastNotifications, selectedErrorToastId],
+  );
   const filteredRowEntries = useMemo(() => {
     const search = deferredSheetFilter.trim().toLocaleLowerCase();
     const indexedRows = activeSheetRows.map((row, rowIndex) => ({
@@ -548,6 +604,17 @@ function App() {
   const shortcutBindings = useMemo<ShortcutBinding[]>(
     () => [
       {
+        id: "save-active-workbook",
+        label: "保存当前工作簿",
+        hint: "Ctrl+S",
+        enabled: canSaveActiveWorkbook,
+        allowInEditableTarget: true,
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "s",
+        run: () => {
+          void saveActiveWorkbook();
+        },
+      },
+      {
         id: "undo-sheet-edit",
         label: "撤销当前 Sheet 编辑",
         hint: "Ctrl+Z",
@@ -566,16 +633,18 @@ function App() {
         run: redoActiveSheetEdit,
       },
     ],
-    [canRedoActiveSheet, canUndoActiveSheet, redoActiveSheetEdit, undoActiveSheetEdit],
+    [canRedoActiveSheet, canSaveActiveWorkbook, canUndoActiveSheet, redoActiveSheetEdit, undoActiveSheetEdit],
   );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || !isShortcutTargetAllowed(event.target)) {
+      if (event.defaultPrevented || event.isComposing) {
         return;
       }
 
-      const matchedShortcut = shortcutBindings.find((shortcut) => shortcut.enabled && shortcut.matches(event));
+      const matchedShortcut = shortcutBindings.find(
+        (shortcut) => shortcut.enabled && shouldHandleShortcutTarget(shortcut, event.target) && shortcut.matches(event),
+      );
       if (!matchedShortcut) {
         return;
       }
@@ -589,6 +658,43 @@ function App() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [shortcutBindings]);
+
+  useEffect(() => {
+    const activeToastIds = new Set(toastNotifications.map((toast) => toast.id));
+
+    for (const [toastId, timeoutId] of toastTimerMapRef.current.entries()) {
+      if (!activeToastIds.has(toastId) || hoveredToastId === toastId || selectedErrorToastId === toastId) {
+        window.clearTimeout(timeoutId);
+        toastTimerMapRef.current.delete(toastId);
+      }
+    }
+
+    toastNotifications.forEach((toast) => {
+      if (!toast.durationMs || hoveredToastId === toast.id || selectedErrorToastId === toast.id) {
+        return;
+      }
+
+      if (toastTimerMapRef.current.has(toast.id)) {
+        return;
+      }
+
+      const timeoutId = window.setTimeout(() => {
+        dismissErrorToast(toast.id);
+      }, toast.durationMs);
+
+      toastTimerMapRef.current.set(toast.id, timeoutId);
+    });
+  }, [hoveredToastId, selectedErrorToastId, toastNotifications]);
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of toastTimerMapRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+
+      toastTimerMapRef.current.clear();
+    };
+  }, []);
 
   function openSheet(workbookName: string, sheetName: string) {
     const id = buildSheetTabId(workbookName, sheetName);
@@ -728,6 +834,110 @@ function App() {
         status: "idle",
       },
     }));
+  }
+
+  function pushToastNotification({
+    title,
+    detail,
+    source,
+    variant,
+    canOpenDetail,
+    durationMs,
+    action,
+  }: Omit<ToastNotification, "id" | "summary" | "timestamp">) {
+    const normalizedDetail = detail?.trim();
+    const summarySource = normalizedDetail ?? title;
+    const nextToast: ToastNotification = {
+      id: nextToastIdRef.current,
+      title,
+      summary: summarySource.length > 120 ? `${summarySource.slice(0, 117)}...` : summarySource,
+      detail: normalizedDetail,
+      source,
+      variant,
+      canOpenDetail,
+      durationMs,
+      action,
+      timestamp: new Date().toLocaleString("zh-CN", { hour12: false }),
+    };
+
+    nextToastIdRef.current += 1;
+
+    setToastNotifications((current) => [nextToast, ...current].slice(0, 5));
+  }
+
+  function openErrorToastDetail(toastId: number) {
+    const targetToast = toastNotifications.find((toast) => toast.id === toastId);
+    if (!targetToast?.canOpenDetail) {
+      return;
+    }
+
+    setSelectedErrorToastId(toastId);
+  }
+
+  function dismissErrorToast(toastId: number) {
+    const timeoutId = toastTimerMapRef.current.get(toastId);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      toastTimerMapRef.current.delete(toastId);
+    }
+
+    setToastNotifications((current) => current.filter((toast) => toast.id !== toastId));
+    setSelectedErrorToastId((current) => (current === toastId ? null : current));
+    setHoveredToastId((current) => (current === toastId ? null : current));
+  }
+
+  function activateWorkbookFromToast(workbookName: string) {
+    const existingTab = openTabs.find((tab) => tab.workbookName === workbookName);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      return;
+    }
+
+    const targetWorkbook = workspace?.workbooks.find((workbook) => workbook.name === workbookName);
+    const firstSheet = targetWorkbook?.sheets[0];
+    if (firstSheet) {
+      openSheet(firstSheet.workbookName, firstSheet.name);
+    }
+  }
+
+  function runToastAction(toastId: number) {
+    const targetToast = toastNotifications.find((toast) => toast.id === toastId);
+    if (!targetToast?.action) {
+      return;
+    }
+
+    if (targetToast.action.kind === "activate-workbook") {
+      activateWorkbookFromToast(targetToast.action.workbookName);
+    }
+
+    dismissErrorToast(toastId);
+  }
+
+  async function copySelectedErrorDetail() {
+    if (!selectedErrorToast?.detail) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(selectedErrorToast.detail);
+      pushToastNotification({
+        title: "错误详情已复制",
+        detail: `已复制 ${selectedErrorToast.title} 的完整错误信息。`,
+        source: "system",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 3200,
+      });
+    } catch (error) {
+      pushToastNotification({
+        title: "复制错误详情失败",
+        detail: error instanceof Error ? error.message : "剪贴板写入失败。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+    }
   }
 
   function undoActiveSheetEdit() {
@@ -970,19 +1180,113 @@ function App() {
           status: "saved",
         },
       }));
+      pushToastNotification({
+        title: `工作簿保存成功: ${workbookName}`,
+        detail: `已成功保存 ${activeWorkbookDirtyTabs.length} 个脏 Sheet。`,
+        source: "save",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4200,
+        action: {
+          label: "定位到工作簿",
+          kind: "activate-workbook",
+          workbookName,
+        },
+      });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "保存工作簿失败。";
       setWorkbookSaveStateMap((current) => ({
         ...current,
         [workbookName]: {
           status: "error",
-          error: error instanceof Error ? error.message : "保存工作簿失败。",
+          error: errorMessage,
         },
       }));
+      pushToastNotification({
+        title: `工作簿保存失败: ${workbookName}`,
+        detail: errorMessage,
+        source: "save",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
     }
   }
 
   return (
     <div className="app-shell">
+      <div className="toast-stack" role="status" aria-live="polite">
+        {toastNotifications.map((toast) => (
+          <div
+            className={`toast-message is-${toast.variant}`}
+            key={toast.id}
+            onMouseEnter={() => setHoveredToastId(toast.id)}
+            onMouseLeave={() => setHoveredToastId((current) => (current === toast.id ? null : current))}
+          >
+            <div className="toast-message-main">
+              {toast.canOpenDetail ? (
+                <button className="toast-message-trigger" onClick={() => openErrorToastDetail(toast.id)} type="button">
+                  <span className="toast-message-title">{toast.title}</span>
+                  <span className="toast-message-summary">{toast.summary}</span>
+                  <span className="toast-message-meta">点击查看详情</span>
+                </button>
+              ) : (
+                <div className="toast-message-body">
+                  <span className="toast-message-title">{toast.title}</span>
+                  <span className="toast-message-summary">{toast.summary}</span>
+                  <span className="toast-message-meta">{toast.timestamp}</span>
+                </div>
+              )}
+
+              {toast.action ? (
+                <button className="toast-message-action" onClick={() => runToastAction(toast.id)} type="button">
+                  {toast.action.label}
+                </button>
+              ) : null}
+            </div>
+            <button
+              aria-label="关闭消息气泡"
+              className="toast-message-dismiss"
+              onClick={() => dismissErrorToast(toast.id)}
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {selectedErrorToast ? (
+        <div className="error-detail-backdrop" onClick={() => setSelectedErrorToastId(null)} role="presentation">
+          <section
+            aria-labelledby="error-detail-title"
+            className="error-detail-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="error-detail-header">
+              <div>
+                <p className="eyebrow">Error Detail</p>
+                <h2 id="error-detail-title">{selectedErrorToast.title}</h2>
+              </div>
+              <div className="error-detail-actions">
+                <button className="secondary-button" onClick={() => void copySelectedErrorDetail()} type="button">
+                  复制详情
+                </button>
+                <button className="secondary-button" onClick={() => setSelectedErrorToastId(null)} type="button">
+                  关闭
+                </button>
+              </div>
+            </div>
+            <div className="error-detail-meta">
+              <span>来源: {selectedErrorToast.source}</span>
+              <span>时间: {selectedErrorToast.timestamp}</span>
+            </div>
+            <pre className="error-detail-body">{selectedErrorToast.detail}</pre>
+          </section>
+        </div>
+      ) : null}
+
       <aside className="workspace-sidebar">
         <div className="brand-block">
           <p className="eyebrow">Desktop App</p>
@@ -1250,6 +1554,7 @@ function App() {
                           className="primary-button save-button"
                           disabled={activeWorkbookDirtyTabs.length === 0 || activeWorkbookSaveState?.status === "saving"}
                           onClick={() => void saveActiveWorkbook()}
+                          title="保存当前工作簿 (Ctrl+S)"
                           type="button"
                         >
                           保存当前工作簿

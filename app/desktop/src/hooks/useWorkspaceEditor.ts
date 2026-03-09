@@ -4,9 +4,14 @@ import {
   buildCellKey,
   buildSheetTabId,
   buildWorkspaceScopedStorageKey,
+  cloneColumns,
   cloneRows,
   isSheetAvailable,
   isSheetTab,
+  type CellEditInput,
+  type CellEditRecord,
+  type SheetHistoryEntry,
+  type SheetColumn,
   type SheetLoadState,
   type SheetResponse,
   type SheetTab,
@@ -56,6 +61,105 @@ function isValidWorkspaceName(workspaceName: string) {
 
 function removeWorkbookTabs(openTabs: SheetTab[], workbookName: string) {
   return openTabs.filter((tab) => tab.workbookName !== workbookName);
+}
+
+function applyEditsToRows(rows: string[][], edits: Array<Pick<CellEditRecord, "rowIndex" | "columnIndex"> & { value: string }>) {
+  let nextRows = rows;
+
+  edits.forEach((edit) => {
+    nextRows = updateRowsAtCell(nextRows, edit.rowIndex, edit.columnIndex, edit.value);
+  });
+
+  return nextRows;
+}
+
+function buildEditedCellsFromRows(originalRows: string[][], draftRows: string[][], columnCount: number) {
+  const nextEditedCells: Record<string, string> = {};
+  const rowCount = Math.max(originalRows.length, draftRows.length);
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+      const originalValue = originalRows[rowIndex]?.[columnIndex] ?? "";
+      const nextValue = draftRows[rowIndex]?.[columnIndex] ?? "";
+
+      if (originalValue !== nextValue) {
+        nextEditedCells[buildCellKey(rowIndex, columnIndex)] = nextValue;
+      }
+    }
+  }
+
+  return nextEditedCells;
+}
+
+function sanitizeRowsToColumnCount(rows: string[][], columnCount: number) {
+  return rows.map((row) => Array.from({ length: columnCount }, (_, columnIndex) => row[columnIndex] ?? ""));
+}
+
+function areColumnsEqual(left: SheetColumn[], right: SheetColumn[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((column, columnIndex) => {
+    const candidate = right[columnIndex];
+    if (!candidate) {
+      return false;
+    }
+
+    return (
+      column.fieldName === candidate.fieldName &&
+      column.type === candidate.type &&
+      column.displayName === candidate.displayName &&
+      column.isListType === candidate.isListType &&
+      column.isReferenceType === candidate.isReferenceType &&
+      JSON.stringify(column.attributes) === JSON.stringify(candidate.attributes)
+    );
+  });
+}
+
+function buildSheetStateFromDraft(
+  currentSheetState: SheetLoadState & { data: SheetResponse },
+  nextColumns: SheetColumn[],
+  nextRows: string[][],
+  options?: {
+    nextUndoStack?: SheetHistoryEntry[];
+    nextRedoStack?: SheetHistoryEntry[];
+  },
+) {
+  const normalizedColumns = cloneColumns(nextColumns);
+  const normalizedRows = sanitizeRowsToColumnCount(nextRows, normalizedColumns.length);
+  const nextEditedCells = buildEditedCellsFromRows(currentSheetState.data.rows, normalizedRows, normalizedColumns.length);
+  const hasColumnChanges = !areColumnsEqual(currentSheetState.data.metadata.columns, normalizedColumns);
+
+  return {
+    ...currentSheetState,
+    draftColumns: normalizedColumns,
+    draftRows: normalizedRows,
+    editedCells: nextEditedCells,
+    undoStack: options?.nextUndoStack ?? currentSheetState.undoStack ?? [],
+    redoStack: options?.nextRedoStack ?? currentSheetState.redoStack ?? [],
+    dirty: hasColumnChanges || Object.keys(nextEditedCells).length > 0,
+  };
+}
+
+function createInsertedColumn(existingColumns: SheetColumn[], columnIndex: number): SheetColumn {
+  const baseName = `NewColumn${columnIndex + 1}`;
+  let fieldName = baseName;
+  let suffix = 2;
+
+  while (existingColumns.some((column) => column.fieldName === fieldName)) {
+    fieldName = `${baseName}_${suffix}`;
+    suffix += 1;
+  }
+
+  return {
+    fieldName,
+    type: "string",
+    displayName: fieldName,
+    isListType: false,
+    isReferenceType: false,
+    attributes: {},
+  };
 }
 
 type UseWorkspaceEditorArgs = {
@@ -259,6 +363,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
           [activeTabToLoad.id]: {
             status: "ready",
             data,
+            draftColumns: cloneColumns(data.metadata.columns),
             draftRows: cloneRows(data.rows),
             editedCells: {},
             undoStack: [],
@@ -339,6 +444,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
   const activeTab = openTabs.find((tab) => tab.id === activeTabId) ?? null;
   const activeSheetState = activeTab ? sheetStateMap[activeTab.id] : undefined;
   const activeSheetData = activeSheetState?.data;
+  const activeSheetColumns = activeSheetState?.draftColumns ?? activeSheetData?.metadata.columns ?? [];
   const activeSheetRows = activeSheetState?.draftRows ?? activeSheetData?.rows ?? [];
   const deferredSheetFilter = useDeferredValue(sheetFilter);
   const totalSheetCount = workbookTree.reduce((count, workbook) => count + workbook.sheets.length, 0);
@@ -720,19 +826,24 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     setSheetReloadKey((current) => current + 1);
   }
 
-  function updateCellValue(rowIndex: number, columnIndex: number, nextValue: string) {
+  function applyCellEdits(editInputs: CellEditInput[]) {
     if (!activeTab || !activeSheetState?.data) {
       return;
     }
 
     const currentDraftRows = activeSheetState.draftRows ?? activeSheetState.data.rows;
-    const previousValue = currentDraftRows[rowIndex]?.[columnIndex] ?? "";
-    if (previousValue === nextValue) {
+    const normalizedEdits = editInputs
+      .map<CellEditRecord>((edit) => ({
+        rowIndex: edit.rowIndex,
+        columnIndex: edit.columnIndex,
+        previousValue: currentDraftRows[edit.rowIndex]?.[edit.columnIndex] ?? "",
+        nextValue: edit.nextValue,
+      }))
+      .filter((edit) => edit.previousValue !== edit.nextValue);
+
+    if (normalizedEdits.length === 0) {
       return;
     }
-
-    const originalValue = activeSheetState.data.rows[rowIndex]?.[columnIndex] ?? "";
-    const cellKey = buildCellKey(rowIndex, columnIndex);
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
@@ -740,40 +851,248 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         return current;
       }
 
-      const nextDraftRows = updateRowsAtCell(
+      const currentColumns = currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns;
+
+      const nextDraftRows = applyEditsToRows(
         currentSheetState.draftRows ?? currentSheetState.data.rows,
-        rowIndex,
-        columnIndex,
-        nextValue,
+        normalizedEdits.map((edit) => ({
+          rowIndex: edit.rowIndex,
+          columnIndex: edit.columnIndex,
+          value: edit.nextValue,
+        })),
       );
 
       const nextEditedCells = {
         ...(currentSheetState.editedCells ?? {}),
       };
 
-      if (nextValue === originalValue) {
-        delete nextEditedCells[cellKey];
-      } else {
-        nextEditedCells[cellKey] = nextValue;
-      }
+      normalizedEdits.forEach((edit) => {
+        const originalValue = currentSheetState.data?.rows[edit.rowIndex]?.[edit.columnIndex] ?? "";
+        const cellKey = buildCellKey(edit.rowIndex, edit.columnIndex);
+
+        if (edit.nextValue === originalValue) {
+          delete nextEditedCells[cellKey];
+        } else {
+          nextEditedCells[cellKey] = edit.nextValue;
+        }
+      });
 
       return {
         ...current,
         [activeTab.id]: {
-          ...currentSheetState,
-          draftRows: nextDraftRows,
-          editedCells: nextEditedCells,
-          undoStack: [
-            ...(currentSheetState.undoStack ?? []),
+          ...buildSheetStateFromDraft(
+            currentSheetState,
+            currentColumns,
+            nextDraftRows,
             {
-              rowIndex,
-              columnIndex,
-              previousValue,
-              nextValue,
+              nextUndoStack: [
+                ...(currentSheetState.undoStack ?? []),
+                {
+                  kind: "cell-batch",
+                  edits: normalizedEdits,
+                },
+              ],
+              nextRedoStack: [],
             },
-          ],
-          redoStack: [],
-          dirty: Object.keys(nextEditedCells).length > 0,
+          ),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function updateCellValue(rowIndex: number, columnIndex: number, nextValue: string) {
+    applyCellEdits([{ rowIndex, columnIndex, nextValue }]);
+  }
+
+  function insertRow(atRowIndex: number) {
+    if (!activeTab || !activeSheetState?.data) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!currentSheetState?.data) {
+        return current;
+      }
+
+      const currentColumns = currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns;
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length,
+      );
+      const nextRowIndex = Math.max(0, Math.min(atRowIndex, normalizedRows.length));
+      const nextDraftRows = [...normalizedRows];
+      nextDraftRows.splice(nextRowIndex, 0, Array.from({ length: currentColumns.length }, () => ""));
+      const historyEntry: SheetHistoryEntry = {
+        kind: "structure",
+        previousColumns: cloneColumns(currentColumns),
+        previousRows: cloneRows(normalizedRows),
+        nextColumns: cloneColumns(currentColumns),
+        nextRows: cloneRows(nextDraftRows),
+      };
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, currentColumns, nextDraftRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function deleteRow(rowIndex: number) {
+    if (!activeTab || !activeSheetState?.data) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!currentSheetState?.data) {
+        return current;
+      }
+
+      const currentColumns = currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns;
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length,
+      );
+      if (rowIndex < 0 || rowIndex >= normalizedRows.length) {
+        return current;
+      }
+
+      const nextDraftRows = [...normalizedRows];
+      nextDraftRows.splice(rowIndex, 1);
+      const historyEntry: SheetHistoryEntry = {
+        kind: "structure",
+        previousColumns: cloneColumns(currentColumns),
+        previousRows: cloneRows(normalizedRows),
+        nextColumns: cloneColumns(currentColumns),
+        nextRows: cloneRows(nextDraftRows),
+      };
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, currentColumns, nextDraftRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function insertColumn(atColumnIndex: number) {
+    if (!activeTab || !activeSheetState?.data) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!currentSheetState?.data) {
+        return current;
+      }
+
+      const currentColumns = cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns);
+      const nextColumnIndex = Math.max(0, Math.min(atColumnIndex, currentColumns.length));
+      currentColumns.splice(nextColumnIndex, 0, createInsertedColumn(currentColumns, nextColumnIndex));
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length - 1,
+      );
+      const nextDraftRows = normalizedRows.map((row) => {
+        const nextRow = [...row];
+        nextRow.splice(nextColumnIndex, 0, "");
+        return nextRow;
+      });
+      const historyEntry: SheetHistoryEntry = {
+        kind: "structure",
+        previousColumns: cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns),
+        previousRows: cloneRows(normalizedRows),
+        nextColumns: cloneColumns(currentColumns),
+        nextRows: cloneRows(nextDraftRows),
+      };
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, currentColumns, nextDraftRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function deleteColumn(columnIndex: number) {
+    if (!activeTab || !activeSheetState?.data) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!currentSheetState?.data) {
+        return current;
+      }
+
+      const currentColumns = cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns);
+      if (columnIndex < 0 || columnIndex >= currentColumns.length || currentColumns.length <= 1) {
+        return current;
+      }
+
+      currentColumns.splice(columnIndex, 1);
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length + 1,
+      );
+      const nextDraftRows = normalizedRows.map((row) => row.filter((_, currentColumnIndex) => currentColumnIndex !== columnIndex));
+      const historyEntry: SheetHistoryEntry = {
+        kind: "structure",
+        previousColumns: cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns),
+        previousRows: cloneRows(normalizedRows),
+        nextColumns: cloneColumns(currentColumns),
+        nextRows: cloneRows(nextDraftRows),
+      };
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, currentColumns, nextDraftRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
         },
       };
     });
@@ -817,34 +1136,39 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         return current;
       }
 
-      const nextDraftRows = updateRowsAtCell(
-        currentSheetState.draftRows ?? currentSheetState.data.rows,
-        lastEdit.rowIndex,
-        lastEdit.columnIndex,
-        lastEdit.previousValue,
-      );
-
-      const originalValue = currentSheetState.data.rows[lastEdit.rowIndex]?.[lastEdit.columnIndex] ?? "";
-      const cellKey = buildCellKey(lastEdit.rowIndex, lastEdit.columnIndex);
-      const nextEditedCells = {
-        ...(currentSheetState.editedCells ?? {}),
-      };
-
-      if (lastEdit.previousValue === originalValue) {
-        delete nextEditedCells[cellKey];
-      } else {
-        nextEditedCells[cellKey] = lastEdit.previousValue;
+      if (lastEdit.kind === "structure") {
+        return {
+          ...current,
+          [activeTab.id]: {
+            ...buildSheetStateFromDraft(currentSheetState, lastEdit.previousColumns, lastEdit.previousRows, {
+              nextUndoStack: undoStack,
+              nextRedoStack: [...(currentSheetState.redoStack ?? []), lastEdit],
+            }),
+          },
+        };
       }
+
+      const nextDraftRows = applyEditsToRows(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        lastEdit.edits.map((edit) => ({
+          rowIndex: edit.rowIndex,
+          columnIndex: edit.columnIndex,
+          value: edit.previousValue,
+        })),
+      );
 
       return {
         ...current,
         [activeTab.id]: {
-          ...currentSheetState,
-          draftRows: nextDraftRows,
-          editedCells: nextEditedCells,
-          undoStack,
-          redoStack: [...(currentSheetState.redoStack ?? []), lastEdit],
-          dirty: Object.keys(nextEditedCells).length > 0,
+          ...buildSheetStateFromDraft(
+            currentSheetState,
+            currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns,
+            nextDraftRows,
+            {
+              nextUndoStack: undoStack,
+              nextRedoStack: [...(currentSheetState.redoStack ?? []), lastEdit],
+            },
+          ),
         },
       };
     });
@@ -874,34 +1198,39 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         return current;
       }
 
-      const nextDraftRows = updateRowsAtCell(
-        currentSheetState.draftRows ?? currentSheetState.data.rows,
-        lastRedo.rowIndex,
-        lastRedo.columnIndex,
-        lastRedo.nextValue,
-      );
-
-      const originalValue = currentSheetState.data.rows[lastRedo.rowIndex]?.[lastRedo.columnIndex] ?? "";
-      const cellKey = buildCellKey(lastRedo.rowIndex, lastRedo.columnIndex);
-      const nextEditedCells = {
-        ...(currentSheetState.editedCells ?? {}),
-      };
-
-      if (lastRedo.nextValue === originalValue) {
-        delete nextEditedCells[cellKey];
-      } else {
-        nextEditedCells[cellKey] = lastRedo.nextValue;
+      if (lastRedo.kind === "structure") {
+        return {
+          ...current,
+          [activeTab.id]: {
+            ...buildSheetStateFromDraft(currentSheetState, lastRedo.nextColumns, lastRedo.nextRows, {
+              nextUndoStack: [...(currentSheetState.undoStack ?? []), lastRedo],
+              nextRedoStack: redoStack,
+            }),
+          },
+        };
       }
+
+      const nextDraftRows = applyEditsToRows(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        lastRedo.edits.map((edit) => ({
+          rowIndex: edit.rowIndex,
+          columnIndex: edit.columnIndex,
+          value: edit.nextValue,
+        })),
+      );
 
       return {
         ...current,
         [activeTab.id]: {
-          ...currentSheetState,
-          draftRows: nextDraftRows,
-          editedCells: nextEditedCells,
-          undoStack: [...(currentSheetState.undoStack ?? []), lastRedo],
-          redoStack,
-          dirty: Object.keys(nextEditedCells).length > 0,
+          ...buildSheetStateFromDraft(
+            currentSheetState,
+            currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns,
+            nextDraftRows,
+            {
+              nextUndoStack: [...(currentSheetState.undoStack ?? []), lastRedo],
+              nextRedoStack: redoStack,
+            },
+          ),
         },
       };
     });
@@ -933,12 +1262,10 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       return {
         ...current,
         [activeTab.id]: {
-          ...currentSheetState,
-          draftRows: cloneRows(currentSheetState.data.rows),
-          editedCells: {},
-          undoStack: [],
-          redoStack: [],
-          dirty: false,
+          ...buildSheetStateFromDraft(currentSheetState, currentSheetState.data.metadata.columns, currentSheetState.data.rows, {
+            nextUndoStack: [],
+            nextRedoStack: [],
+          }),
         },
       };
     });
@@ -979,10 +1306,11 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
           sheets: workbookResponse.sheets.map((sheet) => {
             const dirtySheetState = dirtySheetMap.get(sheet.metadata.name);
             const rows = dirtySheetState?.draftRows ?? sheet.rows;
+            const columns = dirtySheetState?.draftColumns ?? sheet.metadata.columns;
 
             return {
               name: sheet.metadata.name,
-              columns: sheet.metadata.columns.map((column) => ({
+              columns: columns.map((column) => ({
                 fieldName: column.fieldName,
                 type: column.type,
                 displayName: column.displayName,
@@ -1021,6 +1349,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
             nextStateMap[tab.id] = {
               status: "ready",
               data: savedSheet,
+              draftColumns: cloneColumns(savedSheet.metadata.columns),
               draftRows: cloneRows(savedSheet.rows),
               editedCells: {},
               undoStack: [],
@@ -1089,6 +1418,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     activeTab,
     activeSheetState,
     activeSheetData,
+    activeSheetColumns,
     activeSheetRows,
     activeWorkbookSaveState,
     activeWorkbookDirtyTabs,
@@ -1103,6 +1433,11 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,
+    applyCellEdits,
+    insertRow,
+    deleteRow,
+    insertColumn,
+    deleteColumn,
     updateCellValue,
     activateWorkbook,
     undoActiveSheetEdit,

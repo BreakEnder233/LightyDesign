@@ -31,10 +31,14 @@ function shouldHandleShortcutTarget(shortcut: ShortcutBinding, target: EventTarg
   return isShortcutTargetAllowed(target);
 }
 
+function isImeKeyboardEvent(event: KeyboardEvent) {
+  return event.isComposing || event.key === "Process" || event.keyCode === 229;
+}
+
 export function useEditorShortcuts(bindings: ShortcutBinding[]) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing) {
+      if (event.defaultPrevented || isImeKeyboardEvent(event)) {
         return;
       }
 

@@ -54,6 +54,25 @@ function Set-FrontendMirrorEnvironment {
     }
 }
 
+function Test-FrontendDependenciesReady {
+    param([string]$DesktopRoot)
+
+    $requiredPaths = @(
+        (Join-Path $DesktopRoot "node_modules\.bin\vite.cmd"),
+        (Join-Path $DesktopRoot "node_modules\.bin\concurrently.cmd"),
+        (Join-Path $DesktopRoot "node_modules\.bin\tsc.cmd"),
+        (Join-Path $DesktopRoot "node_modules\electron\dist\electron.exe")
+    )
+
+    foreach ($path in $requiredPaths) {
+        if (-not (Test-Path $path)) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 Write-Host "LightyDesign 引导脚本" -ForegroundColor Cyan
 Write-Host "仓库目录: $repoRoot"
 
@@ -80,12 +99,17 @@ try {
         Push-Location $desktopRoot
 
         try {
-            Write-Host "[3/4] 安装 Electron 前端依赖" -ForegroundColor Yellow
-            if (Test-Path (Join-Path $desktopRoot "package-lock.json")) {
-                npm ci
+            if (Test-FrontendDependenciesReady -DesktopRoot $desktopRoot) {
+                Write-Host "[3/4] 检测到现有 Electron 前端依赖，跳过重装" -ForegroundColor DarkYellow
             }
             else {
-                npm install
+                Write-Host "[3/4] 安装 Electron 前端依赖" -ForegroundColor Yellow
+                if (Test-Path (Join-Path $desktopRoot "package-lock.json")) {
+                    npm ci
+                }
+                else {
+                    npm install
+                }
             }
 
             Write-Host "[4/4] 构建 Electron 前端" -ForegroundColor Yellow

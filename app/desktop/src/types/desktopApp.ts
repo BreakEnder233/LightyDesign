@@ -78,6 +78,16 @@ export type SheetTab = {
   sheetName: string;
 };
 
+export type SheetSelection = {
+  rowIndex: number;
+  columnIndex: number;
+};
+
+export type SheetSelectionRange = {
+  anchor: SheetSelection;
+  focus: SheetSelection;
+};
+
 export type CellEditRecord = {
   rowIndex: number;
   columnIndex: number;
@@ -85,13 +95,38 @@ export type CellEditRecord = {
   nextValue: string;
 };
 
+export type CellEditInput = {
+  rowIndex: number;
+  columnIndex: number;
+  nextValue: string;
+};
+
+export type CellEditBatch = {
+  edits: CellEditRecord[];
+};
+
+export type SheetStructureHistoryEntry = {
+  kind: "structure";
+  previousColumns: SheetColumn[];
+  previousRows: string[][];
+  nextColumns: SheetColumn[];
+  nextRows: string[][];
+};
+
+export type SheetHistoryEntry =
+  | ({
+      kind: "cell-batch";
+    } & CellEditBatch)
+  | SheetStructureHistoryEntry;
+
 export type SheetLoadState = {
   status: "idle" | "loading" | "ready" | "error";
   data?: SheetResponse;
+  draftColumns?: SheetColumn[];
   draftRows?: string[][];
   editedCells?: Record<string, string>;
-  undoStack?: CellEditRecord[];
-  redoStack?: CellEditRecord[];
+  undoStack?: SheetHistoryEntry[];
+  redoStack?: SheetHistoryEntry[];
   dirty?: boolean;
   error?: string;
 };
@@ -165,6 +200,22 @@ export function buildCellKey(rowIndex: number, columnIndex: number) {
 
 export function cloneRows(rows: string[][]) {
   return rows.map((row) => [...row]);
+}
+
+export function cloneColumns(columns: SheetColumn[]) {
+  return columns.map((column) => ({
+    ...column,
+    attributes: { ...column.attributes },
+  }));
+}
+
+export function getSelectionBounds(range: SheetSelectionRange) {
+  return {
+    startRowIndex: Math.min(range.anchor.rowIndex, range.focus.rowIndex),
+    endRowIndex: Math.max(range.anchor.rowIndex, range.focus.rowIndex),
+    startColumnIndex: Math.min(range.anchor.columnIndex, range.focus.columnIndex),
+    endColumnIndex: Math.max(range.anchor.columnIndex, range.focus.columnIndex),
+  };
 }
 
 export function updateRowsAtCell(rows: string[][], rowIndex: number, columnIndex: number, nextValue: string) {

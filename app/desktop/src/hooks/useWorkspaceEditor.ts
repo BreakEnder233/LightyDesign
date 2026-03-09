@@ -465,7 +465,11 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
   }, [activeSheetRows, deferredSheetFilter]);
 
   useEffect(() => {
-    if (!hasDirtyChanges) {
+    window.lightyDesign?.setHasDirtyChanges(hasDirtyChanges);
+  }, [hasDirtyChanges]);
+
+  useEffect(() => {
+    if (window.lightyDesign || !hasDirtyChanges) {
       return;
     }
 

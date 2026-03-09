@@ -139,12 +139,15 @@ function App() {
   const [createWorkspaceParentDirectoryPath, setCreateWorkspaceParentDirectoryPath] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("NewWorkspace");
   const [isCreateWorkbookDialogOpen, setIsCreateWorkbookDialogOpen] = useState(false);
+  const [isFreezeDialogOpen, setIsFreezeDialogOpen] = useState(false);
   const [newWorkbookName, setNewWorkbookName] = useState("NewWorkbook");
   const [selectedCell, setSelectedCell] = useState<SheetSelection | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<SheetSelection | null>(null);
   const [freezeRowCount, setFreezeRowCount] = useState(0);
   const [freezeColumnCount, setFreezeColumnCount] = useState(0);
   const [columnWidthsBySheet, setColumnWidthsBySheet] = useState<Record<string, number[]>>({});
+  const [freezeDialogRowCount, setFreezeDialogRowCount] = useState(0);
+  const [freezeDialogColumnCount, setFreezeDialogColumnCount] = useState(0);
 
   function applySelectionRange(anchor: SheetSelection, focus: SheetSelection) {
     setSelectionAnchor(anchor);
@@ -240,6 +243,27 @@ function App() {
 
   function handleDeleteColumn(columnIndex: number) {
     deleteColumn(columnIndex);
+  }
+
+  function handleAppendRow() {
+    const nextRowIndex = activeSheetRows.length;
+    insertRow(nextRowIndex);
+
+    if (!sheetFilter.trim()) {
+      applySelectionRange(
+        { rowIndex: nextRowIndex, columnIndex: selectedCell?.columnIndex ?? 0 },
+        { rowIndex: nextRowIndex, columnIndex: selectedCell?.columnIndex ?? 0 },
+      );
+    }
+  }
+
+  function handleAppendColumn() {
+    const nextColumnIndex = activeSheetColumns.length;
+    insertColumn(nextColumnIndex);
+    applySelectionRange(
+      { rowIndex: selectedCell?.rowIndex ?? 0, columnIndex: nextColumnIndex },
+      { rowIndex: selectedCell?.rowIndex ?? 0, columnIndex: nextColumnIndex },
+    );
   }
 
   const shortcutBindings = useMemo<ShortcutBinding[]>(
@@ -462,6 +486,10 @@ function App() {
     const columnWidthStorageKey = buildWorkspaceScopedStorageKey(workspacePath, `sheet-widths:${activeTab.id}`);
     localStorage.setItem(columnWidthStorageKey, JSON.stringify(activeColumnWidths));
   }, [activeColumnWidths, activeTab, workspacePath]);
+
+  useEffect(() => {
+    setSheetFilter("");
+  }, [activeTabId, setSheetFilter]);
 
   useEffect(() => {
     if (!workspacePath || !activeTab) {
@@ -802,6 +830,24 @@ function App() {
     }
   }
 
+  function handleOpenFreezeDialog() {
+    setFreezeDialogRowCount(appliedFreezeRowCount);
+    setFreezeDialogColumnCount(appliedFreezeColumnCount);
+    setIsFreezeDialogOpen(true);
+  }
+
+  function handleCloseFreezeDialog() {
+    setIsFreezeDialogOpen(false);
+    setFreezeDialogRowCount(appliedFreezeRowCount);
+    setFreezeDialogColumnCount(appliedFreezeColumnCount);
+  }
+
+  function handleConfirmFreezeDialog() {
+    setFreezeRowCount(Math.max(0, Math.min(freezeDialogRowCount, filteredRowEntries.length)));
+    setFreezeColumnCount(Math.max(0, Math.min(freezeDialogColumnCount, activeSheetColumns.length)));
+    setIsFreezeDialogOpen(false);
+  }
+
   return (
     <div className="app-shell">
       {isCreateWorkspaceDialogOpen ? (
@@ -898,6 +944,88 @@ function App() {
               </button>
               <button className="primary-button" onClick={() => void handleConfirmCreateWorkbook()} type="button">
                 创建并打开
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isFreezeDialogOpen ? (
+        <div className="workspace-create-backdrop" onClick={handleCloseFreezeDialog} role="presentation">
+          <div
+            aria-labelledby="freeze-dialog-title"
+            aria-modal="true"
+            className="workspace-create-dialog freeze-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">Freeze</p>
+                <h2 id="freeze-dialog-title">设置冻结行列</h2>
+              </div>
+            </div>
+
+            <div className="workspace-create-body freeze-dialog-body">
+              <p className="workspace-create-path-label">当前 Sheet</p>
+              <p className="workspace-create-path-value">{activeTab ? `${activeTab.workbookName} / ${activeTab.sheetName}` : "尚未打开 Sheet"}</p>
+
+              <div className="freeze-dialog-grid">
+                <label className="search-field freeze-dialog-field">
+                  <span>冻结行</span>
+                  <input
+                    autoFocus
+                    max={filteredRowEntries.length}
+                    min={0}
+                    onChange={(event) => setFreezeDialogRowCount(Math.max(0, Number.parseInt(event.target.value || "0", 10) || 0))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleConfirmFreezeDialog();
+                      }
+                    }}
+                    type="number"
+                    value={freezeDialogRowCount}
+                  />
+                </label>
+
+                <label className="search-field freeze-dialog-field">
+                  <span>冻结列</span>
+                  <input
+                    max={activeSheetColumns.length}
+                    min={0}
+                    onChange={(event) => setFreezeDialogColumnCount(Math.max(0, Number.parseInt(event.target.value || "0", 10) || 0))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleConfirmFreezeDialog();
+                      }
+                    }}
+                    type="number"
+                    value={freezeDialogColumnCount}
+                  />
+                </label>
+              </div>
+
+              <p className="freeze-dialog-caption">最多可冻结 {filteredRowEntries.length} 行、{activeSheetColumns.length} 列。</p>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseFreezeDialog} type="button">
+                取消
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setFreezeDialogRowCount(0);
+                  setFreezeDialogColumnCount(0);
+                }}
+                type="button"
+              >
+                清空
+              </button>
+              <button className="primary-button" onClick={handleConfirmFreezeDialog} type="button">
+                应用冻结
               </button>
             </div>
           </div>
@@ -1133,7 +1261,7 @@ function App() {
                   <div className="viewer-metadata">
                     <span>{activeTab.workbookName}</span>
                     <span>{activeSheetColumns.length} 列</span>
-                    <span>{activeSheetData.metadata.rowCount} 行</span>
+                    <span>{activeSheetRows.length} 行</span>
                     <span>{activeWorkbookDirtyTabs.length} dirty</span>
                   </div>
                 </div>
@@ -1188,27 +1316,30 @@ function App() {
                       </button>
                     </div>
 
+                    <div className="toolbar-button-group">
+                      <button
+                        className="secondary-button"
+                        onClick={handleAppendRow}
+                        title="在当前 Sheet 末尾添加一行"
+                        type="button"
+                      >
+                        在末尾添加行
+                      </button>
+                      <button
+                        className="secondary-button"
+                        onClick={handleAppendColumn}
+                        title="在当前 Sheet 末尾添加一列"
+                        type="button"
+                      >
+                        在末尾添加列
+                      </button>
+                    </div>
+
                     <div className="freeze-toolbar">
-                      <label className="freeze-field">
-                        <span>冻结行</span>
-                        <input
-                          max={filteredRowEntries.length}
-                          min={0}
-                          onChange={(event) => setFreezeRowCount(Math.max(0, Number.parseInt(event.target.value || "0", 10) || 0))}
-                          type="number"
-                          value={appliedFreezeRowCount}
-                        />
-                      </label>
-                      <label className="freeze-field">
-                        <span>冻结列</span>
-                        <input
-                          max={activeSheetColumns.length}
-                          min={0}
-                          onChange={(event) => setFreezeColumnCount(Math.max(0, Number.parseInt(event.target.value || "0", 10) || 0))}
-                          type="number"
-                          value={appliedFreezeColumnCount}
-                        />
-                      </label>
+                      <span className="freeze-summary">{freezeStatusText}</span>
+                      <button className="secondary-button" onClick={handleOpenFreezeDialog} type="button">
+                        设置冻结
+                      </button>
                       <button
                         className="secondary-button"
                         disabled={appliedFreezeRowCount === 0 && appliedFreezeColumnCount === 0}

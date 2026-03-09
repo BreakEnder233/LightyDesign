@@ -27,7 +27,7 @@
 在仓库根目录执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1 -RunDesktop
+pwsh -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1 -RunDesktop
 ```
 
 该命令会完成以下工作：
@@ -40,7 +40,7 @@ powershell -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1
 如果你位于中国大陆，依赖下载较慢或失败，可以改用：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1 -RunDesktop -UseChinaMirror
+pwsh -ExecutionPolicy Bypass -File .\ShellFiles\Bootstrap-LightyDesign.ps1 -RunDesktop -UseChinaMirror
 ```
 
 ### 方式二：分步手动试运行

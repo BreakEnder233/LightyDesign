@@ -39,6 +39,8 @@ type DesktopHostHealth = {
 };
 
 let desktopHostProcess: ChildProcessWithoutNullStreams | null = null;
+let hasDirtyChanges = false;
+let allowWindowClose = false;
 
 function resolveDesktopHostLaunch() {
   const desktopHostProjectPath = process.env.LDD_DESKTOP_HOST_PROJECT_PATH ?? defaultDesktopHostProjectPath;
@@ -200,6 +202,34 @@ function createMainWindow() {
     void shell.openExternal(url);
     return { action: "deny" };
   });
+
+  mainWindow.on("close", (event) => {
+    if (allowWindowClose || !hasDirtyChanges) {
+      return;
+    }
+
+    event.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: "warning",
+      buttons: ["取消", "仍然关闭"],
+      defaultId: 0,
+      cancelId: 0,
+      title: "存在未保存修改",
+      message: "当前存在未保存修改。",
+      detail: "如果现在关闭窗口，未保存的 Sheet 更改将会丢失。",
+      noLink: true,
+    });
+
+    if (choice === 1) {
+      allowWindowClose = true;
+      mainWindow.close();
+    }
+  });
+
+  mainWindow.on("closed", () => {
+    allowWindowClose = false;
+    hasDirtyChanges = false;
+  });
 }
 
 ipcMain.handle("desktop-host:info", async () => ({
@@ -224,6 +254,10 @@ ipcMain.handle("workspace:choose-directory", async () => {
   return result.filePaths[0];
 });
 
+ipcMain.on("app:set-dirty-state", (_event, nextHasDirtyChanges: boolean) => {
+  hasDirtyChanges = nextHasDirtyChanges;
+});
+
 app.whenReady().then(async () => {
   startDesktopHost();
   await waitForDesktopHostReady(12000);
@@ -244,5 +278,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  allowWindowClose = true;
   stopDesktopHost();
 });

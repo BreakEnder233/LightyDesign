@@ -31,7 +31,6 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
         message = payload.error;
       }
     } catch {
-      const defaultWorkbookSheetName = "Sheet1";
       // Ignore invalid JSON payloads and fall back to status-based message.
     }
 
@@ -82,6 +81,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
   const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceReloadKey, setWorkspaceReloadKey] = useState(0);
+  const [sheetReloadKey, setSheetReloadKey] = useState(0);
   const [workspaceSearch, setWorkspaceSearch] = useState("");
   const [openTabs, setOpenTabs] = useState<SheetTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -295,7 +295,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     return () => {
       canceled = true;
     };
-  }, [activeTabId, hostInfo, openTabs, sheetStateMap, workspacePath]);
+  }, [activeTabId, hostInfo, openTabs, sheetReloadKey, workspacePath]);
 
   const workbookTree = useMemo<WorkspaceTreeWorkbook[]>(() => {
     if (!workspace) {
@@ -717,6 +717,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         status: "idle",
       },
     }));
+    setSheetReloadKey((current) => current + 1);
   }
 
   function updateCellValue(rowIndex: number, columnIndex: number, nextValue: string) {

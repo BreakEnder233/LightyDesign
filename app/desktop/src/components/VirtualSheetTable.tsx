@@ -156,16 +156,13 @@ export function VirtualSheetTable({
   const leftBodyRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const frozenTopRef = useRef<HTMLDivElement | null>(null);
-  const selectionProxyRef = useRef<HTMLInputElement | null>(null);
   const inputRefs = useRef(new Map<string, HTMLInputElement | HTMLSelectElement>());
   const cellRefs = useRef(new Map<string, HTMLDivElement>());
   const isPointerSelectingRef = useRef(false);
   const resizeStateRef = useRef<{ columnIndex: number; startX: number; startWidth: number } | null>(null);
   const editFocusModeRef = useRef<"select-all" | "caret-end">("select-all");
-  const selectionProxyComposingRef = useRef(false);
   const [contextMenuState, setContextMenuState] = useState<HeaderContextMenuState | null>(null);
   const [editingCellKey, setEditingCellKey] = useState<string | null>(null);
-  const [selectionProxyValue, setSelectionProxyValue] = useState("");
 
   const safeFreezeRows = Math.max(0, Math.min(freezeRows, rows.length));
   const safeFreezeColumns = Math.max(0, Math.min(freezeColumns, columns.length));
@@ -209,8 +206,6 @@ export function VirtualSheetTable({
       selectedCellKey,
       editingCellKey,
       selectedEditorKind,
-      selectionProxyValue,
-      proxyComposing: selectionProxyComposingRef.current,
       activeElement: describeDebugElement(document.activeElement),
       ...payload,
     });
@@ -252,9 +247,7 @@ export function VirtualSheetTable({
     const targetElement = selectedCellKey
       ? (editingCellKey === selectedCellKey
         ? inputRefs.current.get(selectedCellKey)
-        : selectedEditorKind !== "boolean"
-          ? selectionProxyRef.current
-          : cellRefs.current.get(selectedCellKey))
+        : cellRefs.current.get(selectedCellKey))
       : null;
 
     if (!targetElement) {
@@ -269,14 +262,6 @@ export function VirtualSheetTable({
       if (!targetElement || targetElement === document.activeElement) {
         logIme("focus.effect.skip", {
           reason: !targetElement ? "no-target" : "already-active",
-          targetElement: describeDebugElement(targetElement),
-        });
-        return;
-      }
-
-      if (targetElement === selectionProxyRef.current) {
-        targetElement.focus();
-        logIme("focus.effect.proxy-focused", {
           targetElement: describeDebugElement(targetElement),
         });
         return;
@@ -298,29 +283,6 @@ export function VirtualSheetTable({
 
     return () => window.cancelAnimationFrame(frameId);
   }, [editingCellKey, selectedCellKey, selectedEditorKind]);
-
-  useEffect(() => {
-    selectionProxyComposingRef.current = false;
-    setSelectionProxyValue("");
-    logIme("proxy.reset");
-  }, [selectedCellKey, editingCellKey]);
-
-  useEffect(() => {
-    if (!selectedCell || !selectedCellKey || editingCellKey === selectedCellKey || !selectionProxyValue) {
-      return;
-    }
-
-    if (selectionProxyComposingRef.current || selectedEditorKind === "boolean") {
-      return;
-    }
-
-    logIme("proxy.commit-to-editor", {
-      value: selectionProxyValue,
-    });
-    onEditCell(selectedCell.rowIndex, selectedCell.columnIndex, selectionProxyValue);
-    startEditingCell(selectedCell.rowIndex, selectedCell.columnIndex, "caret-end", { immediateFocus: true });
-    setSelectionProxyValue("");
-  }, [editingCellKey, onEditCell, selectedCell, selectedCellKey, selectedEditorKind, selectionProxyValue]);
 
   useEffect(() => {
     if (!selectedCellKey) {
@@ -385,6 +347,11 @@ export function VirtualSheetTable({
     const nextVisibleRowIndex = Math.max(0, Math.min(rows.length - 1, visibleRowIndex + rowDelta));
     const nextColumnIndex = Math.max(0, Math.min(columns.length - 1, originColumnIndex + columnDelta));
     const nextRow = rows[nextVisibleRowIndex];
+
+    if (!nextRow) {
+      return;
+    }
+
     onSelectCell(nextRow.rowIndex, nextColumnIndex, { extendSelection });
   }
 
@@ -579,15 +546,6 @@ export function VirtualSheetTable({
       return;
     }
 
-    if (editorKind !== "boolean" && isImeKeyboardEvent(event)) {
-      logIme("cell-shell.keydown.start-ime-edit", {
-        cellKey,
-        key: event.key,
-      });
-      startEditingCell(rowIndex, columnIndex, "select-all", { immediateFocus: true });
-      return;
-    }
-
     if (event.key === "Enter" || event.key === "F2") {
       event.preventDefault();
       startEditingCell(rowIndex, columnIndex, "select-all", { immediateFocus: true });
@@ -641,67 +599,6 @@ export function VirtualSheetTable({
       onCutSelection();
       return;
     }
-
-    if (
-      editorKind !== "boolean" &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey &&
-      !event.nativeEvent.isComposing &&
-      event.key.length === 1
-    ) {
-      logIme("cell-shell.keydown.start-direct-edit", {
-        cellKey,
-        key: event.key,
-      });
-      onEditCell(rowIndex, columnIndex, "");
-      startEditingCell(rowIndex, columnIndex, "select-all", { immediateFocus: true });
-    }
-  }
-
-  function handleSelectionProxyKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    logIme("proxy.keydown", {
-      key: event.key,
-      ctrlKey: event.ctrlKey,
-      metaKey: event.metaKey,
-      altKey: event.altKey,
-      shiftKey: event.shiftKey,
-      isComposing: event.nativeEvent.isComposing,
-      keyCode: event.nativeEvent.keyCode,
-      value: event.currentTarget.value,
-    });
-
-    if (!selectedCell || !selectedEditorKind) {
-      return;
-    }
-
-    const { rowIndex, columnIndex } = selectedCell;
-
-    if (
-      selectedEditorKind !== "boolean" &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey &&
-      event.key.length === 1
-    ) {
-      return;
-    }
-
-    handleCellShellKeyDown(event as unknown as React.KeyboardEvent<HTMLDivElement>, rowIndex, columnIndex, selectedEditorKind);
-  }
-
-  function handleSelectionProxyCompositionStart() {
-    selectionProxyComposingRef.current = true;
-    logIme("proxy.compositionstart");
-  }
-
-  function handleSelectionProxyCompositionEnd(event: React.CompositionEvent<HTMLInputElement>) {
-    selectionProxyComposingRef.current = false;
-    logIme("proxy.compositionend", {
-      data: event.data,
-      value: event.currentTarget.value,
-    });
-    setSelectionProxyValue(event.currentTarget.value);
   }
 
   function isCellInRange(rowIndex: number, columnIndex: number) {
@@ -799,12 +696,10 @@ export function VirtualSheetTable({
         className={`virtual-cell is-${editorKind}${isDirty ? " is-dirty" : ""}${isSelected ? " is-selected" : ""}${isInRange ? " is-in-range" : ""}`}
         key={`${column.fieldName}-${rowEntry.rowIndex}`}
         onCompositionStart={() => {
-          if (!isEditing && editorKind !== "boolean") {
-            logIme("cell-shell.compositionstart", {
-              cellKey,
-            });
-            startEditingCell(rowEntry.rowIndex, columnIndex, "select-all", { immediateFocus: true });
-          }
+          logIme("cell-shell.compositionstart", {
+            cellKey,
+            isEditing,
+          });
         }}
         onMouseDown={(event) => {
           if (event.button !== 0) {
@@ -822,14 +717,6 @@ export function VirtualSheetTable({
             flushSync(() => {
               onSelectCell(rowEntry.rowIndex, columnIndex, { extendSelection: false });
             });
-
-            if (editorKind !== "boolean" && editingCellKey !== cellKey) {
-              selectionProxyRef.current?.focus();
-              logIme("cell-shell.mousedown.proxy-focus", {
-                cellKey,
-                proxyExists: Boolean(selectionProxyRef.current),
-              });
-            }
 
             return;
           }
@@ -863,11 +750,19 @@ export function VirtualSheetTable({
               event.clipboardData.setData("text/plain", onCopySelection());
             }}
             onFocus={() => {
+              logIme("editor.focus", {
+                cellKey,
+              });
               if (!isSelected) {
                 onSelectCell(rowEntry.rowIndex, columnIndex);
               }
             }}
-            onBlur={stopEditingCell}
+            onBlur={() => {
+              logIme("editor.blur", {
+                cellKey,
+              });
+              stopEditingCell();
+            }}
             onKeyDown={(event) => handleCellKeyDown(event, rowEntry.rowIndex, columnIndex)}
             onPaste={(event) => {
               event.preventDefault();
@@ -1126,41 +1021,6 @@ export function VirtualSheetTable({
           })}
         </div>
       </div>
-
-      {selectedCell && editingCellKey !== selectedCellKey && selectedEditorKind !== "boolean" ? (
-        <input
-          aria-hidden="true"
-          className="selection-input-proxy"
-          onCompositionStart={handleSelectionProxyCompositionStart}
-          onCompositionEnd={handleSelectionProxyCompositionEnd}
-          onChange={(event) => {
-            logIme("proxy.change", {
-              value: event.target.value,
-            });
-            setSelectionProxyValue(event.target.value);
-          }}
-          onFocus={() => {
-            logIme("proxy.focus");
-          }}
-          onBlur={() => {
-            logIme("proxy.blur");
-          }}
-          onInput={(event) => {
-            const nativeEvent = event.nativeEvent as InputEvent;
-            logIme("proxy.input", {
-              value: event.currentTarget.value,
-              data: nativeEvent.data ?? null,
-              inputType: nativeEvent.inputType ?? null,
-              isComposing: nativeEvent.isComposing ?? false,
-            });
-          }}
-          onKeyDown={handleSelectionProxyKeyDown}
-          ref={selectionProxyRef}
-          tabIndex={-1}
-          type="text"
-          value={selectionProxyValue}
-        />
-      ) : null}
 
       {rows.length === 0 ? <div className="virtual-table-empty-note">没有匹配当前筛选条件的数据。</div> : null}
 

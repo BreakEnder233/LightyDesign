@@ -32,13 +32,17 @@ public static class LightyWorkspaceLoader
     private static LightyWorkbook LoadWorkbook(string workbookDirectory)
     {
         var workbookName = Path.GetFileName(workbookDirectory);
+        var codegenConfigFilePath = Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName);
+        var codegenOptions = File.Exists(codegenConfigFilePath)
+            ? LightyWorkbookCodegenOptionsSerializer.LoadFromFile(codegenConfigFilePath)
+            : new LightyWorkbookCodegenOptions();
         var sheets = Directory
             .EnumerateFiles(workbookDirectory, "*.txt", SearchOption.TopDirectoryOnly)
             .Select(dataFilePath => LoadSheet(workbookDirectory, dataFilePath))
             .OrderBy(sheet => sheet.Name, StringComparer.Ordinal)
             .ToList();
 
-        return new LightyWorkbook(workbookName, workbookDirectory, sheets);
+        return new LightyWorkbook(workbookName, workbookDirectory, sheets, codegenOptions, codegenConfigFilePath);
     }
 
     private static LightySheet LoadSheet(string workbookDirectory, string dataFilePath)

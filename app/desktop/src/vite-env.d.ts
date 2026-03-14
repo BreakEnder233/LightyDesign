@@ -22,6 +22,7 @@ interface Window {
     getDesktopHostInfo: () => Promise<DesktopHostInfo>;
     getDesktopHostHealth: () => Promise<DesktopHostHealth>;
     chooseWorkspaceDirectory: () => Promise<string | null>;
+    openDirectory: (directoryPath: string) => Promise<{ ok: boolean; error?: string }>;
     setHasDirtyChanges: (hasDirtyChanges: boolean) => void;
   };
 }

@@ -122,6 +122,9 @@ public class WorkspaceWriteTests
             var reloadedSheet = Assert.Single(reloadedWorkbook.Sheets);
             Assert.Equal(LightyWorkbookScaffolder.DefaultSheetName, reloadedSheet.Name);
             Assert.Equal(2, reloadedSheet.Header.Count);
+            Assert.NotNull(reloadedWorkbook.CodegenOptions);
+            Assert.Null(reloadedWorkbook.CodegenOptions.OutputRelativePath);
+            Assert.True(File.Exists(Path.Combine(workspaceRoot, "Item", LightyWorkbookCodegenOptionsSerializer.DefaultFileName)));
         }
         finally
         {
@@ -198,6 +201,38 @@ public class WorkspaceWriteTests
             Assert.False(File.Exists(Path.Combine(workspaceRoot, "Item", "Sheet1_header.json")));
             Assert.True(File.Exists(Path.Combine(workspaceRoot, "Item", "RenamedSheet.txt")));
             Assert.True(File.Exists(Path.Combine(workspaceRoot, "Item", "RenamedSheet_header.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void WorkbookWriter_ShouldPersistWorkbookCodegenOptions()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            var workspace = LightyWorkspaceScaffolder.Create(workspaceRoot);
+            var workbookDirectory = Path.Combine(workspaceRoot, "Item");
+            var workbook = new LightyWorkbook(
+                "Item",
+                workbookDirectory,
+                new[] { LightyWorkbookScaffolder.CreateDefaultSheet(workbookDirectory, "Sheet1") },
+                new LightyWorkbookCodegenOptions("Generated/Config"),
+                Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+            LightyWorkbookWriter.Save(workspaceRoot, workspace.HeaderLayout, workbook);
+
+            var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
+            var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks);
+
+            Assert.Equal("Generated/Config", reloadedWorkbook.CodegenOptions.OutputRelativePath);
         }
         finally
         {

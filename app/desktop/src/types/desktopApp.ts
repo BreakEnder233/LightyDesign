@@ -50,6 +50,9 @@ export type WorkspaceNavigationSheet = {
 export type WorkspaceNavigationWorkbook = {
   name: string;
   directoryPath: string;
+  codegen: {
+    outputRelativePath?: string | null;
+  };
   sheetCount: number;
   sheets: WorkspaceNavigationSheet[];
 };
@@ -73,6 +76,9 @@ export type SheetResponse = {
 export type WorkbookResponse = {
   name: string;
   directoryPath: string;
+  codegen: {
+    outputRelativePath?: string | null;
+  };
   previewOnly: boolean;
   sheets: SheetResponse[];
 };
@@ -86,7 +92,15 @@ export type WorkspaceTreeSheet = {
 
 export type WorkspaceTreeWorkbook = {
   name: string;
+  outputRelativePath?: string | null;
   sheets: WorkspaceTreeSheet[];
+};
+
+export type WorkbookCodegenExportResponse = {
+  workbookName: string;
+  outputDirectoryPath: string;
+  fileCount: number;
+  files: string[];
 };
 
 export type SheetTab = {
@@ -176,8 +190,9 @@ export type ToastNotification = {
   durationMs?: number;
   action?: {
     label: string;
-    kind: "activate-workbook";
-    workbookName: string;
+    kind: "activate-workbook" | "open-directory";
+    workbookName?: string;
+    directoryPath?: string;
   };
   timestamp: string;
 };

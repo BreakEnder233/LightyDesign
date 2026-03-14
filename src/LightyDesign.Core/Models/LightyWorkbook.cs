@@ -4,7 +4,12 @@ public sealed class LightyWorkbook
 {
     private readonly IReadOnlyList<LightySheet> _sheets;
 
-    public LightyWorkbook(string name, string directoryPath, IEnumerable<LightySheet> sheets)
+    public LightyWorkbook(
+        string name,
+        string directoryPath,
+        IEnumerable<LightySheet> sheets,
+        LightyWorkbookCodegenOptions? codegenOptions = null,
+        string? codegenConfigFilePath = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -21,11 +26,19 @@ public sealed class LightyWorkbook
         Name = name;
         DirectoryPath = directoryPath;
         _sheets = sheets.ToList().AsReadOnly();
+        CodegenOptions = codegenOptions ?? new LightyWorkbookCodegenOptions();
+        CodegenConfigFilePath = string.IsNullOrWhiteSpace(codegenConfigFilePath)
+            ? Path.Combine(directoryPath, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)
+            : codegenConfigFilePath;
     }
 
     public string Name { get; }
 
     public string DirectoryPath { get; }
+
+    public string CodegenConfigFilePath { get; }
+
+    public LightyWorkbookCodegenOptions CodegenOptions { get; }
 
     public IReadOnlyList<LightySheet> Sheets => _sheets;
 

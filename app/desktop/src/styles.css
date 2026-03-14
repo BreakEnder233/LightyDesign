@@ -395,6 +395,13 @@ button {
   color: #f2b8b5;
 }
 
+.codegen-dialog-caption {
+  margin-top: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+
 .editor-panel {
   min-height: 100%;
   display: grid;

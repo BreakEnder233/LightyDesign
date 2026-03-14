@@ -254,6 +254,19 @@ ipcMain.handle("workspace:choose-directory", async () => {
   return result.filePaths[0];
 });
 
+ipcMain.handle("shell:open-directory", async (_event, directoryPath: string) => {
+  if (typeof directoryPath !== "string" || directoryPath.trim().length === 0) {
+    return { ok: false, error: "directoryPath is required." };
+  }
+
+  const openResult = await shell.openPath(directoryPath);
+  if (openResult) {
+    return { ok: false, error: openResult };
+  }
+
+  return { ok: true };
+});
+
 ipcMain.on("app:set-dirty-state", (_event, nextHasDirtyChanges: boolean) => {
   hasDirtyChanges = nextHasDirtyChanges;
 });

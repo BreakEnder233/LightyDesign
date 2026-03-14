@@ -13,6 +13,11 @@ public static class LightyWorkbookWriter
         var workbookDirectory = Path.Combine(workspacePath, workbook.Name);
         Directory.CreateDirectory(workbookDirectory);
 
+        var codegenConfigFilePath = string.IsNullOrWhiteSpace(workbook.CodegenConfigFilePath)
+            ? Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)
+            : workbook.CodegenConfigFilePath;
+        LightyWorkbookCodegenOptionsSerializer.SaveToFile(codegenConfigFilePath, workbook.CodegenOptions);
+
         var expectedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var sheet in workbook.Sheets)

@@ -17,6 +17,7 @@ import {
   type SheetLoadState,
   type SheetResponse,
   type SheetTab,
+  type WorkbookCodegenExportResponse,
   type WorkbookResponse,
   type WorkbookSaveState,
   type WorkspaceNavigationResponse,
@@ -199,8 +200,9 @@ type UseWorkspaceEditorArgs = {
     durationMs?: number;
     action?: {
       label: string;
-      kind: "activate-workbook";
-      workbookName: string;
+      kind: "activate-workbook" | "open-directory";
+      workbookName?: string;
+      directoryPath?: string;
     };
   }) => void;
 };
@@ -457,7 +459,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     const search = workspaceSearch.trim().toLocaleLowerCase();
 
     return workspace.workbooks
-      .map((workbook) => {
+      .map<WorkspaceTreeWorkbook | null>((workbook) => {
         const sheets = workbook.sheets
           .filter((sheet) => {
             if (!search) {
@@ -479,6 +481,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         if (!search || workbook.name.toLocaleLowerCase().includes(search) || sheets.length > 0) {
           return {
             name: workbook.name,
+            outputRelativePath: workbook.codegen.outputRelativePath,
             sheets,
           };
         }
@@ -1136,6 +1139,130 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         title: "重命名 Sheet 失败",
         detail: errorMessage,
         source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
+  async function saveWorkbookCodegenOptions(workbookName: string, outputRelativePath: string) {
+    if (!hostInfo || !workspacePath) {
+      emitToast({
+        title: "无法保存代码生成配置",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    try {
+      const updatedWorkspace = await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/codegen/config`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+            workbookName,
+            outputRelativePath,
+          }),
+        },
+      );
+
+      setWorkspace(updatedWorkspace);
+      setWorkspaceStatus("ready");
+      setWorkspaceError(null);
+      emitToast({
+        title: `代码生成配置已保存: ${workbookName}`,
+        detail: outputRelativePath.trim() ? `输出相对路径: ${outputRelativePath.trim()}` : "已清空输出相对路径。",
+        source: "workspace",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 3200,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "保存代码生成配置失败。";
+      emitToast({
+        title: "保存代码生成配置失败",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
+  async function exportWorkbookCode(workbookName: string) {
+    if (!hostInfo || !workspacePath) {
+      emitToast({
+        title: "无法导出代码",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const hasDirtyWorkbookTabs = openTabs.some((tab) => tab.workbookName === workbookName && sheetStateMap[tab.id]?.dirty);
+    if (hasDirtyWorkbookTabs) {
+      emitToast({
+        title: "无法导出代码",
+        detail: "该工作簿存在未保存修改。请先保存相关 Sheet 后再导出代码。",
+        source: "save",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    try {
+      const result = await fetchJson<WorkbookCodegenExportResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/codegen/export`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+            workbookName,
+          }),
+        },
+      );
+
+      emitToast({
+        title: `代码导出成功: ${workbookName}`,
+        detail: `已输出 ${result.fileCount} 个文件到 ${result.outputDirectoryPath}。`,
+        source: "save",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 5000,
+        action: {
+          label: "打开输出目录",
+          kind: "open-directory",
+          directoryPath: result.outputDirectoryPath,
+        },
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "导出代码失败。";
+      emitToast({
+        title: "导出代码失败",
+        detail: errorMessage,
+        source: "save",
         variant: "error",
         canOpenDetail: true,
         durationMs: 8000,
@@ -1832,6 +1959,8 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     createSheet,
     deleteSheet,
     renameSheet,
+    saveWorkbookCodegenOptions,
+    exportWorkbookCode,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,

@@ -111,6 +111,8 @@ function App() {
     createSheet,
     deleteSheet,
     renameSheet,
+    saveWorkbookCodegenOptions,
+    exportWorkbookCode,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,
@@ -147,13 +149,17 @@ function App() {
   const [isCreateWorkbookDialogOpen, setIsCreateWorkbookDialogOpen] = useState(false);
   const [isCreateSheetDialogOpen, setIsCreateSheetDialogOpen] = useState(false);
   const [isRenameSheetDialogOpen, setIsRenameSheetDialogOpen] = useState(false);
+  const [isCodegenDialogOpen, setIsCodegenDialogOpen] = useState(false);
   const [isFreezeDialogOpen, setIsFreezeDialogOpen] = useState(false);
   const [newWorkbookName, setNewWorkbookName] = useState("NewWorkbook");
   const [newSheetName, setNewSheetName] = useState("NewSheet");
   const [renameSheetName, setRenameSheetName] = useState("");
+  const [codegenOutputRelativePath, setCodegenOutputRelativePath] = useState("");
   const [sheetDialogWorkbookName, setSheetDialogWorkbookName] = useState<string | null>(null);
   const [renameSheetTarget, setRenameSheetTarget] = useState<{ workbookName: string; sheetName: string } | null>(null);
+  const [codegenWorkbookName, setCodegenWorkbookName] = useState<string | null>(null);
   const renameSheetInputRef = useRef<HTMLInputElement | null>(null);
+  const codegenOutputInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedCell, setSelectedCell] = useState<SheetSelection | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<SheetSelection | null>(null);
   const [freezeRowCount, setFreezeRowCount] = useState(0);
@@ -351,14 +357,43 @@ function App() {
   }
 
   function handleConvertWorkbookCode(workbookName: string) {
-    pushToastNotification({
-      title: `转换代码暂未实现: ${workbookName}`,
-      detail: "工作簿代码转换入口已预留，后续接入实际生成流程。",
-      source: "workspace",
-      variant: "error",
-      canOpenDetail: false,
-      durationMs: 3600,
-    });
+    const targetWorkbook = workspace?.workbooks.find((workbook) => workbook.name === workbookName) ?? null;
+    setCodegenWorkbookName(workbookName);
+    setCodegenOutputRelativePath(targetWorkbook?.codegen.outputRelativePath ?? "");
+    setIsCodegenDialogOpen(true);
+  }
+
+  function handleCloseCodegenDialog() {
+    setIsCodegenDialogOpen(false);
+    setCodegenWorkbookName(null);
+    setCodegenOutputRelativePath("");
+  }
+
+  async function handleSaveWorkbookCodegenConfig() {
+    if (!codegenWorkbookName) {
+      return;
+    }
+
+    const saved = await saveWorkbookCodegenOptions(codegenWorkbookName, codegenOutputRelativePath);
+    if (saved) {
+      handleCloseCodegenDialog();
+    }
+  }
+
+  async function handleExportWorkbookCode() {
+    if (!codegenWorkbookName) {
+      return;
+    }
+
+    const saved = await saveWorkbookCodegenOptions(codegenWorkbookName, codegenOutputRelativePath);
+    if (!saved) {
+      return;
+    }
+
+    const exported = await exportWorkbookCode(codegenWorkbookName);
+    if (exported) {
+      handleCloseCodegenDialog();
+    }
   }
 
   async function handleValidateColumnType(type: string) {
@@ -929,14 +964,33 @@ function App() {
     });
   }
 
-  function handleRunToastAction(toastId: number) {
+  async function handleRunToastAction(toastId: number) {
     const targetToast = toastNotifications.find((toast) => toast.id === toastId);
     if (!targetToast?.action) {
       return;
     }
 
     if (targetToast.action.kind === "activate-workbook") {
-      activateWorkbook(targetToast.action.workbookName);
+      if (targetToast.action.workbookName) {
+        activateWorkbook(targetToast.action.workbookName);
+      }
+    }
+
+    if (targetToast.action.kind === "open-directory") {
+      if (targetToast.action.directoryPath) {
+        const result = await window.lightyDesign?.openDirectory(targetToast.action.directoryPath);
+        if (!result?.ok) {
+          pushToastNotification({
+            title: "打开输出目录失败",
+            detail: result?.error ?? `无法打开目录: ${targetToast.action.directoryPath}`,
+            source: "system",
+            variant: "error",
+            canOpenDetail: true,
+            durationMs: 8000,
+          });
+          return;
+        }
+      }
     }
 
     dismissToast(toastId);
@@ -1008,6 +1062,22 @@ function App() {
       input.select();
     });
   }, [isRenameSheetDialogOpen, renameSheetTarget?.sheetName]);
+
+  useEffect(() => {
+    if (!isCodegenDialogOpen) {
+      return;
+    }
+
+    const input = codegenOutputInputRef.current;
+    if (!input) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      input.focus();
+      input.select();
+    });
+  }, [codegenOutputRelativePath, isCodegenDialogOpen]);
 
   useEffect(() => {
     if (!sheetContextMenu) {
@@ -1250,6 +1320,64 @@ function App() {
               </button>
               <button className="primary-button" onClick={() => void handleConfirmRenameSheet()} type="button">
                 应用重命名
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isCodegenDialogOpen ? (
+        <div className="workspace-create-backdrop" onClick={handleCloseCodegenDialog} role="presentation">
+          <div
+            aria-labelledby="codegen-dialog-title"
+            aria-modal="true"
+            className="workspace-create-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">Codegen</p>
+                <h2 id="codegen-dialog-title">导出 C# 代码</h2>
+              </div>
+            </div>
+
+            <div className="workspace-create-body">
+              <p className="workspace-create-path-label">目标工作簿</p>
+              <p className="workspace-create-path-value">{codegenWorkbookName ?? "未选择工作簿"}</p>
+
+              <label className="search-field workspace-create-name-field">
+                <span>输出相对路径</span>
+                <input
+                  ref={codegenOutputInputRef}
+                  onChange={(event) => setCodegenOutputRelativePath(event.target.value)}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleExportWorkbookCode();
+                    }
+                  }}
+                  placeholder="例如 Generated/Config"
+                  type="text"
+                  value={codegenOutputRelativePath}
+                />
+              </label>
+
+              <p className="workspace-create-path-label codegen-dialog-caption">
+                路径相对于工作区根目录；点击“导出代码”时会先保存配置，再执行导出。
+              </p>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseCodegenDialog} type="button">
+                取消
+              </button>
+              <button className="secondary-button" onClick={() => void handleSaveWorkbookCodegenConfig()} type="button">
+                保存配置
+              </button>
+              <button className="primary-button" onClick={() => void handleExportWorkbookCode()} type="button">
+                导出代码
               </button>
             </div>
           </div>

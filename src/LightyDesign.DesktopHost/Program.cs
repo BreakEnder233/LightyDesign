@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using LightyDesign.Core;
 using LightyDesign.FileProcess;
+using LightyDesign.Generator;
 
 var builder = WebApplication.CreateBuilder(args);
 const string CorsPolicyName = "DesktopShell";
@@ -520,7 +521,12 @@ app.MapPost("/api/workspace/workbooks/sheets/create", (CreateSheetRequest reques
         var nextSheets = workbook.Sheets
             .Concat(new[] { LightyWorkbookScaffolder.CreateDefaultSheet(workbook.DirectoryPath, sheetName) })
             .ToList();
-        var updatedWorkbook = new LightyWorkbook(workbook.Name, workbook.DirectoryPath, nextSheets);
+        var updatedWorkbook = new LightyWorkbook(
+            workbook.Name,
+            workbook.DirectoryPath,
+            nextSheets,
+            workbook.CodegenOptions,
+            workbook.CodegenConfigFilePath);
         LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
 
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
@@ -618,7 +624,12 @@ app.MapPost("/api/workspace/workbooks/sheets/delete", (DeleteSheetRequest reques
         var nextSheets = workbook.Sheets
             .Where(sheet => !string.Equals(sheet.Name, sheetName, StringComparison.Ordinal))
             .ToList();
-        var updatedWorkbook = new LightyWorkbook(workbook.Name, workbook.DirectoryPath, nextSheets);
+        var updatedWorkbook = new LightyWorkbook(
+            workbook.Name,
+            workbook.DirectoryPath,
+            nextSheets,
+            workbook.CodegenOptions,
+            workbook.CodegenConfigFilePath);
         LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
 
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
@@ -758,11 +769,184 @@ app.MapPost("/api/workspace/workbooks/sheets/rename", (RenameSheetRequest reques
                 : sheet)
             .ToList();
 
-        var updatedWorkbook = new LightyWorkbook(workbook.Name, workbook.DirectoryPath, nextSheets);
+        var updatedWorkbook = new LightyWorkbook(
+            workbook.Name,
+            workbook.DirectoryPath,
+            nextSheets,
+            workbook.CodegenOptions,
+            workbook.CodegenConfigFilePath);
         LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
 
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
         return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/workbooks/codegen/config", (SaveWorkbookCodegenConfigRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkbookName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var workbookName = request.WorkbookName.Trim();
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+        {
+            return Results.NotFound(new
+            {
+                error = $"Workbook '{workbookName}' was not found.",
+                workspacePath,
+            });
+        }
+
+        var codegenOptions = new LightyWorkbookCodegenOptions(request.OutputRelativePath);
+        ValidateWorkbookCodegenOutputRelativePath(workspace.RootPath, codegenOptions.OutputRelativePath, allowEmpty: true);
+
+        var updatedWorkbook = new LightyWorkbook(
+            workbook.Name,
+            workbook.DirectoryPath,
+            workbook.Sheets,
+            codegenOptions,
+            workbook.CodegenConfigFilePath);
+        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
+
+        var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/workbooks/codegen/export", (ExportWorkbookCodegenRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkbookName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var workbookName = request.WorkbookName.Trim();
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+        {
+            return Results.NotFound(new
+            {
+                error = $"Workbook '{workbookName}' was not found.",
+                workspacePath,
+            });
+        }
+
+        var generator = new LightyWorkbookCodeGenerator();
+        var package = generator.Generate(workspace, workbook);
+        var outputDirectoryPath = WriteGeneratedWorkbookPackage(workspace.RootPath, workbook.Name, package);
+
+        return Results.Ok(new
+        {
+            workbookName,
+            outputDirectoryPath,
+            fileCount = package.Files.Count,
+            files = package.Files.Select(file => file.RelativePath).ToArray(),
+        });
     }
     catch (FileNotFoundException exception)
     {
@@ -1169,6 +1353,7 @@ static object ToWorkspaceNavigationResponse(LightyWorkspace workspace)
         {
             workbook.Name,
             workbook.DirectoryPath,
+            codegen = ToWorkbookCodegenResponse(workbook),
             sheetCount = workbook.Sheets.Count,
             sheets = workbook.Sheets.Select(sheet => ToSheetNavigationResponse(workbook.Name, sheet)),
         }),
@@ -1181,8 +1366,17 @@ static object ToWorkbookResponse(LightyWorkbook workbook, bool previewOnly)
     {
         workbook.Name,
         workbook.DirectoryPath,
+        codegen = ToWorkbookCodegenResponse(workbook),
         previewOnly,
         sheets = workbook.Sheets.Select(ToSheetResponse),
+    };
+}
+
+static object ToWorkbookCodegenResponse(LightyWorkbook workbook)
+{
+    return new
+    {
+        outputRelativePath = workbook.CodegenOptions.OutputRelativePath,
     };
 }
 
@@ -1242,7 +1436,7 @@ static object ToExcelErrorResponse(LightyExcelProcessException exception)
     };
 }
 
-static object ToHeaderPropertySchemaResponse(LightyHeaderPropertySchema schema)
+object ToHeaderPropertySchemaResponse(LightyHeaderPropertySchema schema)
 {
     return new
     {
@@ -1259,11 +1453,97 @@ static object ToHeaderPropertySchemaResponse(LightyHeaderPropertySchema schema)
     };
 }
 
-static bool ContainsSheetName(LightyWorkbook workbook, string candidateSheetName, string? excludedSheetName = null)
+bool ContainsSheetName(LightyWorkbook workbook, string candidateSheetName, string? excludedSheetName = null)
 {
     return workbook.Sheets.Any(sheet =>
         string.Equals(sheet.Name, candidateSheetName, StringComparison.OrdinalIgnoreCase)
         && (excludedSheetName is null || !string.Equals(sheet.Name, excludedSheetName, StringComparison.OrdinalIgnoreCase)));
+}
+
+string WriteGeneratedWorkbookPackage(string workspaceRootPath, string workbookName, LightyGeneratedWorkbookPackage package)
+{
+    var outputRootPath = ValidateWorkbookCodegenOutputRelativePath(workspaceRootPath, package.OutputRelativePath, allowEmpty: false);
+    var workbookOutputDirectoryPath = Path.Combine(outputRootPath, workbookName);
+    if (Directory.Exists(workbookOutputDirectoryPath))
+    {
+        Directory.Delete(workbookOutputDirectoryPath, recursive: true);
+    }
+
+    Directory.CreateDirectory(outputRootPath);
+
+    foreach (var file in package.Files)
+    {
+        var absolutePath = Path.Combine(outputRootPath, file.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var directoryPath = Path.GetDirectoryName(absolutePath);
+        if (!string.IsNullOrWhiteSpace(directoryPath))
+        {
+            Directory.CreateDirectory(directoryPath);
+        }
+
+        File.WriteAllText(absolutePath, file.Content);
+    }
+
+    var generatedWorkbookNames = GetGeneratedWorkbookNames(outputRootPath);
+    if (!generatedWorkbookNames.Contains(workbookName, StringComparer.OrdinalIgnoreCase))
+    {
+        generatedWorkbookNames.Add(workbookName);
+    }
+
+    var generator = new LightyWorkbookCodeGenerator();
+    var entryPointContent = generator.GenerateEntryPointFile(generatedWorkbookNames);
+    File.WriteAllText(Path.Combine(outputRootPath, "LDD.cs"), entryPointContent);
+
+    return outputRootPath;
+}
+
+List<string> GetGeneratedWorkbookNames(string outputRootPath)
+{
+    if (!Directory.Exists(outputRootPath))
+    {
+        return new List<string>();
+    }
+
+    return Directory.GetDirectories(outputRootPath)
+        .Select(directoryPath => new
+        {
+            DirectoryPath = directoryPath,
+            WorkbookName = Path.GetFileName(directoryPath),
+        })
+        .Where(entry => !string.IsNullOrWhiteSpace(entry.WorkbookName))
+        .Where(entry => File.Exists(Path.Combine(entry.DirectoryPath, $"{entry.WorkbookName}.cs")))
+        .Select(entry => entry.WorkbookName)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+}
+
+string ValidateWorkbookCodegenOutputRelativePath(string workspaceRootPath, string? outputRelativePath, bool allowEmpty)
+{
+    if (string.IsNullOrWhiteSpace(outputRelativePath))
+    {
+        if (allowEmpty)
+        {
+            return workspaceRootPath;
+        }
+
+        throw new LightyCoreException("Workbook code generation output path is not configured. Please configure an output relative path first.");
+    }
+
+    var trimmed = outputRelativePath.Trim();
+    if (Path.IsPathRooted(trimmed))
+    {
+        throw new LightyCoreException("Workbook code generation output path must be relative to the workspace root.");
+    }
+
+    var workspaceRootFullPath = Path.GetFullPath(workspaceRootPath);
+    var combinedFullPath = Path.GetFullPath(Path.Combine(workspaceRootFullPath, trimmed));
+
+    if (!combinedFullPath.StartsWith(workspaceRootFullPath, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new LightyCoreException("Workbook code generation output path cannot escape the workspace root.");
+    }
+
+    return combinedFullPath;
 }
 
 static string ResolveWorkbookName(string workbookName, string fileName)
@@ -1309,7 +1589,13 @@ static LightyWorkbook MapToWorkbook(WorkbookPayload payload, string workspacePat
     var workbookDirectory = Path.Combine(workspacePath, payload.Name);
     var workspace = LightyWorkspaceLoader.Load(workspacePath);
     var sheets = payload.Sheets.Select(sheet => MapToSheet(sheet, workbookDirectory, workspace, payload.Name)).ToList();
-    return new LightyWorkbook(payload.Name, workbookDirectory, sheets);
+    var existingWorkbook = workspace.TryGetWorkbook(payload.Name, out var loadedWorkbook) ? loadedWorkbook : null;
+    return new LightyWorkbook(
+        payload.Name,
+        workbookDirectory,
+        sheets,
+        existingWorkbook?.CodegenOptions,
+        existingWorkbook?.CodegenConfigFilePath);
 }
 
 static LightySheet MapToSheet(
@@ -1398,6 +1684,22 @@ sealed class RenameSheetRequest
     public string SheetName { get; set; } = string.Empty;
 
     public string NewSheetName { get; set; } = string.Empty;
+}
+
+sealed class SaveWorkbookCodegenConfigRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string WorkbookName { get; set; } = string.Empty;
+
+    public string? OutputRelativePath { get; set; }
+}
+
+sealed class ExportWorkbookCodegenRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string WorkbookName { get; set; } = string.Empty;
 }
 
 sealed class WorkbookPayload

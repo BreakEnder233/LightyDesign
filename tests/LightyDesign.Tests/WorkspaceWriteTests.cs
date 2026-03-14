@@ -157,6 +157,57 @@ public class WorkspaceWriteTests
         }
     }
 
+    [Fact]
+    public void WorkbookScaffolder_ShouldCreateDefaultSheetTemplate()
+    {
+        var sheet = LightyWorkbookScaffolder.CreateDefaultSheet(@"D:\Workspace\Item", "Consumable");
+
+        Assert.Equal("Consumable", sheet.Name);
+        Assert.Equal(2, sheet.Header.Count);
+        Assert.Equal("ID", sheet.Header[0].FieldName);
+        Assert.Equal("Annotation", sheet.Header[1].FieldName);
+        Assert.True(sheet.Header[0].TryGetExportScope(out var firstScope));
+        Assert.Equal(LightyExportScope.All, firstScope);
+        Assert.True(sheet.Header[1].TryGetExportScope(out var secondScope));
+        Assert.Equal(LightyExportScope.None, secondScope);
+    }
+
+    [Fact]
+    public void WorkbookWriter_ShouldDeleteOldFilesAfterSheetRename()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            var workspace = LightyWorkspaceScaffolder.Create(workspaceRoot);
+            var workbook = new LightyWorkbook(
+                "Item",
+                Path.Combine(workspaceRoot, "Item"),
+                new[] { LightyWorkbookScaffolder.CreateDefaultSheet(Path.Combine(workspaceRoot, "Item"), "Sheet1") });
+
+            LightyWorkbookWriter.Save(workspaceRoot, workspace.HeaderLayout, workbook);
+
+            var renamedWorkbook = new LightyWorkbook(
+                "Item",
+                Path.Combine(workspaceRoot, "Item"),
+                new[] { LightyWorkbookScaffolder.CreateDefaultSheet(Path.Combine(workspaceRoot, "Item"), "RenamedSheet") });
+
+            LightyWorkbookWriter.Save(workspaceRoot, workspace.HeaderLayout, renamedWorkbook);
+
+            Assert.False(File.Exists(Path.Combine(workspaceRoot, "Item", "Sheet1.txt")));
+            Assert.False(File.Exists(Path.Combine(workspaceRoot, "Item", "Sheet1_header.json")));
+            Assert.True(File.Exists(Path.Combine(workspaceRoot, "Item", "RenamedSheet.txt")));
+            Assert.True(File.Exists(Path.Combine(workspaceRoot, "Item", "RenamedSheet_header.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
     private static string CreateWorkspaceDirectory()
     {
         return Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");

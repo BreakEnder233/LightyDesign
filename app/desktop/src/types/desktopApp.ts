@@ -1,5 +1,22 @@
-export type HeaderLayoutRow = {
+﻿export type HeaderLayoutRow = {
   headerType: string;
+};
+
+export type HeaderPropertyBindingSource = "field" | "attribute";
+
+export type HeaderPropertyEditorKind = "text" | "enum" | "json";
+
+export type HeaderPropertySchema = {
+  headerType: string;
+  bindingSource: HeaderPropertyBindingSource;
+  bindingKey: string;
+  fieldName: string;
+  label: string;
+  editorKind: HeaderPropertyEditorKind;
+  valueType: string;
+  required: boolean;
+  placeholder?: string | null;
+  options: string[];
 };
 
 export type SheetColumn = {
@@ -165,6 +182,8 @@ export type ToastNotification = {
   timestamp: string;
 };
 
+const defaultExportScope = "All";
+
 export function buildSheetTabId(workbookName: string, sheetName: string) {
   return `${workbookName}::${sheetName}`;
 }
@@ -209,6 +228,125 @@ export function cloneColumns(columns: SheetColumn[]) {
   }));
 }
 
+export function getColumnExportScope(column: SheetColumn) {
+  const exportScope = column.attributes.ExportScope;
+
+  if (typeof exportScope === "string" && exportScope.trim().length > 0) {
+    return exportScope;
+  }
+
+  return defaultExportScope;
+}
+
+export function normalizeSheetColumnForSave(column: SheetColumn): SheetColumn {
+  return {
+    ...column,
+    displayName: column.displayName ?? null,
+    attributes: {
+      ...column.attributes,
+      ExportScope: getColumnExportScope(column),
+    },
+  };
+}
+
+function stringifyHeaderPropertyValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return JSON.stringify(value, null, 2);
+}
+
+function getFieldValue(column: SheetColumn, bindingKey: string) {
+  switch (bindingKey) {
+    case "fieldName":
+      return column.fieldName;
+    case "type":
+      return column.type;
+    case "displayName":
+      return column.displayName ?? "";
+    default:
+      return "";
+  }
+}
+
+function parseHeaderPropertyInputValue(schema: HeaderPropertySchema, inputValue: string) {
+  const trimmedValue = inputValue.trim();
+
+  if (schema.editorKind !== "json") {
+    return trimmedValue;
+  }
+
+  if (!trimmedValue) {
+    return undefined;
+  }
+
+  const looksLikeJson = /^[\[{"\d\-]|^(true|false|null)$/i.test(trimmedValue);
+  if (!looksLikeJson) {
+    return inputValue;
+  }
+
+  try {
+    return JSON.parse(inputValue) as unknown;
+  } catch {
+    throw new Error(`${schema.label} 不是合法 JSON。`);
+  }
+}
+
+export function getHeaderPropertyInputValue(column: SheetColumn, schema: HeaderPropertySchema) {
+  if (schema.bindingSource === "attribute" && schema.bindingKey === "ExportScope") {
+    return getColumnExportScope(column);
+  }
+
+  const value = schema.bindingSource === "field"
+    ? getFieldValue(column, schema.bindingKey)
+    : column.attributes[schema.bindingKey];
+
+  return stringifyHeaderPropertyValue(value);
+}
+
+export function applyHeaderPropertyInputValue(column: SheetColumn, schema: HeaderPropertySchema, inputValue: string) {
+  const nextColumn: SheetColumn = {
+    ...column,
+    attributes: { ...column.attributes },
+  };
+
+  const parsedValue = parseHeaderPropertyInputValue(schema, inputValue);
+  const normalizedText = inputValue.trim();
+
+  if (schema.bindingSource === "field") {
+    if (schema.bindingKey === "fieldName") {
+      nextColumn.fieldName = normalizedText;
+    }
+
+    if (schema.bindingKey === "type") {
+      nextColumn.type = normalizedText;
+    }
+
+    if (schema.bindingKey === "displayName") {
+      nextColumn.displayName = normalizedText ? inputValue : null;
+    }
+
+    return nextColumn;
+  }
+
+  if (parsedValue === undefined || normalizedText.length === 0) {
+    delete nextColumn.attributes[schema.bindingKey];
+    return nextColumn;
+  }
+
+  nextColumn.attributes[schema.bindingKey] = parsedValue;
+  return nextColumn;
+}
+
 export function getSelectionBounds(range: SheetSelectionRange) {
   return {
     startRowIndex: Math.min(range.anchor.rowIndex, range.focus.rowIndex),
@@ -247,3 +385,5 @@ export function getColumnEditorKind(column: SheetColumn): ColumnEditorKind {
 
   return "text";
 }
+
+

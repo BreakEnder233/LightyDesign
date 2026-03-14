@@ -1,0 +1,44 @@
+{
+  "rows": [
+    {
+      "headerType": "FieldName",
+      "value": [
+        "ID1",
+        "ID2",
+        "Annotation"
+      ]
+    },
+    {
+      "headerType": "DisplayName",
+      "value": [
+        "ID1",
+        "ID2",
+        "\u6CE8\u91CA"
+      ]
+    },
+    {
+      "headerType": "Type",
+      "value": [
+        "int",
+        "int",
+        "string"
+      ]
+    },
+    {
+      "headerType": "Validation",
+      "value": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "headerType": "ExportScope",
+      "value": [
+        "All",
+        "All",
+        "None"
+      ]
+    }
+  ]
+}

@@ -27,36 +27,47 @@ public static class LightyWorkbookScaffolder
         var workbook = new LightyWorkbook(
             trimmedWorkbookName,
             workbookDirectoryPath,
-            new[]
-            {
-                new LightySheet(
-                    sheetName,
-                    Path.Combine(workbookDirectoryPath, $"{sheetName}.txt"),
-                    Path.Combine(workbookDirectoryPath, $"{sheetName}_header.json"),
-                    new LightySheetHeader(new[]
-                    {
-                        new ColumnDefine(
-                            fieldName: "ID",
-                            type: "int",
-                            displayName: "序号",
-                            attributes: new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase)
-                            {
-                                [LightyHeaderTypes.ExportScope] = JsonSerializer.SerializeToElement("All"),
-                            }),
-                        new ColumnDefine(
-                            fieldName: "Annotation",
-                            type: "string",
-                            displayName: "注释",
-                            attributes: new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase)
-                            {
-                                [LightyHeaderTypes.ExportScope] = JsonSerializer.SerializeToElement("None"),
-                            }),
-                    }),
-                    Array.Empty<LightySheetRow>())
-            });
+            new[] { CreateDefaultSheet(workbookDirectoryPath, sheetName) });
 
         LightyWorkbookWriter.Save(workspacePath, headerLayout, workbook);
         return workbook;
+    }
+
+    public static LightySheet CreateDefaultSheet(string workbookDirectoryPath, string sheetName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workbookDirectoryPath);
+
+        if (string.IsNullOrWhiteSpace(sheetName))
+        {
+            throw new LightyCoreException("Sheet name cannot be empty.");
+        }
+
+        var trimmedSheetName = sheetName.Trim();
+
+        return new LightySheet(
+            trimmedSheetName,
+            Path.Combine(workbookDirectoryPath, $"{trimmedSheetName}.txt"),
+            Path.Combine(workbookDirectoryPath, $"{trimmedSheetName}_header.json"),
+            new LightySheetHeader(new[]
+            {
+                new ColumnDefine(
+                    fieldName: "ID",
+                    type: "int",
+                    displayName: "序号",
+                    attributes: new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        [LightyHeaderTypes.ExportScope] = JsonSerializer.SerializeToElement("All"),
+                    }),
+                new ColumnDefine(
+                    fieldName: "Annotation",
+                    type: "string",
+                    displayName: "注释",
+                    attributes: new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        [LightyHeaderTypes.ExportScope] = JsonSerializer.SerializeToElement("None"),
+                    }),
+            }),
+            Array.Empty<LightySheetRow>());
     }
 
     public static void Delete(string workspacePath, string workbookName)

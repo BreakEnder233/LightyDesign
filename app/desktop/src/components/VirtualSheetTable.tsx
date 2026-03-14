@@ -1,9 +1,10 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
+﻿import { useVirtualizer } from "@tanstack/react-virtual";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import {
   buildCellKey,
+  getColumnExportScope,
   getColumnEditorKind,
   getSelectionBounds,
   type SheetColumn,
@@ -37,6 +38,7 @@ type VirtualSheetTableProps = {
   onInsertColumnBefore: (columnIndex: number) => void;
   onInsertColumn: (afterColumnIndex: number) => void;
   onDeleteColumn: (columnIndex: number) => void;
+  onEditColumn: (columnIndex: number) => void;
   onCopySelection: () => string;
   onCopySelectionToClipboard: () => void;
   onCutSelection: () => void;
@@ -145,6 +147,7 @@ export function VirtualSheetTable({
   onInsertColumnBefore,
   onInsertColumn,
   onDeleteColumn,
+  onEditColumn,
   onCopySelection,
   onCopySelectionToClipboard,
   onCutSelection,
@@ -665,7 +668,11 @@ export function VirtualSheetTable({
           }}
         >
           <div className="virtual-header-label">{column.displayName || column.fieldName}</div>
-          <small>{column.type}</small>
+          <div className="virtual-header-meta">
+            <small>{column.fieldName}</small>
+            <small>{column.type}</small>
+            <small>Scope: {getColumnExportScope(column)}</small>
+          </div>
           <button
             aria-label={`调整列宽 ${column.displayName || column.fieldName}`}
             className="virtual-column-resizer"
@@ -1068,6 +1075,9 @@ export function VirtualSheetTable({
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onSelectColumn(contextMenuState.columnIndex))} type="button">
                 选择整列
               </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onEditColumn(contextMenuState.columnIndex))} type="button">
+                编辑列头
+              </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertColumnBefore(contextMenuState.columnIndex))} type="button">
                 在左侧插入列
               </button>
@@ -1126,3 +1136,5 @@ export function VirtualSheetTable({
     </div>
   );
 }
+
+

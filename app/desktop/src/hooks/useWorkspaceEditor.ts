@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from "react";
+﻿import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import {
   buildCellKey,
@@ -6,6 +6,8 @@ import {
   buildWorkspaceScopedStorageKey,
   cloneColumns,
   cloneRows,
+  normalizeSheetColumnForSave,
+  type HeaderPropertySchema,
   isSheetAvailable,
   isSheetTab,
   type CellEditInput,
@@ -61,6 +63,24 @@ function isValidWorkspaceName(workspaceName: string) {
 
 function removeWorkbookTabs(openTabs: SheetTab[], workbookName: string) {
   return openTabs.filter((tab) => tab.workbookName !== workbookName);
+}
+
+function removeSheetTabs(openTabs: SheetTab[], workbookName: string, sheetName: string) {
+  return openTabs.filter((tab) => !(tab.workbookName === workbookName && tab.sheetName === sheetName));
+}
+
+function renameSheetTabs(openTabs: SheetTab[], workbookName: string, sheetName: string, newSheetName: string) {
+  return openTabs.map((tab) => {
+    if (tab.workbookName !== workbookName || tab.sheetName !== sheetName) {
+      return tab;
+    }
+
+    return {
+      ...tab,
+      id: buildSheetTabId(workbookName, newSheetName),
+      sheetName: newSheetName,
+    };
+  });
 }
 
 function applyEditsToRows(rows: string[][], edits: Array<Pick<CellEditRecord, "rowIndex" | "columnIndex"> & { value: string }>) {
@@ -142,6 +162,10 @@ function buildSheetStateFromDraft(
   };
 }
 
+function hasLoadedSheetData(sheetState: SheetLoadState | undefined): sheetState is SheetLoadState & { data: SheetResponse } {
+  return Boolean(sheetState?.data);
+}
+
 function createInsertedColumn(existingColumns: SheetColumn[], columnIndex: number): SheetColumn {
   const baseName = `NewColumn${columnIndex + 1}`;
   let fieldName = baseName;
@@ -158,7 +182,9 @@ function createInsertedColumn(existingColumns: SheetColumn[], columnIndex: numbe
     displayName: fieldName,
     isListType: false,
     isReferenceType: false,
-    attributes: {},
+    attributes: {
+      ExportScope: "All",
+    },
   };
 }
 
@@ -182,6 +208,7 @@ type UseWorkspaceEditorArgs = {
 export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs) {
   const [workspacePath, setWorkspacePath] = useState<string>(() => localStorage.getItem(workspaceStorageKey) ?? "");
   const [workspace, setWorkspace] = useState<WorkspaceNavigationResponse | null>(null);
+  const [headerPropertySchemas, setHeaderPropertySchemas] = useState<HeaderPropertySchema[]>([]);
   const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceReloadKey, setWorkspaceReloadKey] = useState(0);
@@ -192,6 +219,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
   const [sheetStateMap, setSheetStateMap] = useState<Record<string, SheetLoadState>>({});
   const [workbookSaveStateMap, setWorkbookSaveStateMap] = useState<Record<string, WorkbookSaveState>>({});
   const [sheetFilter, setSheetFilter] = useState("");
+  const restoredWorkspacePathRef = useRef<string | null>(null);
 
   const hasDirtyChanges = useMemo(
     () => Object.values(sheetStateMap).some((sheetState) => sheetState.dirty),
@@ -208,6 +236,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       setOpenTabs([]);
       setActiveTabId(null);
       setSheetStateMap({});
+      setHeaderPropertySchemas([]);
       return;
     }
 
@@ -225,15 +254,21 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
       try {
         const query = new URLSearchParams({ workspacePath });
-        const data = await fetchJson<WorkspaceNavigationResponse>(
-          `${hostInfo.desktopHostUrl}/api/workspace/navigation?${query.toString()}`,
-        );
+        const [data, headerPropertyResponse] = await Promise.all([
+          fetchJson<WorkspaceNavigationResponse>(
+            `${hostInfo.desktopHostUrl}/api/workspace/navigation?${query.toString()}`,
+          ),
+          fetchJson<{ properties: HeaderPropertySchema[] }>(
+            `${hostInfo.desktopHostUrl}/api/workspace/header-properties?${query.toString()}`,
+          ),
+        ]);
 
         if (canceled) {
           return;
         }
 
         setWorkspace(data);
+        setHeaderPropertySchemas(headerPropertyResponse.properties);
         setWorkspaceStatus("ready");
         setSheetStateMap({});
         setWorkbookSaveStateMap({});
@@ -245,6 +280,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
         const errorMessage = error instanceof Error ? error.message : "工作区读取失败。";
         setWorkspace(null);
+        setHeaderPropertySchemas([]);
         setWorkspaceStatus("error");
         setWorkspaceError(errorMessage);
         emitToast({
@@ -267,6 +303,10 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
   useEffect(() => {
     if (!workspacePath || !workspace || workspaceStatus !== "ready") {
+      return;
+    }
+
+    if (restoredWorkspacePathRef.current === workspacePath) {
       return;
     }
 
@@ -300,7 +340,14 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       });
       return nextStateMap;
     });
+    restoredWorkspacePathRef.current = workspacePath;
   }, [workspace, workspacePath, workspaceStatus]);
+
+  useEffect(() => {
+    if (!workspacePath) {
+      restoredWorkspacePathRef.current = null;
+    }
+  }, [workspacePath]);
 
   useEffect(() => {
     if (!workspacePath) {
@@ -808,6 +855,295 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     }
   }
 
+  async function createSheet(workbookName: string, sheetName: string) {
+    if (!hostInfo || !workspacePath) {
+      emitToast({
+        title: "无法新建 Sheet",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const trimmedSheetName = sheetName.trim();
+    if (!isValidWorkspaceName(trimmedSheetName)) {
+      emitToast({
+        title: "Sheet 名称无效",
+        detail: "Sheet 名称不能为空，且不能包含 \\ / : * ? \" < > | 等非法字符。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    try {
+      const updatedWorkspace = await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/sheets/create`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+            workbookName,
+            sheetName: trimmedSheetName,
+          }),
+        },
+      );
+
+      const tabId = buildSheetTabId(workbookName, trimmedSheetName);
+      setWorkspace(updatedWorkspace);
+      setWorkspaceStatus("ready");
+      setWorkspaceError(null);
+      setOpenTabs((current) => {
+        if (current.some((tab) => tab.id === tabId)) {
+          return current;
+        }
+
+        return [...current, { id: tabId, workbookName, sheetName: trimmedSheetName }];
+      });
+      setActiveTabId(tabId);
+      setSheetStateMap((current) => ({
+        ...current,
+        [tabId]: current[tabId] ?? { status: "idle" },
+      }));
+      setSheetFilter("");
+
+      emitToast({
+        title: `Sheet 已创建: ${trimmedSheetName}`,
+        detail: `已在工作簿 ${workbookName} 下创建新 Sheet，并初始化默认列。`,
+        source: "workspace",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4200,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "创建 Sheet 失败。";
+      emitToast({
+        title: "创建 Sheet 失败",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
+  async function deleteSheet(workbookName: string, sheetName: string) {
+    if (!hostInfo || !workspacePath) {
+      emitToast({
+        title: "无法删除 Sheet",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const shouldDelete = window.confirm(`确认删除 Sheet ${workbookName} / ${sheetName} 吗？该操作不会进入撤销/重做。`);
+    if (!shouldDelete) {
+      return false;
+    }
+
+    try {
+      const updatedWorkspace = await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/sheets/delete`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+            workbookName,
+            sheetName,
+          }),
+        },
+      );
+
+      const nextOpenTabs = removeSheetTabs(openTabs, workbookName, sheetName);
+      const deletedTabIds = openTabs
+        .filter((tab) => tab.workbookName === workbookName && tab.sheetName === sheetName)
+        .map((tab) => tab.id);
+
+      setWorkspace(updatedWorkspace);
+      setWorkspaceStatus("ready");
+      setWorkspaceError(null);
+      setOpenTabs(nextOpenTabs);
+      setActiveTabId((current) => {
+        if (!current || !deletedTabIds.includes(current)) {
+          return current && nextOpenTabs.some((tab) => tab.id === current) ? current : nextOpenTabs[0]?.id ?? null;
+        }
+
+        return nextOpenTabs[0]?.id ?? null;
+      });
+      setSheetStateMap((current) => {
+        const nextStateMap = { ...current };
+        deletedTabIds.forEach((tabId) => {
+          delete nextStateMap[tabId];
+        });
+        return nextStateMap;
+      });
+      setSheetFilter("");
+
+      emitToast({
+        title: `Sheet 已删除: ${sheetName}`,
+        detail: `已从工作簿 ${workbookName} 中移除该 Sheet。`,
+        source: "workspace",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4200,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "删除 Sheet 失败。";
+      emitToast({
+        title: "删除 Sheet 失败",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
+  async function renameSheet(workbookName: string, sheetName: string, newSheetName: string) {
+    if (!hostInfo || !workspacePath) {
+      emitToast({
+        title: "无法重命名 Sheet",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const trimmedSheetName = newSheetName.trim();
+    if (!isValidWorkspaceName(trimmedSheetName)) {
+      emitToast({
+        title: "Sheet 名称无效",
+        detail: "Sheet 名称不能为空，且不能包含 \\ / : * ? \" < > | 等非法字符。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    if (trimmedSheetName === sheetName) {
+      emitToast({
+        title: "Sheet 名称未变化",
+        detail: "请输入一个不同的新名称。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 5000,
+      });
+      return false;
+    }
+
+    const hasDirtySheet = openTabs.some(
+      (tab) => tab.workbookName === workbookName && tab.sheetName === sheetName && sheetStateMap[tab.id]?.dirty,
+    );
+    if (hasDirtySheet) {
+      emitToast({
+        title: "无法重命名 Sheet",
+        detail: "该 Sheet 存在未保存修改，请先保存或还原后再重命名。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    try {
+      const updatedWorkspace = await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/sheets/rename`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+            workbookName,
+            sheetName,
+            newSheetName: trimmedSheetName,
+          }),
+        },
+      );
+
+      const renamedTabs = renameSheetTabs(openTabs, workbookName, sheetName, trimmedSheetName);
+      const oldTabIds = openTabs
+        .filter((tab) => tab.workbookName === workbookName && tab.sheetName === sheetName)
+        .map((tab) => tab.id);
+      const newTabIds = renamedTabs
+        .filter((tab) => tab.workbookName === workbookName && tab.sheetName === trimmedSheetName)
+        .map((tab) => tab.id);
+
+      setWorkspace(updatedWorkspace);
+      setWorkspaceStatus("ready");
+      setWorkspaceError(null);
+      setOpenTabs(renamedTabs);
+      setActiveTabId((current) => {
+        if (!current || !oldTabIds.includes(current)) {
+          return current;
+        }
+
+        return newTabIds[0] ?? current;
+      });
+      setSheetStateMap((current) => {
+        const nextStateMap = { ...current };
+        oldTabIds.forEach((tabId) => {
+          delete nextStateMap[tabId];
+        });
+        newTabIds.forEach((tabId) => {
+          nextStateMap[tabId] = { status: "idle" };
+        });
+        return nextStateMap;
+      });
+      setSheetFilter("");
+
+      emitToast({
+        title: `Sheet 已重命名: ${sheetName}`,
+        detail: `已重命名为 ${trimmedSheetName}。`,
+        source: "workspace",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4200,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "重命名 Sheet 失败。";
+      emitToast({
+        title: "重命名 Sheet 失败",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
   function retryWorkspaceLoad() {
     if (!workspacePath) {
       return;
@@ -851,7 +1187,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data) {
+      if (!hasLoadedSheetData(currentSheetState)) {
         return current;
       }
 
@@ -922,7 +1258,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data) {
+      if (!hasLoadedSheetData(currentSheetState)) {
         return current;
       }
 
@@ -968,7 +1304,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data) {
+      if (!hasLoadedSheetData(currentSheetState)) {
         return current;
       }
 
@@ -1017,7 +1353,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data) {
+      if (!hasLoadedSheetData(currentSheetState)) {
         return current;
       }
 
@@ -1067,7 +1403,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data) {
+      if (!hasLoadedSheetData(currentSheetState)) {
         return current;
       }
 
@@ -1109,6 +1445,64 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     }));
   }
 
+  function updateColumnDefinition(columnIndex: number, nextColumn: SheetColumn) {
+    if (!activeTab || !activeSheetState?.data) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!hasLoadedSheetData(currentSheetState)) {
+        return current;
+      }
+
+      const currentColumns = cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns);
+      if (columnIndex < 0 || columnIndex >= currentColumns.length) {
+        return current;
+      }
+
+      const previousColumns = cloneColumns(currentColumns);
+      const normalizedColumn = normalizeSheetColumnForSave(nextColumn);
+      currentColumns[columnIndex] = {
+        ...normalizedColumn,
+        attributes: { ...normalizedColumn.attributes },
+      };
+
+      if (areColumnsEqual(previousColumns, currentColumns)) {
+        return current;
+      }
+
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length,
+      );
+      const historyEntry: SheetHistoryEntry = {
+        kind: "structure",
+        previousColumns,
+        previousRows: cloneRows(normalizedRows),
+        nextColumns: cloneColumns(currentColumns),
+        nextRows: cloneRows(normalizedRows),
+      };
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, currentColumns, normalizedRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
   function activateWorkbook(workbookName: string) {
     const existingTab = openTabs.find((tab) => tab.workbookName === workbookName);
     if (existingTab) {
@@ -1130,7 +1524,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data || !currentSheetState.undoStack?.length) {
+      if (!hasLoadedSheetData(currentSheetState) || !currentSheetState.undoStack?.length) {
         return current;
       }
 
@@ -1192,7 +1586,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data || !currentSheetState.redoStack?.length) {
+      if (!hasLoadedSheetData(currentSheetState) || !currentSheetState.redoStack?.length) {
         return current;
       }
 
@@ -1259,7 +1653,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     setSheetStateMap((current) => {
       const currentSheetState = current[activeTab.id];
-      if (!currentSheetState?.data) {
+      if (!hasLoadedSheetData(currentSheetState)) {
         return current;
       }
 
@@ -1310,7 +1704,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
           sheets: workbookResponse.sheets.map((sheet) => {
             const dirtySheetState = dirtySheetMap.get(sheet.metadata.name);
             const rows = dirtySheetState?.draftRows ?? sheet.rows;
-            const columns = dirtySheetState?.draftColumns ?? sheet.metadata.columns;
+            const columns = (dirtySheetState?.draftColumns ?? sheet.metadata.columns).map(normalizeSheetColumnForSave);
 
             return {
               name: sheet.metadata.name,
@@ -1408,6 +1802,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     workspacePath,
     setWorkspacePath,
     workspace,
+    headerPropertySchemas,
     workspaceStatus,
     workspaceError,
     workspaceSearch,
@@ -1434,6 +1829,9 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     createWorkspace,
     createWorkbook,
     deleteWorkbook,
+    createSheet,
+    deleteSheet,
+    renameSheet,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,
@@ -1442,6 +1840,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     deleteRow,
     insertColumn,
     deleteColumn,
+    updateColumnDefinition,
     updateCellValue,
     activateWorkbook,
     undoActiveSheetEdit,
@@ -1450,3 +1849,6 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     saveActiveWorkbook,
   };
 }
+
+
+

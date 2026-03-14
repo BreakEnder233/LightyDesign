@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { ColumnEditorDialog } from "./components/ColumnEditorDialog";
 import { ToastCenter } from "./components/ToastCenter";
 import { VirtualSheetTable } from "./components/VirtualSheetTable";
 import { useDesktopHostConnection } from "./hooks/useDesktopHostConnection";
 import { isShortcutModifierPressed, useEditorShortcuts } from "./hooks/useEditorShortcuts";
 import { useToastCenter } from "./hooks/useToastCenter";
 import { useWorkspaceEditor } from "./hooks/useWorkspaceEditor";
-import { buildWorkspaceScopedStorageKey, getSelectionBounds, type SheetSelection, type SheetSelectionRange, type ShortcutBinding } from "./types/desktopApp";
+import { buildWorkspaceScopedStorageKey, getSelectionBounds, type SheetColumn, type SheetSelection, type SheetSelectionRange, type ShortcutBinding } from "./types/desktopApp";
 
 const defaultColumnWidth = 140;
 const minColumnWidth = 88;
@@ -81,6 +82,7 @@ function App() {
   const {
     workspacePath,
     workspace,
+    headerPropertySchemas,
     workspaceStatus,
     workspaceError,
     workspaceSearch,
@@ -106,6 +108,9 @@ function App() {
     createWorkspace,
     createWorkbook,
     deleteWorkbook,
+    createSheet,
+    deleteSheet,
+    renameSheet,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
     retryActiveSheetLoad,
@@ -114,6 +119,7 @@ function App() {
     deleteRow,
     insertColumn,
     deleteColumn,
+    updateColumnDefinition,
     updateCellValue,
     activateWorkbook,
     undoActiveSheetEdit,
@@ -139,8 +145,15 @@ function App() {
   const [createWorkspaceParentDirectoryPath, setCreateWorkspaceParentDirectoryPath] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("NewWorkspace");
   const [isCreateWorkbookDialogOpen, setIsCreateWorkbookDialogOpen] = useState(false);
+  const [isCreateSheetDialogOpen, setIsCreateSheetDialogOpen] = useState(false);
+  const [isRenameSheetDialogOpen, setIsRenameSheetDialogOpen] = useState(false);
   const [isFreezeDialogOpen, setIsFreezeDialogOpen] = useState(false);
   const [newWorkbookName, setNewWorkbookName] = useState("NewWorkbook");
+  const [newSheetName, setNewSheetName] = useState("NewSheet");
+  const [renameSheetName, setRenameSheetName] = useState("");
+  const [sheetDialogWorkbookName, setSheetDialogWorkbookName] = useState<string | null>(null);
+  const [renameSheetTarget, setRenameSheetTarget] = useState<{ workbookName: string; sheetName: string } | null>(null);
+  const renameSheetInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedCell, setSelectedCell] = useState<SheetSelection | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<SheetSelection | null>(null);
   const [freezeRowCount, setFreezeRowCount] = useState(0);
@@ -148,6 +161,15 @@ function App() {
   const [columnWidthsBySheet, setColumnWidthsBySheet] = useState<Record<string, number[]>>({});
   const [freezeDialogRowCount, setFreezeDialogRowCount] = useState(0);
   const [freezeDialogColumnCount, setFreezeDialogColumnCount] = useState(0);
+  const [editingColumnIndex, setEditingColumnIndex] = useState<number | null>(null);
+  const [sheetContextMenu, setSheetContextMenu] = useState<{
+    workbookName: string;
+    sheetName: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const editingColumn = editingColumnIndex !== null ? (activeSheetColumns[editingColumnIndex] ?? null) : null;
 
   function applySelectionRange(anchor: SheetSelection, focus: SheetSelection) {
     setSelectionAnchor(anchor);
@@ -243,6 +265,137 @@ function App() {
 
   function handleDeleteColumn(columnIndex: number) {
     deleteColumn(columnIndex);
+  }
+
+  function handleOpenColumnEditor(columnIndex: number) {
+    if (columnIndex < 0 || columnIndex >= activeSheetColumns.length) {
+      return;
+    }
+
+    setEditingColumnIndex(columnIndex);
+  }
+
+  function handleCloseColumnEditor() {
+    setEditingColumnIndex(null);
+  }
+
+  function handleSaveColumnDefinition(columnIndex: number, nextColumn: SheetColumn) {
+    updateColumnDefinition(columnIndex, nextColumn);
+  }
+
+  function handleOpenCreateSheetDialog(workbookName: string) {
+    setSheetDialogWorkbookName(workbookName);
+    setNewSheetName("NewSheet");
+    setIsCreateSheetDialogOpen(true);
+    setSheetContextMenu(null);
+  }
+
+  function handleCloseCreateSheetDialog() {
+    setIsCreateSheetDialogOpen(false);
+    setSheetDialogWorkbookName(null);
+    setNewSheetName("NewSheet");
+  }
+
+  async function handleConfirmCreateSheet() {
+    if (!sheetDialogWorkbookName) {
+      return;
+    }
+
+    const created = await createSheet(sheetDialogWorkbookName, newSheetName);
+    if (created) {
+      handleCloseCreateSheetDialog();
+    }
+  }
+
+  async function handleDeleteSheet(workbookName: string, sheetName: string) {
+    setSheetContextMenu(null);
+    await deleteSheet(workbookName, sheetName);
+  }
+
+  function handleOpenRenameSheetDialog(workbookName: string, sheetName: string) {
+    setRenameSheetTarget({ workbookName, sheetName });
+    setRenameSheetName(sheetName);
+    setIsRenameSheetDialogOpen(true);
+    setSheetContextMenu(null);
+  }
+
+  function handleCloseRenameSheetDialog() {
+    setIsRenameSheetDialogOpen(false);
+    setRenameSheetTarget(null);
+    setRenameSheetName("");
+  }
+
+  async function handleConfirmRenameSheet() {
+    if (!renameSheetTarget) {
+      return;
+    }
+
+    const renamed = await renameSheet(renameSheetTarget.workbookName, renameSheetTarget.sheetName, renameSheetName);
+    if (renamed) {
+      handleCloseRenameSheetDialog();
+    }
+  }
+
+  function handleOpenSheetContextMenu(event: React.MouseEvent<HTMLButtonElement>, workbookName: string, sheetName: string) {
+    event.preventDefault();
+    setSheetContextMenu({
+      workbookName,
+      sheetName,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  function handleCloseSheetContextMenu() {
+    setSheetContextMenu(null);
+  }
+
+  function handleConvertWorkbookCode(workbookName: string) {
+    pushToastNotification({
+      title: `转换代码暂未实现: ${workbookName}`,
+      detail: "工作簿代码转换入口已预留，后续接入实际生成流程。",
+      source: "workspace",
+      variant: "error",
+      canOpenDetail: false,
+      durationMs: 3600,
+    });
+  }
+
+  async function handleValidateColumnType(type: string) {
+    if (!hostInfo || !workspacePath) {
+      return {
+        ok: false,
+        message: "工作区未连接，无法校验 Type。",
+      };
+    }
+
+    const query = new URLSearchParams({
+      type,
+      workspacePath,
+      workbookName: activeTab?.workbookName ?? "",
+    });
+
+    try {
+      const response = await fetch(`${hostInfo.desktopHostUrl}/api/workspace/type-validation?${query.toString()}`);
+      const payload = await response.json() as { error?: string; normalizedType?: string };
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: payload.error ?? `Type 校验失败: ${response.status}`,
+        };
+      }
+
+      return {
+        ok: true,
+        normalizedType: payload.normalizedType,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Type 校验失败。",
+      };
+    }
   }
 
   function handleAppendRow() {
@@ -836,6 +989,55 @@ function App() {
     setIsFreezeDialogOpen(true);
   }
 
+  useEffect(() => {
+    setEditingColumnIndex(null);
+  }, [activeTabId]);
+
+  useEffect(() => {
+    if (!isRenameSheetDialogOpen) {
+      return;
+    }
+
+    const input = renameSheetInputRef.current;
+    if (!input) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      input.focus();
+      input.select();
+    });
+  }, [isRenameSheetDialogOpen, renameSheetTarget?.sheetName]);
+
+  useEffect(() => {
+    if (!sheetContextMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".tree-context-menu")) {
+        return;
+      }
+
+      setSheetContextMenu(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSheetContextMenu(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [sheetContextMenu]);
+
   function handleCloseFreezeDialog() {
     setIsFreezeDialogOpen(false);
     setFreezeDialogRowCount(appliedFreezeRowCount);
@@ -944,6 +1146,110 @@ function App() {
               </button>
               <button className="primary-button" onClick={() => void handleConfirmCreateWorkbook()} type="button">
                 创建并打开
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isCreateSheetDialogOpen ? (
+        <div className="workspace-create-backdrop" onClick={handleCloseCreateSheetDialog} role="presentation">
+          <div
+            aria-labelledby="sheet-create-title"
+            aria-modal="true"
+            className="workspace-create-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">Sheet</p>
+                <h2 id="sheet-create-title">新建 Sheet</h2>
+              </div>
+            </div>
+
+            <div className="workspace-create-body">
+              <p className="workspace-create-path-label">所属工作簿</p>
+              <p className="workspace-create-path-value">{sheetDialogWorkbookName ?? "未选择工作簿"}</p>
+
+              <label className="search-field workspace-create-name-field">
+                <span>Sheet 名称</span>
+                <input
+                  autoFocus
+                  onChange={(event) => setNewSheetName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleConfirmCreateSheet();
+                    }
+                  }}
+                  placeholder="例如 Consumable"
+                  type="text"
+                  value={newSheetName}
+                />
+              </label>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseCreateSheetDialog} type="button">
+                取消
+              </button>
+              <button className="primary-button" onClick={() => void handleConfirmCreateSheet()} type="button">
+                创建并打开
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isRenameSheetDialogOpen ? (
+        <div className="workspace-create-backdrop" onClick={handleCloseRenameSheetDialog} role="presentation">
+          <div
+            aria-labelledby="sheet-rename-title"
+            aria-modal="true"
+            className="workspace-create-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">Sheet</p>
+                <h2 id="sheet-rename-title">重命名 Sheet</h2>
+              </div>
+            </div>
+
+            <div className="workspace-create-body">
+              <p className="workspace-create-path-label">目标</p>
+              <p className="workspace-create-path-value">
+                {renameSheetTarget ? `${renameSheetTarget.workbookName} / ${renameSheetTarget.sheetName}` : "未选择 Sheet"}
+              </p>
+
+              <label className="search-field workspace-create-name-field">
+                <span>新名称</span>
+                <input
+                  autoFocus
+                  ref={renameSheetInputRef}
+                  onChange={(event) => setRenameSheetName(event.target.value)}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleConfirmRenameSheet();
+                    }
+                  }}
+                  placeholder="例如 Consumable"
+                  type="text"
+                  value={renameSheetName}
+                />
+              </label>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseRenameSheetDialog} type="button">
+                取消
+              </button>
+              <button className="primary-button" onClick={() => void handleConfirmRenameSheet()} type="button">
+                应用重命名
               </button>
             </div>
           </div>
@@ -1169,14 +1475,30 @@ function App() {
                       <strong>{workbook.name}</strong>
                       <span>{workbook.sheets.length} 个 Sheet</span>
                     </div>
-                    <button
-                      aria-label={`删除工作簿 ${workbook.name}`}
-                      className="tree-workbook-delete"
-                      onClick={() => void deleteWorkbook(workbook.name)}
-                      type="button"
-                    >
-                      删除
-                    </button>
+                    <div className="tree-workbook-actions">
+                      <button
+                        className="secondary-button tree-workbook-action"
+                        onClick={() => handleOpenCreateSheetDialog(workbook.name)}
+                        type="button"
+                      >
+                        添加 Sheet
+                      </button>
+                      <button
+                        className="secondary-button tree-workbook-action"
+                        onClick={() => handleConvertWorkbookCode(workbook.name)}
+                        type="button"
+                      >
+                        转换代码
+                      </button>
+                      <button
+                        aria-label={`删除工作簿 ${workbook.name}`}
+                        className="tree-workbook-delete"
+                        onClick={() => void deleteWorkbook(workbook.name)}
+                        type="button"
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
 
                   <div className="tree-sheet-grid">
@@ -1189,6 +1511,7 @@ function App() {
                           className={`tree-sheet-button${isActive ? " is-active" : ""}`}
                           key={tabId}
                           onClick={() => openSheet(sheet.workbookName, sheet.sheetName)}
+                          onContextMenu={(event) => handleOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
                           type="button"
                         >
                           <span className="tree-sheet-name">{sheet.sheetName}</span>
@@ -1375,6 +1698,7 @@ function App() {
                   columns={activeSheetColumns}
                   columnWidths={activeColumnWidths}
                   editedCells={activeSheetState.editedCells ?? {}}
+                  onEditColumn={handleOpenColumnEditor}
                   freezeColumns={appliedFreezeColumnCount}
                   freezeRows={appliedFreezeRowCount}
                   onAutoSizeColumn={handleAutoSizeColumn}
@@ -1405,11 +1729,52 @@ function App() {
                   selectedCell={selectedCell}
                   selectionRange={selectionRange}
                 />
+
+                <ColumnEditorDialog
+                  column={editingColumn}
+                  columnIndex={editingColumnIndex}
+                  isOpen={editingColumnIndex !== null}
+                  onClose={handleCloseColumnEditor}
+                  onSave={handleSaveColumnDefinition}
+                  onValidateType={handleValidateColumnType}
+                  propertySchemas={headerPropertySchemas}
+                />
               </>
             ) : null}
           </div>
         </section>
       </main>
+
+      {sheetContextMenu ? (
+        <div
+          className="tree-context-menu"
+          onClick={(event) => event.stopPropagation()}
+          role="menu"
+          style={{ left: sheetContextMenu.x, top: sheetContextMenu.y }}
+        >
+          <button
+            className="tree-context-menu-item"
+            onClick={() => handleOpenRenameSheetDialog(sheetContextMenu.workbookName, sheetContextMenu.sheetName)}
+            type="button"
+          >
+            重命名 Sheet
+          </button>
+          <button
+            className="tree-context-menu-item"
+            onClick={() => handleOpenCreateSheetDialog(sheetContextMenu.workbookName)}
+            type="button"
+          >
+            添加 Sheet
+          </button>
+          <button
+            className="tree-context-menu-item is-danger"
+            onClick={() => void handleDeleteSheet(sheetContextMenu.workbookName, sheetContextMenu.sheetName)}
+            type="button"
+          >
+            删除 Sheet
+          </button>
+        </div>
+      ) : null}
 
       <footer className="status-bar">
         <div className="status-segment">

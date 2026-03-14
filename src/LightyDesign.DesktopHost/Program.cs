@@ -139,6 +139,110 @@ app.MapGet("/api/workspace/navigation", (string workspacePath) =>
     }
 });
 
+app.MapGet("/api/workspace/header-properties", (string workspacePath) =>
+{
+    if (string.IsNullOrWhiteSpace(workspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(new
+        {
+            properties = LightyHeaderPropertySchemaProvider.GetSchemas(workspace.HeaderLayout)
+                .Select(ToHeaderPropertySchemaResponse),
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapGet("/api/workspace/type-validation", (string type, string? workspacePath, string? workbookName) =>
+{
+    if (string.IsNullOrWhiteSpace(type))
+    {
+        return Results.BadRequest(new
+        {
+            error = "type is required.",
+        });
+    }
+
+    try
+    {
+        LightyWorkspace? workspace = null;
+        if (!string.IsNullOrWhiteSpace(workspacePath))
+        {
+            workspace = LightyWorkspaceLoader.Load(workspacePath);
+        }
+
+        var descriptor = LightySheetColumnValidator.ValidateType(type, workspace, workbookName);
+        return Results.Ok(new
+        {
+            ok = true,
+            normalizedType = descriptor.RawType,
+            descriptor.TypeName,
+            descriptor.GenericArguments,
+            descriptor.IsList,
+            descriptor.IsDictionary,
+            descriptor.IsReference,
+            referenceTarget = descriptor.ReferenceTarget is null
+                ? null
+                : new
+                {
+                    descriptor.ReferenceTarget.WorkbookName,
+                    descriptor.ReferenceTarget.SheetName,
+                },
+        });
+    }
+    catch (Exception exception) when (exception is ArgumentException or LightyCoreException)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapPost("/api/workspace/create", (CreateWorkspaceRequest request) =>
 {
     if (string.IsNullOrWhiteSpace(request.ParentDirectoryPath))
@@ -313,6 +417,350 @@ app.MapPost("/api/workspace/workbooks/delete", (DeleteWorkbookRequest request) =
     {
         LightyWorkspaceLoader.Load(workspacePath);
         LightyWorkbookScaffolder.Delete(workspacePath, workbookName);
+        var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/workbooks/sheets/create", (CreateSheetRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkbookName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.SheetName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "sheetName is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var workbookName = request.WorkbookName.Trim();
+    var sheetName = request.SheetName.Trim();
+
+    if (sheetName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+    {
+        return Results.BadRequest(new
+        {
+            error = "sheetName contains invalid path characters.",
+            sheetName,
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+        {
+            return Results.NotFound(new
+            {
+                error = $"Workbook '{workbookName}' was not found.",
+                workspacePath,
+            });
+        }
+
+        if (ContainsSheetName(workbook, sheetName))
+        {
+            return Results.BadRequest(new
+            {
+                error = $"Sheet '{sheetName}' already exists in workbook '{workbookName}'.",
+            });
+        }
+
+        var nextSheets = workbook.Sheets
+            .Concat(new[] { LightyWorkbookScaffolder.CreateDefaultSheet(workbook.DirectoryPath, sheetName) })
+            .ToList();
+        var updatedWorkbook = new LightyWorkbook(workbook.Name, workbook.DirectoryPath, nextSheets);
+        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
+
+        var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/workbooks/sheets/delete", (DeleteSheetRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkbookName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.SheetName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "sheetName is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var workbookName = request.WorkbookName.Trim();
+    var sheetName = request.SheetName.Trim();
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+        {
+            return Results.NotFound(new
+            {
+                error = $"Workbook '{workbookName}' was not found.",
+                workspacePath,
+            });
+        }
+
+        if (!workbook.TryGetSheet(sheetName, out _))
+        {
+            return Results.NotFound(new
+            {
+                error = $"Sheet '{sheetName}' was not found in workbook '{workbookName}'.",
+                workspacePath,
+            });
+        }
+
+        var nextSheets = workbook.Sheets
+            .Where(sheet => !string.Equals(sheet.Name, sheetName, StringComparison.Ordinal))
+            .ToList();
+        var updatedWorkbook = new LightyWorkbook(workbook.Name, workbook.DirectoryPath, nextSheets);
+        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
+
+        var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/workbooks/sheets/rename", (RenameSheetRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkbookName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.SheetName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "sheetName is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.NewSheetName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "newSheetName is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var workbookName = request.WorkbookName.Trim();
+    var sheetName = request.SheetName.Trim();
+    var newSheetName = request.NewSheetName.Trim();
+
+    if (newSheetName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+    {
+        return Results.BadRequest(new
+        {
+            error = "newSheetName contains invalid path characters.",
+            newSheetName,
+        });
+    }
+
+    if (string.Equals(sheetName, newSheetName, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new
+        {
+            error = "The new sheet name must be different from the current name.",
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+        {
+            return Results.NotFound(new
+            {
+                error = $"Workbook '{workbookName}' was not found.",
+                workspacePath,
+            });
+        }
+
+        if (!workbook.TryGetSheet(sheetName, out var targetSheet) || targetSheet is null)
+        {
+            return Results.NotFound(new
+            {
+                error = $"Sheet '{sheetName}' was not found in workbook '{workbookName}'.",
+                workspacePath,
+            });
+        }
+
+        if (ContainsSheetName(workbook, newSheetName, excludedSheetName: sheetName))
+        {
+            return Results.BadRequest(new
+            {
+                error = $"Sheet '{newSheetName}' already exists in workbook '{workbookName}'.",
+            });
+        }
+
+        var nextSheets = workbook.Sheets
+            .Select(sheet => string.Equals(sheet.Name, sheetName, StringComparison.Ordinal)
+                ? new LightySheet(
+                    newSheetName,
+                    Path.Combine(workbook.DirectoryPath, $"{newSheetName}.txt"),
+                    Path.Combine(workbook.DirectoryPath, $"{newSheetName}_header.json"),
+                    sheet.Header,
+                    sheet.Rows)
+                : sheet)
+            .ToList();
+
+        var updatedWorkbook = new LightyWorkbook(workbook.Name, workbook.DirectoryPath, nextSheets);
+        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
+
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
         return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
     }
@@ -794,6 +1242,30 @@ static object ToExcelErrorResponse(LightyExcelProcessException exception)
     };
 }
 
+static object ToHeaderPropertySchemaResponse(LightyHeaderPropertySchema schema)
+{
+    return new
+    {
+        schema.HeaderType,
+        schema.BindingSource,
+        schema.BindingKey,
+        schema.FieldName,
+        schema.Label,
+        schema.EditorKind,
+        schema.ValueType,
+        schema.Required,
+        schema.Placeholder,
+        options = schema.Options,
+    };
+}
+
+static bool ContainsSheetName(LightyWorkbook workbook, string candidateSheetName, string? excludedSheetName = null)
+{
+    return workbook.Sheets.Any(sheet =>
+        string.Equals(sheet.Name, candidateSheetName, StringComparison.OrdinalIgnoreCase)
+        && (excludedSheetName is null || !string.Equals(sheet.Name, excludedSheetName, StringComparison.OrdinalIgnoreCase)));
+}
+
 static string ResolveWorkbookName(string workbookName, string fileName)
 {
     if (!string.IsNullOrWhiteSpace(workbookName))
@@ -835,11 +1307,16 @@ static LightyWorkbook MapToWorkbook(WorkbookPayload payload, string workspacePat
     }
 
     var workbookDirectory = Path.Combine(workspacePath, payload.Name);
-    var sheets = payload.Sheets.Select(sheet => MapToSheet(sheet, workbookDirectory)).ToList();
+    var workspace = LightyWorkspaceLoader.Load(workspacePath);
+    var sheets = payload.Sheets.Select(sheet => MapToSheet(sheet, workbookDirectory, workspace, payload.Name)).ToList();
     return new LightyWorkbook(payload.Name, workbookDirectory, sheets);
 }
 
-static LightySheet MapToSheet(SheetPayload payload, string workbookDirectory)
+static LightySheet MapToSheet(
+    SheetPayload payload,
+    string workbookDirectory,
+    LightyWorkspace workspace,
+    string workbookName)
 {
     if (string.IsNullOrWhiteSpace(payload.Name))
     {
@@ -855,6 +1332,8 @@ static LightySheet MapToSheet(SheetPayload payload, string workbookDirectory)
     var rows = payload.Rows
         .Select((cells, index) => new LightySheetRow(index, cells))
         .ToList();
+
+    LightySheetColumnValidator.Validate(columns, payload.Name, workspace, workbookName);
 
     return new LightySheet(
         payload.Name,
@@ -890,6 +1369,35 @@ sealed class DeleteWorkbookRequest
     public string WorkspacePath { get; set; } = string.Empty;
 
     public string WorkbookName { get; set; } = string.Empty;
+}
+
+sealed class CreateSheetRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string WorkbookName { get; set; } = string.Empty;
+
+    public string SheetName { get; set; } = string.Empty;
+}
+
+sealed class DeleteSheetRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string WorkbookName { get; set; } = string.Empty;
+
+    public string SheetName { get; set; } = string.Empty;
+}
+
+sealed class RenameSheetRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string WorkbookName { get; set; } = string.Empty;
+
+    public string SheetName { get; set; } = string.Empty;
+
+    public string NewSheetName { get; set; } = string.Empty;
 }
 
 sealed class WorkbookPayload

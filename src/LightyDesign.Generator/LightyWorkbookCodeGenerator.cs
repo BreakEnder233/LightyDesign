@@ -6,7 +6,7 @@ namespace LightyDesign.Generator;
 
 public sealed class LightyWorkbookCodeGenerator
 {
-    private const string GeneratedNamespace = "LightyDesign.Generated";
+    private const string GeneratedNamespace = "LightyDesignData";
     private static readonly HashSet<string> CSharpKeywords = new(StringComparer.Ordinal)
     {
         "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
@@ -102,13 +102,18 @@ public sealed class LightyWorkbookCodeGenerator
     {
         EnsureSupportedType(column.TypeDescriptor);
 
+        var exportScope = column.TryGetExportScope(out var parsedExportScope)
+            ? parsedExportScope
+            : LightyExportScope.All;
+
         return new GeneratedFieldModel(
             column.FieldName,
             ToPropertyIdentifier(column.FieldName),
             column.DisplayName,
             sourceIndex,
             column.TypeDescriptor,
-            MapToCSharpType(column.TypeDescriptor));
+            MapToCSharpType(column.TypeDescriptor),
+            exportScope);
     }
 
     private static GeneratedRowModel AnalyzeRow(LightySheet sheet, LightySheetRow row, int rowIndex, IReadOnlyList<GeneratedFieldModel> fields)
@@ -250,14 +255,15 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine($"public sealed class {sheet.RowTypeName}");
         writer.AppendLine("{");
         writer.Indent();
-        foreach (var field in sheet.Fields)
+        AppendScopedItems(writer, sheet.Fields, field => field.ExportScope, (scopedWriter, field) =>
         {
             if (!string.IsNullOrWhiteSpace(field.DisplayName))
             {
-                writer.AppendLine($"// {field.DisplayName}");
+                scopedWriter.AppendLine($"// {field.DisplayName}");
             }
-            writer.AppendLine($"public required {field.CSharpTypeName} {field.PropertyName} {{ get; init; }}");
-        }
+
+            scopedWriter.AppendLine($"public required {field.CSharpTypeName} {field.PropertyName} {{ get; init; }}");
+        });
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
@@ -270,21 +276,13 @@ public sealed class LightyWorkbookCodeGenerator
     private static string RenderTableClass(GeneratedSheetModel sheet)
     {
         var writer = new CodeWriter();
+        var indexAvailabilityScope = ResolveIndexAvailabilityScope(sheet.PrimaryKeyFields);
         writer.AppendLine($"public sealed class {sheet.TableTypeName}");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine($"private readonly IReadOnlyList<{sheet.RowTypeName}> _rows;");
 
-        if (sheet.PrimaryKeyFields.Count == 1)
-        {
-            var keyField = sheet.PrimaryKeyFields[0];
-            writer.AppendLine($"private readonly IReadOnlyDictionary<{MapToCSharpType(keyField.TypeDescriptor)}, {sheet.RowTypeName}> _by{keyField.PropertyName};");
-        }
-        else if (sheet.PrimaryKeyFields.Count > 1)
-        {
-            var rootKeyField = sheet.PrimaryKeyFields[0];
-            writer.AppendLine($"private readonly IReadOnlyDictionary<{MapToCSharpType(rootKeyField.TypeDescriptor)}, {BuildIndexNodeTypeName(sheet, 1)}> _by{rootKeyField.PropertyName};");
-        }
+        AppendIndexMembers(writer, sheet, indexAvailabilityScope);
 
         writer.AppendLine();
         writer.AppendLine($"private {sheet.TableTypeName}(IReadOnlyList<{sheet.RowTypeName}> rows)");
@@ -292,34 +290,14 @@ public sealed class LightyWorkbookCodeGenerator
         writer.Indent();
         writer.AppendLine("_rows = rows;");
 
-        if (sheet.PrimaryKeyFields.Count == 1)
-        {
-            var keyField = sheet.PrimaryKeyFields[0];
-            writer.AppendLine($"_by{keyField.PropertyName} = rows.ToDictionary(row => row.{keyField.PropertyName});");
-        }
-        else if (sheet.PrimaryKeyFields.Count > 1)
-        {
-            var rootKeyField = sheet.PrimaryKeyFields[0];
-            writer.AppendLine($"_by{rootKeyField.PropertyName} = rows");
-            writer.AppendLine($"    .GroupBy(row => row.{rootKeyField.PropertyName})");
-            writer.AppendLine($"    .ToDictionary(group => group.Key, group => new {BuildIndexNodeTypeName(sheet, 1)}(group.ToList()));");
-        }
+        AppendIndexConstructorBody(writer, sheet, indexAvailabilityScope);
 
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine($"public IReadOnlyList<{sheet.RowTypeName}> Rows => _rows;");
 
-        if (sheet.PrimaryKeyFields.Count == 1)
-        {
-            var keyField = sheet.PrimaryKeyFields[0];
-            writer.AppendLine($"public {sheet.RowTypeName} this[{MapToCSharpType(keyField.TypeDescriptor)} {ToParameterIdentifier(keyField.FieldName)}] => _by{keyField.PropertyName}[{ToParameterIdentifier(keyField.FieldName)}];");
-        }
-        else if (sheet.PrimaryKeyFields.Count > 1)
-        {
-            var rootKeyField = sheet.PrimaryKeyFields[0];
-            writer.AppendLine($"public {BuildIndexNodeTypeName(sheet, 1)} this[{MapToCSharpType(rootKeyField.TypeDescriptor)} {ToParameterIdentifier(rootKeyField.FieldName)}] => _by{rootKeyField.PropertyName}[{ToParameterIdentifier(rootKeyField.FieldName)}];");
-        }
+        AppendIndexAccessor(writer, sheet, indexAvailabilityScope);
 
         writer.AppendLine();
         writer.AppendLine($"internal static {sheet.TableTypeName} Create()");
@@ -330,18 +308,28 @@ public sealed class LightyWorkbookCodeGenerator
         writer.Indent();
         foreach (var row in sheet.Rows)
         {
-            var assignments = string.Join(", ", row.Assignments.Select(assignment => $"{assignment.Field.PropertyName} = {assignment.ValueLiteral}"));
-            writer.AppendLine($"new() {{ {assignments} }},");
+            writer.AppendLine("new()");
+            writer.AppendLine("{");
+            writer.Indent();
+            AppendScopedItems(writer, row.Assignments, assignment => assignment.Field.ExportScope, (scopedWriter, assignment) =>
+            {
+                scopedWriter.AppendLine($"{assignment.Field.PropertyName} = {assignment.ValueLiteral},");
+            });
+            writer.Outdent();
+            writer.AppendLine("},");
         }
         writer.Outdent();
         writer.AppendLine("});");
         writer.Outdent();
         writer.AppendLine("}");
 
-        for (var level = 1; level < sheet.PrimaryKeyFields.Count; level += 1)
+        for (var level = 1; level < sheet.PrimaryKeyFields.Count && indexAvailabilityScope.HasValue; level += 1)
         {
             writer.AppendLine();
-            writer.Append(RenderIndexNodeClass(sheet, level));
+            AppendScopeBlock(writer, indexAvailabilityScope.Value, () =>
+            {
+                writer.Append(RenderIndexNodeClass(sheet, level));
+            });
         }
 
         writer.Outdent();
@@ -463,6 +451,179 @@ public sealed class LightyWorkbookCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         return writer.ToString();
+    }
+
+    private static void AppendIndexMembers(CodeWriter writer, GeneratedSheetModel sheet, LightyExportScope? indexAvailabilityScope)
+    {
+        if (!indexAvailabilityScope.HasValue)
+        {
+            return;
+        }
+
+        AppendScopeBlock(writer, indexAvailabilityScope.Value, () =>
+        {
+            if (sheet.PrimaryKeyFields.Count == 1)
+            {
+                var keyField = sheet.PrimaryKeyFields[0];
+                writer.AppendLine($"private readonly IReadOnlyDictionary<{MapToCSharpType(keyField.TypeDescriptor)}, {sheet.RowTypeName}> _by{keyField.PropertyName};");
+            }
+            else if (sheet.PrimaryKeyFields.Count > 1)
+            {
+                var rootKeyField = sheet.PrimaryKeyFields[0];
+                writer.AppendLine($"private readonly IReadOnlyDictionary<{MapToCSharpType(rootKeyField.TypeDescriptor)}, {BuildIndexNodeTypeName(sheet, 1)}> _by{rootKeyField.PropertyName};");
+            }
+        });
+    }
+
+    private static void AppendIndexConstructorBody(CodeWriter writer, GeneratedSheetModel sheet, LightyExportScope? indexAvailabilityScope)
+    {
+        if (!indexAvailabilityScope.HasValue)
+        {
+            return;
+        }
+
+        AppendScopeBlock(writer, indexAvailabilityScope.Value, () =>
+        {
+            if (sheet.PrimaryKeyFields.Count == 1)
+            {
+                var keyField = sheet.PrimaryKeyFields[0];
+                writer.AppendLine($"_by{keyField.PropertyName} = rows.ToDictionary(row => row.{keyField.PropertyName});");
+            }
+            else if (sheet.PrimaryKeyFields.Count > 1)
+            {
+                var rootKeyField = sheet.PrimaryKeyFields[0];
+                writer.AppendLine($"_by{rootKeyField.PropertyName} = rows");
+                writer.AppendLine($"    .GroupBy(row => row.{rootKeyField.PropertyName})");
+                writer.AppendLine($"    .ToDictionary(group => group.Key, group => new {BuildIndexNodeTypeName(sheet, 1)}(group.ToList()));");
+            }
+        });
+    }
+
+    private static void AppendIndexAccessor(CodeWriter writer, GeneratedSheetModel sheet, LightyExportScope? indexAvailabilityScope)
+    {
+        if (!indexAvailabilityScope.HasValue)
+        {
+            return;
+        }
+
+        writer.AppendLine();
+        AppendScopeBlock(writer, indexAvailabilityScope.Value, () =>
+        {
+            if (sheet.PrimaryKeyFields.Count == 1)
+            {
+                var keyField = sheet.PrimaryKeyFields[0];
+                writer.AppendLine($"public {sheet.RowTypeName} this[{MapToCSharpType(keyField.TypeDescriptor)} {ToParameterIdentifier(keyField.FieldName)}] => _by{keyField.PropertyName}[{ToParameterIdentifier(keyField.FieldName)}];");
+            }
+            else if (sheet.PrimaryKeyFields.Count > 1)
+            {
+                var rootKeyField = sheet.PrimaryKeyFields[0];
+                writer.AppendLine($"public {BuildIndexNodeTypeName(sheet, 1)} this[{MapToCSharpType(rootKeyField.TypeDescriptor)} {ToParameterIdentifier(rootKeyField.FieldName)}] => _by{rootKeyField.PropertyName}[{ToParameterIdentifier(rootKeyField.FieldName)}];");
+            }
+        });
+    }
+
+    private static LightyExportScope? ResolveIndexAvailabilityScope(IReadOnlyList<GeneratedFieldModel> primaryKeyFields)
+    {
+        if (primaryKeyFields.Count == 0)
+        {
+            return null;
+        }
+
+        var currentScope = LightyExportScope.All;
+        foreach (var field in primaryKeyFields)
+        {
+            currentScope = MergeAvailabilityScope(currentScope, field.ExportScope);
+            if (currentScope == LightyExportScope.None)
+            {
+                return null;
+            }
+        }
+
+        return currentScope;
+    }
+
+    private static LightyExportScope MergeAvailabilityScope(LightyExportScope left, LightyExportScope right)
+    {
+        if (left == LightyExportScope.None || right == LightyExportScope.None)
+        {
+            return LightyExportScope.None;
+        }
+
+        if (left == LightyExportScope.All)
+        {
+            return right;
+        }
+
+        if (right == LightyExportScope.All)
+        {
+            return left;
+        }
+
+        return left == right ? left : LightyExportScope.None;
+    }
+
+    private static void AppendScopedItems<T>(
+        CodeWriter writer,
+        IEnumerable<T> items,
+        Func<T, LightyExportScope> scopeSelector,
+        Action<CodeWriter, T> appendItem)
+    {
+        var materialized = items.ToList();
+        AppendScopeGroup(writer, materialized, scopeSelector, LightyExportScope.All, appendItem);
+        AppendScopeGroup(writer, materialized, scopeSelector, LightyExportScope.Client, appendItem);
+        AppendScopeGroup(writer, materialized, scopeSelector, LightyExportScope.Server, appendItem);
+    }
+
+    private static void AppendScopeGroup<T>(
+        CodeWriter writer,
+        IReadOnlyList<T> items,
+        Func<T, LightyExportScope> scopeSelector,
+        LightyExportScope targetScope,
+        Action<CodeWriter, T> appendItem)
+    {
+        var scopedItems = items.Where(item => scopeSelector(item) == targetScope).ToList();
+        if (scopedItems.Count == 0)
+        {
+            return;
+        }
+
+        AppendScopeBlock(writer, targetScope, () =>
+        {
+            foreach (var item in scopedItems)
+            {
+                appendItem(writer, item);
+            }
+        });
+    }
+
+    private static void AppendScopeBlock(CodeWriter writer, LightyExportScope scope, Action appendBody)
+    {
+        if (scope == LightyExportScope.None)
+        {
+            return;
+        }
+
+        var symbolName = GetPreprocessorSymbol(scope);
+        if (symbolName is null)
+        {
+            appendBody();
+            return;
+        }
+
+        writer.AppendLine($"#if {symbolName}");
+        appendBody();
+        writer.AppendLine("#endif");
+    }
+
+    private static string? GetPreprocessorSymbol(LightyExportScope scope)
+    {
+        return scope switch
+        {
+            LightyExportScope.Client => "LDD_Client",
+            LightyExportScope.Server => "LDD_Server",
+            LightyExportScope.All => null,
+            _ => null,
+        };
     }
 
     private static string BuildIndexNodeTypeName(GeneratedSheetModel sheet, int level)
@@ -594,7 +755,8 @@ public sealed class LightyWorkbookCodeGenerator
         string? DisplayName,
         int SourceIndex,
         LightyColumnTypeDescriptor TypeDescriptor,
-        string CSharpTypeName);
+        string CSharpTypeName,
+        LightyExportScope ExportScope);
 
     private sealed record GeneratedFieldAssignment(GeneratedFieldModel Field, string ValueLiteral);
 

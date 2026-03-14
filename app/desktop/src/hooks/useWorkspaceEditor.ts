@@ -189,6 +189,21 @@ function createInsertedColumn(existingColumns: SheetColumn[], columnIndex: numbe
   };
 }
 
+function buildStructureHistoryEntry(
+  previousColumns: SheetColumn[],
+  previousRows: string[][],
+  nextColumns: SheetColumn[],
+  nextRows: string[][],
+): SheetHistoryEntry {
+  return {
+    kind: "structure",
+    previousColumns: cloneColumns(previousColumns),
+    previousRows: cloneRows(previousRows),
+    nextColumns: cloneColumns(nextColumns),
+    nextRows: cloneRows(nextRows),
+  };
+}
+
 type UseWorkspaceEditorArgs = {
   hostInfo: DesktopHostInfo | null;
   onToast: (toast: {
@@ -1397,13 +1412,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       const nextRowIndex = Math.max(0, Math.min(atRowIndex, normalizedRows.length));
       const nextDraftRows = [...normalizedRows];
       nextDraftRows.splice(nextRowIndex, 0, Array.from({ length: currentColumns.length }, () => ""));
-      const historyEntry: SheetHistoryEntry = {
-        kind: "structure",
-        previousColumns: cloneColumns(currentColumns),
-        previousRows: cloneRows(normalizedRows),
-        nextColumns: cloneColumns(currentColumns),
-        nextRows: cloneRows(nextDraftRows),
-      };
+      const historyEntry = buildStructureHistoryEntry(currentColumns, normalizedRows, currentColumns, nextDraftRows);
 
       return {
         ...current,
@@ -1446,13 +1455,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
       const nextDraftRows = [...normalizedRows];
       nextDraftRows.splice(rowIndex, 1);
-      const historyEntry: SheetHistoryEntry = {
-        kind: "structure",
-        previousColumns: cloneColumns(currentColumns),
-        previousRows: cloneRows(normalizedRows),
-        nextColumns: cloneColumns(currentColumns),
-        nextRows: cloneRows(nextDraftRows),
-      };
+      const historyEntry = buildStructureHistoryEntry(currentColumns, normalizedRows, currentColumns, nextDraftRows);
 
       return {
         ...current,
@@ -1496,13 +1499,12 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         nextRow.splice(nextColumnIndex, 0, "");
         return nextRow;
       });
-      const historyEntry: SheetHistoryEntry = {
-        kind: "structure",
-        previousColumns: cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns),
-        previousRows: cloneRows(normalizedRows),
-        nextColumns: cloneColumns(currentColumns),
-        nextRows: cloneRows(nextDraftRows),
-      };
+      const historyEntry = buildStructureHistoryEntry(
+        currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns,
+        normalizedRows,
+        currentColumns,
+        nextDraftRows,
+      );
 
       return {
         ...current,
@@ -1545,13 +1547,12 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         currentColumns.length + 1,
       );
       const nextDraftRows = normalizedRows.map((row) => row.filter((_, currentColumnIndex) => currentColumnIndex !== columnIndex));
-      const historyEntry: SheetHistoryEntry = {
-        kind: "structure",
-        previousColumns: cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns),
-        previousRows: cloneRows(normalizedRows),
-        nextColumns: cloneColumns(currentColumns),
-        nextRows: cloneRows(nextDraftRows),
-      };
+      const historyEntry = buildStructureHistoryEntry(
+        currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns,
+        normalizedRows,
+        currentColumns,
+        nextDraftRows,
+      );
 
       return {
         ...current,
@@ -1603,18 +1604,172 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         currentSheetState.draftRows ?? currentSheetState.data.rows,
         currentColumns.length,
       );
-      const historyEntry: SheetHistoryEntry = {
-        kind: "structure",
-        previousColumns,
-        previousRows: cloneRows(normalizedRows),
-        nextColumns: cloneColumns(currentColumns),
-        nextRows: cloneRows(normalizedRows),
-      };
+      const historyEntry = buildStructureHistoryEntry(previousColumns, normalizedRows, currentColumns, normalizedRows);
 
       return {
         ...current,
         [activeTab.id]: {
           ...buildSheetStateFromDraft(currentSheetState, currentColumns, normalizedRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function insertCopiedRows(atRowIndex: number, copiedRows: string[][]) {
+    if (!activeTab || !activeSheetState?.data || copiedRows.length === 0) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!hasLoadedSheetData(currentSheetState)) {
+        return current;
+      }
+
+      const currentColumns = currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns;
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length,
+      );
+      const nextRowIndex = Math.max(0, Math.min(atRowIndex, normalizedRows.length));
+      const nextCopiedRows = sanitizeRowsToColumnCount(copiedRows, currentColumns.length);
+      const nextDraftRows = [...normalizedRows];
+      nextDraftRows.splice(nextRowIndex, 0, ...cloneRows(nextCopiedRows));
+      const historyEntry = buildStructureHistoryEntry(currentColumns, normalizedRows, currentColumns, nextDraftRows);
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, currentColumns, nextDraftRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function insertCopiedColumns(atColumnIndex: number, copiedColumns: SheetColumn[], copiedMatrix: string[][]) {
+    if (!activeTab || !activeSheetState?.data || copiedColumns.length === 0) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!hasLoadedSheetData(currentSheetState)) {
+        return current;
+      }
+
+      const previousColumns = cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns);
+      const nextColumnIndex = Math.max(0, Math.min(atColumnIndex, previousColumns.length));
+      const insertedColumns = cloneColumns(copiedColumns);
+      const nextColumns = cloneColumns(previousColumns);
+      nextColumns.splice(nextColumnIndex, 0, ...insertedColumns);
+
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        previousColumns.length,
+      );
+      const normalizedMatrix = sanitizeRowsToColumnCount(copiedMatrix, insertedColumns.length);
+      const nextDraftRows = normalizedRows.map((row, rowIndex) => {
+        const nextRow = [...row];
+        const insertedValues = normalizedMatrix[rowIndex] ?? Array.from({ length: insertedColumns.length }, () => "");
+        nextRow.splice(nextColumnIndex, 0, ...insertedValues);
+        return nextRow;
+      });
+      const historyEntry = buildStructureHistoryEntry(previousColumns, normalizedRows, nextColumns, nextDraftRows);
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, nextColumns, nextDraftRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function insertCopiedCellsDown(startRowIndex: number, startColumnIndex: number, copiedMatrix: string[][]) {
+    if (!activeTab || !activeSheetState?.data || copiedMatrix.length === 0) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!hasLoadedSheetData(currentSheetState)) {
+        return current;
+      }
+
+      const currentColumns = currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns;
+      if (startColumnIndex < 0 || startColumnIndex >= currentColumns.length || startRowIndex < 0) {
+        return current;
+      }
+
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length,
+      );
+      const copiedColumnCount = copiedMatrix.reduce((max, row) => Math.max(max, row.length), 0);
+      if (copiedColumnCount === 0) {
+        return current;
+      }
+
+      const targetColumnCount = Math.min(copiedColumnCount, currentColumns.length - startColumnIndex);
+      if (targetColumnCount <= 0) {
+        return current;
+      }
+
+      const normalizedMatrix = copiedMatrix.map((row) => Array.from({ length: targetColumnCount }, (_, columnIndex) => row[columnIndex] ?? ""));
+      const nextRowCount = Math.max(normalizedRows.length, startRowIndex) + normalizedMatrix.length;
+      const nextDraftRows = Array.from({ length: nextRowCount }, (_, rowIndex) =>
+        Array.from({ length: currentColumns.length }, (_, columnIndex) => normalizedRows[rowIndex]?.[columnIndex] ?? ""),
+      );
+
+      for (let columnOffset = 0; columnOffset < targetColumnCount; columnOffset += 1) {
+        const targetColumnIndex = startColumnIndex + columnOffset;
+
+        for (let rowIndex = nextRowCount - 1; rowIndex >= startRowIndex + normalizedMatrix.length; rowIndex -= 1) {
+          const sourceRowIndex = rowIndex - normalizedMatrix.length;
+          nextDraftRows[rowIndex][targetColumnIndex] = normalizedRows[sourceRowIndex]?.[targetColumnIndex] ?? "";
+        }
+
+        for (let rowOffset = 0; rowOffset < normalizedMatrix.length; rowOffset += 1) {
+          nextDraftRows[startRowIndex + rowOffset][targetColumnIndex] = normalizedMatrix[rowOffset]?.[columnOffset] ?? "";
+        }
+      }
+
+      const historyEntry = buildStructureHistoryEntry(currentColumns, normalizedRows, currentColumns, nextDraftRows);
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, currentColumns, nextDraftRows, {
             nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
             nextRedoStack: [],
           }),
@@ -1969,6 +2124,9 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     deleteRow,
     insertColumn,
     deleteColumn,
+    insertCopiedRows,
+    insertCopiedColumns,
+    insertCopiedCellsDown,
     updateColumnDefinition,
     updateCellValue,
     activateWorkbook,

@@ -7,7 +7,14 @@ import { useDesktopHostConnection } from "./hooks/useDesktopHostConnection";
 import { isShortcutModifierPressed, useEditorShortcuts } from "./hooks/useEditorShortcuts";
 import { useToastCenter } from "./hooks/useToastCenter";
 import { useWorkspaceEditor } from "./hooks/useWorkspaceEditor";
-import { buildWorkspaceScopedStorageKey, getSelectionBounds, type SheetColumn, type SheetSelection, type SheetSelectionRange, type ShortcutBinding } from "./types/desktopApp";
+import { buildWorkspaceScopedStorageKey, cloneColumns, getSelectionBounds, type SheetColumn, type SheetSelection, type SheetSelectionRange, type ShortcutBinding } from "./types/desktopApp";
+
+type CopiedSelectionSnapshot = {
+  matrix: string[][];
+  copiedColumns: SheetColumn[];
+  canInsertRows: boolean;
+  canInsertColumns: boolean;
+};
 
 const defaultColumnWidth = 140;
 const minColumnWidth = 88;
@@ -121,6 +128,9 @@ function App() {
     deleteRow,
     insertColumn,
     deleteColumn,
+    insertCopiedRows,
+    insertCopiedColumns,
+    insertCopiedCellsDown,
     updateColumnDefinition,
     updateCellValue,
     activateWorkbook,
@@ -174,6 +184,7 @@ function App() {
     x: number;
     y: number;
   } | null>(null);
+  const [copiedSelectionSnapshot, setCopiedSelectionSnapshot] = useState<CopiedSelectionSnapshot | null>(null);
 
   const editingColumn = editingColumnIndex !== null ? (activeSheetColumns[editingColumnIndex] ?? null) : null;
 
@@ -261,6 +272,23 @@ function App() {
     deleteRow(rowIndex);
   }
 
+  function handleInsertCopiedRows(atRowIndex: number) {
+    if (!copiedSelectionSnapshot?.canInsertRows) {
+      return;
+    }
+
+    insertCopiedRows(atRowIndex, copiedSelectionSnapshot.matrix);
+    const insertedRowCount = copiedSelectionSnapshot.matrix.length;
+    if (insertedRowCount <= 0 || activeSheetColumns.length === 0) {
+      return;
+    }
+
+    applySelectionRange(
+      { rowIndex: atRowIndex, columnIndex: 0 },
+      { rowIndex: atRowIndex + insertedRowCount - 1, columnIndex: activeSheetColumns.length - 1 },
+    );
+  }
+
   function handleInsertColumn(afterColumnIndex: number) {
     insertColumn(afterColumnIndex + 1);
   }
@@ -271,6 +299,23 @@ function App() {
 
   function handleDeleteColumn(columnIndex: number) {
     deleteColumn(columnIndex);
+  }
+
+  function handleInsertCopiedColumns(atColumnIndex: number) {
+    if (!copiedSelectionSnapshot?.canInsertColumns) {
+      return;
+    }
+
+    insertCopiedColumns(atColumnIndex, copiedSelectionSnapshot.copiedColumns, copiedSelectionSnapshot.matrix);
+    const insertedColumnCount = copiedSelectionSnapshot.copiedColumns.length;
+    if (insertedColumnCount <= 0 || activeSheetRows.length === 0) {
+      return;
+    }
+
+    applySelectionRange(
+      { rowIndex: 0, columnIndex: atColumnIndex },
+      { rowIndex: activeSheetRows.length - 1, columnIndex: atColumnIndex + insertedColumnCount - 1 },
+    );
   }
 
   function handleOpenColumnEditor(columnIndex: number) {
@@ -451,6 +496,27 @@ function App() {
     applySelectionRange(
       { rowIndex: selectedCell?.rowIndex ?? 0, columnIndex: nextColumnIndex },
       { rowIndex: selectedCell?.rowIndex ?? 0, columnIndex: nextColumnIndex },
+    );
+  }
+
+  function handleInsertCopiedCellsDown(startRowIndex: number, startColumnIndex: number) {
+    if (!copiedSelectionSnapshot) {
+      return;
+    }
+
+    insertCopiedCellsDown(startRowIndex, startColumnIndex, copiedSelectionSnapshot.matrix);
+    const insertedRowCount = copiedSelectionSnapshot.matrix.length;
+    const insertedColumnCount = copiedSelectionSnapshot.matrix.reduce((max, row) => Math.max(max, row.length), 0);
+    if (insertedRowCount <= 0 || insertedColumnCount <= 0) {
+      return;
+    }
+
+    applySelectionRange(
+      { rowIndex: startRowIndex, columnIndex: startColumnIndex },
+      {
+        rowIndex: startRowIndex + insertedRowCount - 1,
+        columnIndex: Math.min(startColumnIndex + insertedColumnCount - 1, activeSheetColumns.length - 1),
+      },
     );
   }
 
@@ -865,21 +931,36 @@ function App() {
       return "";
     }
 
-    return selectedRangeRowEntries
-      .map((entry) => {
-        const values: string[] = [];
+    const matrix = selectedRangeRowEntries.map((entry) => {
+      const values: string[] = [];
 
-        for (
-          let columnIndex = selectedRangeBounds.startColumnIndex;
-          columnIndex <= selectedRangeBounds.endColumnIndex;
-          columnIndex += 1
-        ) {
-          values.push(entry.row[columnIndex] ?? "");
-        }
+      for (
+        let columnIndex = selectedRangeBounds.startColumnIndex;
+        columnIndex <= selectedRangeBounds.endColumnIndex;
+        columnIndex += 1
+      ) {
+        values.push(entry.row[columnIndex] ?? "");
+      }
 
-        return values.join("\t");
-      })
-      .join("\n");
+      return values;
+    });
+
+    const isFullRowSelection =
+      selectedRangeBounds.startColumnIndex === 0 &&
+      selectedRangeBounds.endColumnIndex === activeSheetColumns.length - 1;
+    const isFullColumnSelection =
+      filteredRowEntries.length === activeSheetRows.length &&
+      selectedRangeBounds.startRowIndex === 0 &&
+      selectedRangeBounds.endRowIndex === activeSheetRows.length - 1;
+
+    setCopiedSelectionSnapshot({
+      matrix,
+      copiedColumns: cloneColumns(activeSheetColumns.slice(selectedRangeBounds.startColumnIndex, selectedRangeBounds.endColumnIndex + 1)),
+      canInsertRows: isFullRowSelection,
+      canInsertColumns: isFullColumnSelection,
+    });
+
+    return matrix.map((row) => row.join("\t")).join("\n");
   }
 
   function handlePasteSelection(startRowIndex: number, startColumnIndex: number, clipboardText: string) {
@@ -1823,6 +1904,9 @@ function App() {
                 </div>
 
                 <VirtualSheetTable
+                  canInsertCopiedCellsDown={Boolean(copiedSelectionSnapshot)}
+                  canInsertCopiedColumns={Boolean(copiedSelectionSnapshot?.canInsertColumns)}
+                  canInsertCopiedRows={Boolean(copiedSelectionSnapshot?.canInsertRows)}
                   columns={activeSheetColumns}
                   columnWidths={activeColumnWidths}
                   editedCells={activeSheetState.editedCells ?? {}}
@@ -1842,6 +1926,11 @@ function App() {
                   onFreezeColumns={setFreezeColumnCount}
                   onFreezeRows={setFreezeRowCount}
                   onInsertColumn={handleInsertColumn}
+                  onInsertCopiedCellsDown={handleInsertCopiedCellsDown}
+                  onInsertCopiedColumnsAfter={(columnIndex) => handleInsertCopiedColumns(columnIndex + 1)}
+                  onInsertCopiedColumnsBefore={handleInsertCopiedColumns}
+                  onInsertCopiedRowsAbove={handleInsertCopiedRows}
+                  onInsertCopiedRowsBelow={(rowIndex) => handleInsertCopiedRows(rowIndex + 1)}
                   onInsertColumnBefore={handleInsertColumnBefore}
                   onInsertRow={handleInsertRow}
                   onInsertRowAbove={handleInsertRowAbove}

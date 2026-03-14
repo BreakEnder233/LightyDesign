@@ -34,9 +34,15 @@ type VirtualSheetTableProps = {
   onFreezeColumns: (columnCount: number) => void;
   onInsertRowAbove: (rowIndex: number) => void;
   onInsertRow: (afterRowIndex: number) => void;
+  onInsertCopiedRowsAbove: (rowIndex: number) => void;
+  onInsertCopiedRowsBelow: (rowIndex: number) => void;
+  canInsertCopiedRows: boolean;
   onDeleteRow: (rowIndex: number) => void;
   onInsertColumnBefore: (columnIndex: number) => void;
   onInsertColumn: (afterColumnIndex: number) => void;
+  onInsertCopiedColumnsBefore: (columnIndex: number) => void;
+  onInsertCopiedColumnsAfter: (columnIndex: number) => void;
+  canInsertCopiedColumns: boolean;
   onDeleteColumn: (columnIndex: number) => void;
   onEditColumn: (columnIndex: number) => void;
   onCopySelection: () => string;
@@ -44,6 +50,8 @@ type VirtualSheetTableProps = {
   onCutSelection: () => void;
   onClearSelection: () => void;
   onPasteSelection: (rowIndex: number, columnIndex: number, clipboardText: string) => void;
+  onInsertCopiedCellsDown: (rowIndex: number, columnIndex: number) => void;
+  canInsertCopiedCellsDown: boolean;
   onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
 };
 
@@ -66,6 +74,13 @@ type HeaderContextMenuState =
     }
   | {
       kind: "corner";
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "cell";
+      rowIndex: number;
+      columnIndex: number;
       x: number;
       y: number;
     };
@@ -143,9 +158,15 @@ export function VirtualSheetTable({
   onFreezeColumns,
   onInsertRowAbove,
   onInsertRow,
+  onInsertCopiedRowsAbove,
+  onInsertCopiedRowsBelow,
+  canInsertCopiedRows,
   onDeleteRow,
   onInsertColumnBefore,
   onInsertColumn,
+  onInsertCopiedColumnsBefore,
+  onInsertCopiedColumnsAfter,
+  canInsertCopiedColumns,
   onDeleteColumn,
   onEditColumn,
   onCopySelection,
@@ -153,6 +174,8 @@ export function VirtualSheetTable({
   onCutSelection,
   onClearSelection,
   onPasteSelection,
+  onInsertCopiedCellsDown,
+  canInsertCopiedCellsDown,
   onEditCell,
 }: VirtualSheetTableProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -736,6 +759,19 @@ export function VirtualSheetTable({
           });
           startEditingCell(rowEntry.rowIndex, columnIndex, "select-all", { immediateFocus: true });
         }}
+        onContextMenu={(event) => {
+          if (!isSelected && !isInRange) {
+            onSelectCell(rowEntry.rowIndex, columnIndex, { extendSelection: false });
+          }
+
+          openContextMenu(event, {
+            kind: "cell",
+            rowIndex: rowEntry.rowIndex,
+            columnIndex,
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }}
         onMouseEnter={() => {
           if (!isPointerSelectingRef.current) {
             return;
@@ -1048,6 +1084,12 @@ export function VirtualSheetTable({
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertRow(contextMenuState.rowIndex))} type="button">
                 在下方插入行
               </button>
+              <button className="sheet-context-menu-item" disabled={!canInsertCopiedRows} onClick={() => runContextMenuAction(() => onInsertCopiedRowsAbove(contextMenuState.rowIndex))} type="button">
+                在上方插入复制的行
+              </button>
+              <button className="sheet-context-menu-item" disabled={!canInsertCopiedRows} onClick={() => runContextMenuAction(() => onInsertCopiedRowsBelow(contextMenuState.rowIndex))} type="button">
+                在下方插入复制的行
+              </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onDeleteRow(contextMenuState.rowIndex))} type="button">
                 删除当前行
               </button>
@@ -1083,6 +1125,12 @@ export function VirtualSheetTable({
               </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertColumn(contextMenuState.columnIndex))} type="button">
                 在右侧插入列
+              </button>
+              <button className="sheet-context-menu-item" disabled={!canInsertCopiedColumns} onClick={() => runContextMenuAction(() => onInsertCopiedColumnsBefore(contextMenuState.columnIndex))} type="button">
+                在左侧插入复制的列
+              </button>
+              <button className="sheet-context-menu-item" disabled={!canInsertCopiedColumns} onClick={() => runContextMenuAction(() => onInsertCopiedColumnsAfter(contextMenuState.columnIndex))} type="button">
+                在右侧插入复制的列
               </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onDeleteColumn(contextMenuState.columnIndex))} type="button">
                 删除当前列
@@ -1128,6 +1176,26 @@ export function VirtualSheetTable({
                 type="button"
               >
                 取消全部冻结
+              </button>
+            </>
+          ) : null}
+
+          {contextMenuState.kind === "cell" ? (
+            <>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onSelectCell(contextMenuState.rowIndex, contextMenuState.columnIndex))} type="button">
+                选择单元格
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCopySelectionToClipboard)} type="button">
+                复制选区
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCutSelection)} type="button">
+                剪切选区
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onClearSelection)} type="button">
+                清空选区
+              </button>
+              <button className="sheet-context-menu-item" disabled={!canInsertCopiedCellsDown} onClick={() => runContextMenuAction(() => onInsertCopiedCellsDown(contextMenuState.rowIndex, contextMenuState.columnIndex))} type="button">
+                插入复制的单元格并下移
               </button>
             </>
           ) : null}

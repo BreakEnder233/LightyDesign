@@ -7,6 +7,7 @@ namespace LightyDesign.Generator;
 public sealed class LightyWorkbookCodeGenerator
 {
     private const string GeneratedNamespace = "LightyDesignData";
+    private const int DataChunkRowThreshold = 500;
     private static readonly HashSet<string> CSharpKeywords = new(StringComparer.Ordinal)
     {
         "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
@@ -49,6 +50,11 @@ public sealed class LightyWorkbookCodeGenerator
         foreach (var sheet in generatedSheets)
         {
             files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{sheet.FileName}.cs", RenderSheetFile(workbook, sheet)));
+
+            foreach (var chunk in sheet.DataChunks)
+            {
+                files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{chunk.FileName}.cs", RenderSheetDataChunkFile(sheet, chunk)));
+            }
         }
 
         files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{workbook.Name}.cs", RenderWorkbookFile(workbook, generatedSheets)));
@@ -78,6 +84,7 @@ public sealed class LightyWorkbookCodeGenerator
 
     private static GeneratedSheetModel AnalyzeSheet(LightyWorkspace workspace, LightySheet sheet)
     {
+        var typeName = ToTypeIdentifier(sheet.Name);
         var exportedColumns = sheet.Header.Columns
             .Select((column, index) => new { Column = column, Index = index })
             .Where(entry => !entry.Column.TryGetExportScope(out var exportScope) || exportScope != LightyExportScope.None)
@@ -88,15 +95,17 @@ public sealed class LightyWorkbookCodeGenerator
         var rows = sheet.Rows
             .Select((row, rowIndex) => AnalyzeRow(workspace, sheet, row, rowIndex, exportedColumns))
             .ToList();
+        var dataChunks = BuildDataChunks(typeName, rows);
 
         return new GeneratedSheetModel(
             sheet.Name,
-            ToTypeIdentifier(sheet.Name),
-            $"{ToTypeIdentifier(sheet.Name)}Row",
-            $"{ToTypeIdentifier(sheet.Name)}Table",
+            typeName,
+            $"{typeName}Row",
+            $"{typeName}Table",
             exportedColumns,
             primaryKeyFields,
-            rows);
+            rows,
+            dataChunks);
     }
 
     private static GeneratedFieldModel AnalyzeField(ColumnDefine column, int sourceIndex)
@@ -279,6 +288,30 @@ public sealed class LightyWorkbookCodeGenerator
         return writer.ToString();
     }
 
+    private static string RenderSheetDataChunkFile(GeneratedSheetModel sheet, GeneratedSheetChunkModel chunk)
+    {
+        var writer = new CodeWriter();
+        writer.AppendLine("using System.Collections.Generic;");
+        writer.AppendLine();
+        writer.AppendLine($"namespace {GeneratedNamespace};");
+        writer.AppendLine();
+        writer.AppendLine($"public sealed partial class {sheet.TableTypeName}");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine($"private static void {chunk.MethodName}(List<{sheet.RowTypeName}> rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        foreach (var row in chunk.Rows)
+        {
+            AppendRowAdd(writer, row, "rows.Add");
+        }
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
+        return writer.ToString();
+    }
+
     private static string RenderReferenceSupportFile()
     {
         var writer = new CodeWriter();
@@ -346,7 +379,7 @@ public sealed class LightyWorkbookCodeGenerator
     {
         var writer = new CodeWriter();
         var indexAvailabilityScope = ResolveIndexAvailabilityScope(sheet.PrimaryKeyFields);
-        writer.AppendLine($"public sealed class {sheet.TableTypeName}");
+        writer.AppendLine($"public sealed partial class {sheet.TableTypeName}");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine($"private readonly IReadOnlyList<{sheet.RowTypeName}> _rows;");
@@ -372,23 +405,22 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine($"internal static {sheet.TableTypeName} Create()");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine($"return new {sheet.TableTypeName}(new List<{sheet.RowTypeName}>");
-        writer.AppendLine("{");
-        writer.Indent();
-        foreach (var row in sheet.Rows)
+        writer.AppendLine($"var rows = new List<{sheet.RowTypeName}>();");
+        if (sheet.UsesChunkedDataInitialization)
         {
-            writer.AppendLine("new()");
-            writer.AppendLine("{");
-            writer.Indent();
-            AppendScopedItems(writer, row.Assignments, assignment => assignment.Field.ExportScope, (scopedWriter, assignment) =>
+            foreach (var chunk in sheet.DataChunks)
             {
-                scopedWriter.AppendLine($"{assignment.Field.PropertyName} = {assignment.ValueLiteral},");
-            });
-            writer.Outdent();
-            writer.AppendLine("},");
+                writer.AppendLine($"{chunk.MethodName}(rows);");
+            }
         }
-        writer.Outdent();
-        writer.AppendLine("});");
+        else
+        {
+            foreach (var row in sheet.Rows)
+            {
+                AppendRowAdd(writer, row, "rows.Add");
+            }
+        }
+        writer.AppendLine($"return new {sheet.TableTypeName}(rows);");
         writer.Outdent();
         writer.AppendLine("}");
 
@@ -745,6 +777,42 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("#endif");
     }
 
+    private static void AppendRowAdd(CodeWriter writer, GeneratedRowModel row, string addCall)
+    {
+        writer.AppendLine($"{addCall}(new()");
+        writer.AppendLine("{");
+        writer.Indent();
+        AppendScopedItems(writer, row.Assignments, assignment => assignment.Field.ExportScope, (scopedWriter, assignment) =>
+        {
+            scopedWriter.AppendLine($"{assignment.Field.PropertyName} = {assignment.ValueLiteral},");
+        });
+        writer.Outdent();
+        writer.AppendLine("});");
+    }
+
+    private static IReadOnlyList<GeneratedSheetChunkModel> BuildDataChunks(string typeName, IReadOnlyList<GeneratedRowModel> rows)
+    {
+        if (rows.Count <= DataChunkRowThreshold)
+        {
+            return Array.Empty<GeneratedSheetChunkModel>();
+        }
+
+        var chunks = new List<GeneratedSheetChunkModel>();
+        var chunkNumber = 1;
+        for (var startIndex = 0; startIndex < rows.Count; startIndex += DataChunkRowThreshold)
+        {
+            var chunkRows = rows.Skip(startIndex).Take(DataChunkRowThreshold).ToList();
+            chunks.Add(new GeneratedSheetChunkModel(
+                chunkNumber,
+                $"AppendData{chunkNumber}",
+                $"{typeName}_Data{chunkNumber}",
+                chunkRows));
+            chunkNumber += 1;
+        }
+
+        return chunks;
+    }
+
     private static string? GetPreprocessorSymbol(LightyExportScope scope)
     {
         return scope switch
@@ -874,10 +942,19 @@ public sealed class LightyWorkbookCodeGenerator
         string TableTypeName,
         IReadOnlyList<GeneratedFieldModel> Fields,
         IReadOnlyList<GeneratedFieldModel> PrimaryKeyFields,
-        IReadOnlyList<GeneratedRowModel> Rows)
+        IReadOnlyList<GeneratedRowModel> Rows,
+        IReadOnlyList<GeneratedSheetChunkModel> DataChunks)
     {
         public string FileName => TypeName;
+
+        public bool UsesChunkedDataInitialization => DataChunks.Count > 0;
     }
+
+    private sealed record GeneratedSheetChunkModel(
+        int ChunkNumber,
+        string MethodName,
+        string FileName,
+        IReadOnlyList<GeneratedRowModel> Rows);
 
     private sealed record GeneratedFieldModel(
         string FieldName,

@@ -91,7 +91,7 @@ public class CodeGenerationTests
     public void WorkbookCodeGenerator_ShouldGenerateReferenceLiteralsForSingleCompositeAndListReferences()
     {
         var workspace = CreateWorkspaceWithReferenceColumns(new LightyWorkbookCodegenOptions("Generated/Config"));
-        var workbook = Assert.Single(workspace.Workbooks.Where(candidate => candidate.Name == "Config"));
+        var workbook = Assert.Single(workspace.Workbooks, candidate => candidate.Name == "Config");
         var generator = new LightyWorkbookCodeGenerator();
 
         var package = generator.Generate(workspace, workbook);
@@ -106,6 +106,29 @@ public class CodeGenerationTests
         Assert.Contains("new DesignDataReference<ConsumableRow>(\"Item\", \"Consumable\", static identifiers => LDD.Item.Consumable[DesignDataReferenceHelper.ParseInt32(identifiers[0])], \"1001\")", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("new DesignDataReference<StageRow>(\"Item\", \"Stage\", static identifiers => LDD.Item.Stage[DesignDataReferenceHelper.ParseInt32(identifiers[0])][DesignDataReferenceHelper.ParseInt32(identifiers[1])], \"1\", \"10\")", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("new List<DesignDataReference<StageRow>>", sheetFile.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WorkbookCodeGenerator_ShouldSplitLargeSheetInitializationIntoChunkFiles()
+    {
+        var workspace = CreateWorkspaceWithLargeSheet(new LightyWorkbookCodegenOptions("Generated/Config"));
+        var workbook = Assert.Single(workspace.Workbooks);
+        var generator = new LightyWorkbookCodeGenerator();
+
+        var package = generator.Generate(workspace, workbook);
+
+        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheet.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheet_Data1.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheet_Data2.cs");
+
+        var mainFile = Assert.Single(package.Files, file => file.RelativePath == "Massive/LargeSheet.cs");
+        var chunkFile = Assert.Single(package.Files, file => file.RelativePath == "Massive/LargeSheet_Data1.cs");
+
+        Assert.Contains("public sealed partial class LargeSheetTable", mainFile.Content, StringComparison.Ordinal);
+        Assert.Contains("AppendData1(rows);", mainFile.Content, StringComparison.Ordinal);
+        Assert.Contains("AppendData2(rows);", mainFile.Content, StringComparison.Ordinal);
+        Assert.Contains("private static void AppendData1(List<LargeSheetRow> rows)", chunkFile.Content, StringComparison.Ordinal);
+        Assert.Contains("rows.Add(new()", chunkFile.Content, StringComparison.Ordinal);
     }
 
     private static LightyWorkspace CreateWorkspace(LightyWorkbookCodegenOptions codegenOptions)
@@ -265,6 +288,40 @@ public class CodeGenerationTests
             @"D:\Workspace\headers.json",
             WorkspaceHeaderLayout.CreateDefault(),
             new[] { itemWorkbook, configWorkbook });
+    }
+
+    private static LightyWorkspace CreateWorkspaceWithLargeSheet(LightyWorkbookCodegenOptions codegenOptions)
+    {
+        var workbookDirectory = @"D:\Workspace\Massive";
+        var rows = Enumerable.Range(1, 501)
+            .Select(index => new LightySheetRow(index - 1, new[] { index.ToString(), $"Row{index}" }))
+            .ToArray();
+
+        var workbook = new LightyWorkbook(
+            "Massive",
+            workbookDirectory,
+            new[]
+            {
+                new LightySheet(
+                    "LargeSheet",
+                    Path.Combine(workbookDirectory, "LargeSheet.txt"),
+                    Path.Combine(workbookDirectory, "LargeSheet_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("ID", "int", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Name", "string", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                    }),
+                    rows),
+            },
+            codegenOptions,
+            Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        return new LightyWorkspace(
+            @"D:\Workspace",
+            @"D:\Workspace\config.json",
+            @"D:\Workspace\headers.json",
+            WorkspaceHeaderLayout.CreateDefault(),
+            new[] { workbook });
     }
 
     private static IReadOnlyDictionary<string, JsonElement> CreateAttributes(string key, string value)

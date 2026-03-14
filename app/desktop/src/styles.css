@@ -1176,6 +1176,10 @@ button {
   gap: 6px;
 }
 
+.codegen-dialog-actions {
+  margin-top: 2px;
+}
+
 .workspace-create-body {
   display: flex;
   flex-direction: column;

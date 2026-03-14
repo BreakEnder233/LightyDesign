@@ -2,6 +2,11 @@
 
 本文件描述工作区目录、Sheet 文件协议、表头语义以及导出约束。实现状态请分别查看各子系统文档。
 
+## 特殊文件夹
+
+1. SampleWorkspace 用于测试编辑功能的策划数据工作区，其中的文件不属于工程。
+2. SampleWoekspaceCodeGen 用于测试代码生成功能的目标文件夹，其中的文件不属于工程。
+
 ## 文档导航
 
 1. [Core/README.md](Core/README.md)

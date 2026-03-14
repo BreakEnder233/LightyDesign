@@ -73,6 +73,43 @@ function parseClipboardMatrix(clipboardText: string) {
   return rows.map((row) => row.split("\t"));
 }
 
+function normalizeDirectoryPath(path: string) {
+  return path.replace(/[\\/]+/g, "\\").replace(/[\\/]+$/, "");
+}
+
+function tryGetWorkspaceRelativePath(workspaceRoot: string, absolutePath: string) {
+  const normalizedWorkspaceRoot = normalizeDirectoryPath(workspaceRoot);
+  const normalizedAbsolutePath = normalizeDirectoryPath(absolutePath);
+  const workspaceRootSegments = normalizedWorkspaceRoot.split("\\").filter((segment) => segment.length > 0);
+  const absolutePathSegments = normalizedAbsolutePath.split("\\").filter((segment) => segment.length > 0);
+
+  if (workspaceRootSegments.length === 0 || absolutePathSegments.length === 0) {
+    return null;
+  }
+
+  if (workspaceRootSegments[0]?.toLowerCase() !== absolutePathSegments[0]?.toLowerCase()) {
+    return null;
+  }
+
+  if (normalizedAbsolutePath.toLowerCase() === normalizedWorkspaceRoot.toLowerCase()) {
+    return "";
+  }
+
+  let sharedLength = 0;
+  const maxSharedLength = Math.min(workspaceRootSegments.length, absolutePathSegments.length);
+
+  while (
+    sharedLength < maxSharedLength &&
+    workspaceRootSegments[sharedLength]?.toLowerCase() === absolutePathSegments[sharedLength]?.toLowerCase()
+  ) {
+    sharedLength += 1;
+  }
+
+  const upwardSegments = Array.from({ length: workspaceRootSegments.length - sharedLength }, () => "..");
+  const downwardSegments = absolutePathSegments.slice(sharedLength);
+  return [...upwardSegments, ...downwardSegments].join("/");
+}
+
 function App() {
   const { bridgeStatus, bridgeError, hostInfo, hostHealth } = useDesktopHostConnection();
   const {
@@ -438,6 +475,63 @@ function App() {
     const exported = await exportWorkbookCode(codegenWorkbookName);
     if (exported) {
       handleCloseCodegenDialog();
+    }
+  }
+
+  async function handleChooseCodegenOutputDirectory() {
+    if (!window.lightyDesign) {
+      pushToastNotification({
+        title: "无法选择输出目录",
+        detail: bridgeError ?? "当前环境不支持原生目录选择。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return;
+    }
+
+    if (!workspacePath) {
+      pushToastNotification({
+        title: "无法选择输出目录",
+        detail: "请先打开一个工作区。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return;
+    }
+
+    try {
+      const selectedPath = await window.lightyDesign.chooseWorkspaceDirectory();
+      if (!selectedPath) {
+        return;
+      }
+
+      const relativePath = tryGetWorkspaceRelativePath(workspacePath, selectedPath);
+      if (relativePath === null) {
+        pushToastNotification({
+          title: "输出目录必须与工作区位于同一硬盘",
+          detail: `已选择目录: ${selectedPath}\n工作区目录: ${workspacePath}`,
+          source: "system",
+          variant: "error",
+          canOpenDetail: true,
+          durationMs: 8000,
+        });
+        return;
+      }
+
+      setCodegenOutputRelativePath(relativePath);
+    } catch (error) {
+      pushToastNotification({
+        title: "无法选择输出目录",
+        detail: error instanceof Error ? error.message : "打开输出目录选择器失败。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
     }
   }
 
@@ -1158,7 +1252,7 @@ function App() {
       input.focus();
       input.select();
     });
-  }, [codegenOutputRelativePath, isCodegenDialogOpen]);
+  }, [isCodegenDialogOpen]);
 
   useEffect(() => {
     if (!sheetContextMenu) {
@@ -1424,15 +1518,11 @@ function App() {
             </div>
 
             <div className="workspace-create-body">
-              <p className="workspace-create-path-label">目标工作簿</p>
-              <p className="workspace-create-path-value">{codegenWorkbookName ?? "未选择工作簿"}</p>
-
               <label className="search-field workspace-create-name-field">
                 <span>输出相对路径</span>
                 <input
                   ref={codegenOutputInputRef}
                   onChange={(event) => setCodegenOutputRelativePath(event.target.value)}
-                  onFocus={(event) => event.currentTarget.select()}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
@@ -1444,6 +1534,18 @@ function App() {
                   value={codegenOutputRelativePath}
                 />
               </label>
+
+              <div className="action-grid compact-grid codegen-dialog-actions">
+                <button
+                  className="secondary-button"
+                  disabled={!canChooseWorkspaceDirectory || !workspacePath}
+                  onClick={() => void handleChooseCodegenOutputDirectory()}
+                  title={canChooseWorkspaceDirectory ? "选择工作区中的输出目录" : bridgeError ?? "当前环境不支持原生目录选择"}
+                  type="button"
+                >
+                  选择文件夹
+                </button>
+              </div>
 
               <p className="workspace-create-path-label codegen-dialog-caption">
                 路径相对于工作区根目录；点击“导出代码”时会先保存配置，再执行导出。

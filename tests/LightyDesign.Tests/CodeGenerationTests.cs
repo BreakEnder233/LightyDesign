@@ -16,6 +16,7 @@ public class CodeGenerationTests
         var package = generator.Generate(workspace, workbook);
 
         Assert.Equal("Generated/Config", package.OutputRelativePath);
+        Assert.Contains(package.Files, file => file.RelativePath == "DesignDataReference.cs");
         Assert.Contains(package.Files, file => file.RelativePath == "Item/Consumable.cs");
         Assert.Contains(package.Files, file => file.RelativePath == "Item/Stage.cs");
         Assert.Contains(package.Files, file => file.RelativePath == "Item/Item.cs");
@@ -70,13 +71,41 @@ public class CodeGenerationTests
 
         var package = generator.Generate(workspace, workbook);
         var sheetFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureFlag.cs");
+        var normalizedContent = NormalizeNewlines(sheetFile.Content);
 
         Assert.Contains("namespace LightyDesignData;", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("public required int ID { get; init; }", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("public required string SharedName { get; init; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("#if LDD_Client\n        public required string ClientOnlyName { get; init; }\n#endif", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("#if LDD_Server\n        public required string ServerOnlyNote { get; init; }\n#endif", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("new()\n            {\n                ID = 1,\n                SharedName = \"Shared\",\n                #if LDD_Client\n                ClientOnlyName = \"Client\",\n                #endif\n                #if LDD_Server\n                ServerOnlyNote = \"Server\",\n                #endif\n            },", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("#if LDD_Client", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("public required string ClientOnlyName { get; init; }", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("#if LDD_Server", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("public required string ServerOnlyNote { get; init; }", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("new()", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("ID = 1,", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("SharedName = \"Shared\",", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("ClientOnlyName = \"Client\",", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("ServerOnlyNote = \"Server\",", normalizedContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WorkbookCodeGenerator_ShouldGenerateReferenceLiteralsForSingleCompositeAndListReferences()
+    {
+        var workspace = CreateWorkspaceWithReferenceColumns(new LightyWorkbookCodegenOptions("Generated/Config"));
+        var workbook = Assert.Single(workspace.Workbooks.Where(candidate => candidate.Name == "Config"));
+        var generator = new LightyWorkbookCodeGenerator();
+
+        var package = generator.Generate(workspace, workbook);
+        var supportFile = Assert.Single(package.Files, file => file.RelativePath == "DesignDataReference.cs");
+        var sheetFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureLink.cs");
+
+        Assert.Contains("public sealed class DesignDataReference<TTarget>", supportFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public TTarget GetValue() => _resolver(_identifiers);", supportFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required DesignDataReference<ConsumableRow> PrimaryItem { get; init; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required DesignDataReference<StageRow> TargetStage { get; init; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required IReadOnlyList<DesignDataReference<StageRow>> StageHistory { get; init; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new DesignDataReference<ConsumableRow>(\"Item\", \"Consumable\", static identifiers => LDD.Item.Consumable[DesignDataReferenceHelper.ParseInt32(identifiers[0])], \"1001\")", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new DesignDataReference<StageRow>(\"Item\", \"Stage\", static identifiers => LDD.Item.Stage[DesignDataReferenceHelper.ParseInt32(identifiers[0])][DesignDataReferenceHelper.ParseInt32(identifiers[1])], \"1\", \"10\")", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new List<DesignDataReference<StageRow>>", sheetFile.Content, StringComparison.Ordinal);
     }
 
     private static LightyWorkspace CreateWorkspace(LightyWorkbookCodegenOptions codegenOptions)
@@ -164,11 +193,90 @@ public class CodeGenerationTests
             new[] { workbook });
     }
 
+    private static LightyWorkspace CreateWorkspaceWithReferenceColumns(LightyWorkbookCodegenOptions codegenOptions)
+    {
+        var itemWorkbookDirectory = @"D:\Workspace\Item";
+        var configWorkbookDirectory = @"D:\Workspace\Config";
+
+        var itemWorkbook = new LightyWorkbook(
+            "Item",
+            itemWorkbookDirectory,
+            new[]
+            {
+                new LightySheet(
+                    "Consumable",
+                    Path.Combine(itemWorkbookDirectory, "Consumable.txt"),
+                    Path.Combine(itemWorkbookDirectory, "Consumable_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("ID", "int", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Name", "string", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                    }),
+                    new[]
+                    {
+                        new LightySheetRow(0, new[] { "1001", "Potion" }),
+                    }),
+                new LightySheet(
+                    "Stage",
+                    Path.Combine(itemWorkbookDirectory, "Stage.txt"),
+                    Path.Combine(itemWorkbookDirectory, "Stage_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("ID1", "int", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("ID2", "int", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Value", "string", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                    }),
+                    new[]
+                    {
+                        new LightySheetRow(0, new[] { "1", "10", "Alpha" }),
+                        new LightySheetRow(1, new[] { "1", "11", "Beta" }),
+                    }),
+            },
+            new LightyWorkbookCodegenOptions("Generated/Config"),
+            Path.Combine(itemWorkbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        var configWorkbook = new LightyWorkbook(
+            "Config",
+            configWorkbookDirectory,
+            new[]
+            {
+                new LightySheet(
+                    "FeatureLink",
+                    Path.Combine(configWorkbookDirectory, "FeatureLink.txt"),
+                    Path.Combine(configWorkbookDirectory, "FeatureLink_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("ID", "int", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("PrimaryItem", "Ref:Item.Consumable", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("TargetStage", "Ref:Item.Stage", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("StageHistory", "List<Ref:Item.Stage>", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                    }),
+                    new[]
+                    {
+                        new LightySheetRow(0, new[] { "1", "[[1001]]", "[[1,10]]", "[[1,10]], [[1,11]]" }),
+                    }),
+            },
+            codegenOptions,
+            Path.Combine(configWorkbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        return new LightyWorkspace(
+            @"D:\Workspace",
+            @"D:\Workspace\config.json",
+            @"D:\Workspace\headers.json",
+            WorkspaceHeaderLayout.CreateDefault(),
+            new[] { itemWorkbook, configWorkbook });
+    }
+
     private static IReadOnlyDictionary<string, JsonElement> CreateAttributes(string key, string value)
     {
         return new Dictionary<string, JsonElement>
         {
             [key] = JsonSerializer.SerializeToElement(value),
         };
+    }
+
+    private static string NormalizeNewlines(string value)
+    {
+        return value.Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 }

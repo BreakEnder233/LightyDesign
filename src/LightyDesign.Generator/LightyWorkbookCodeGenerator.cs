@@ -43,7 +43,8 @@ public sealed class LightyWorkbookCodeGenerator
         }
 
         var files = new List<LightyGeneratedCodeFile>();
-        var generatedSheets = workbook.Sheets.Select(sheet => AnalyzeSheet(sheet)).ToList();
+        files.Add(new LightyGeneratedCodeFile("DesignDataReference.cs", RenderReferenceSupportFile()));
+        var generatedSheets = workbook.Sheets.Select(sheet => AnalyzeSheet(workspace, sheet)).ToList();
 
         foreach (var sheet in generatedSheets)
         {
@@ -75,7 +76,7 @@ public sealed class LightyWorkbookCodeGenerator
         return RenderEntryPointFile(normalizedWorkbookNames);
     }
 
-    private static GeneratedSheetModel AnalyzeSheet(LightySheet sheet)
+    private static GeneratedSheetModel AnalyzeSheet(LightyWorkspace workspace, LightySheet sheet)
     {
         var exportedColumns = sheet.Header.Columns
             .Select((column, index) => new { Column = column, Index = index })
@@ -85,7 +86,7 @@ public sealed class LightyWorkbookCodeGenerator
 
         var primaryKeyFields = ResolvePrimaryKeyFields(exportedColumns);
         var rows = sheet.Rows
-            .Select((row, rowIndex) => AnalyzeRow(sheet, row, rowIndex, exportedColumns))
+            .Select((row, rowIndex) => AnalyzeRow(workspace, sheet, row, rowIndex, exportedColumns))
             .ToList();
 
         return new GeneratedSheetModel(
@@ -116,7 +117,7 @@ public sealed class LightyWorkbookCodeGenerator
             exportScope);
     }
 
-    private static GeneratedRowModel AnalyzeRow(LightySheet sheet, LightySheetRow row, int rowIndex, IReadOnlyList<GeneratedFieldModel> fields)
+    private static GeneratedRowModel AnalyzeRow(LightyWorkspace workspace, LightySheet sheet, LightySheetRow row, int rowIndex, IReadOnlyList<GeneratedFieldModel> fields)
     {
         var assignments = new List<GeneratedFieldAssignment>(fields.Count);
 
@@ -129,7 +130,7 @@ public sealed class LightyWorkbookCodeGenerator
                 throw new LightyCoreException(parseResult.ErrorMessage ?? $"Failed to parse cell in sheet '{sheet.Name}' row {rowIndex} column '{field.FieldName}'.");
             }
 
-            assignments.Add(new GeneratedFieldAssignment(field, BuildValueLiteral(field.TypeDescriptor, parseResult.Value)));
+            assignments.Add(new GeneratedFieldAssignment(field, BuildValueLiteral(workspace, field.TypeDescriptor, parseResult.Value)));
         }
 
         return new GeneratedRowModel(assignments);
@@ -161,11 +162,6 @@ public sealed class LightyWorkbookCodeGenerator
 
     private static void EnsureSupportedType(LightyColumnTypeDescriptor descriptor)
     {
-        if (descriptor.IsReference)
-        {
-            throw new LightyCoreException($"Code generation does not yet support reference type '{descriptor.RawType}'.");
-        }
-
         if (descriptor.IsList)
         {
             EnsureSupportedType(LightyColumnTypeDescriptor.Parse(descriptor.ValueType));
@@ -176,6 +172,12 @@ public sealed class LightyWorkbookCodeGenerator
         {
             EnsureSupportedType(LightyColumnTypeDescriptor.Parse(descriptor.DictionaryKeyType!));
             EnsureSupportedType(LightyColumnTypeDescriptor.Parse(descriptor.DictionaryValueType!));
+            return;
+        }
+
+        if (descriptor.IsReference && descriptor.ReferenceTarget is null)
+        {
+            throw new LightyCoreException($"Code generation does not yet support malformed reference type '{descriptor.RawType}'.");
         }
     }
 
@@ -193,7 +195,8 @@ public sealed class LightyWorkbookCodeGenerator
 
         if (descriptor.IsReference)
         {
-            throw new LightyCoreException($"Code generation does not yet support reference type '{descriptor.RawType}'.");
+            var target = descriptor.ReferenceTarget ?? throw new LightyCoreException($"Reference type '{descriptor.RawType}' does not define a valid target.");
+            return $"DesignDataReference<{ToTypeIdentifier(target.SheetName)}Row>";
         }
 
         return descriptor.RawType switch
@@ -208,13 +211,13 @@ public sealed class LightyWorkbookCodeGenerator
         };
     }
 
-    private static string BuildValueLiteral(LightyColumnTypeDescriptor descriptor, object? value)
+    private static string BuildValueLiteral(LightyWorkspace workspace, LightyColumnTypeDescriptor descriptor, object? value)
     {
         if (descriptor.IsList)
         {
             var elementDescriptor = LightyColumnTypeDescriptor.Parse(descriptor.ValueType);
             var values = (IReadOnlyList<object?>)(value ?? Array.Empty<object?>());
-            var items = string.Join(", ", values.Select(item => BuildValueLiteral(elementDescriptor, item)));
+            var items = string.Join(", ", values.Select(item => BuildValueLiteral(workspace, elementDescriptor, item)));
             return $"new List<{MapToCSharpType(elementDescriptor)}> {{ {items} }}";
         }
 
@@ -223,13 +226,16 @@ public sealed class LightyWorkbookCodeGenerator
             var keyDescriptor = LightyColumnTypeDescriptor.Parse(descriptor.DictionaryKeyType!);
             var valueDescriptor = LightyColumnTypeDescriptor.Parse(descriptor.DictionaryValueType!);
             var pairs = (IReadOnlyDictionary<object, object?>)(value ?? new Dictionary<object, object?>());
-            var items = string.Join(", ", pairs.Select(pair => $"{{ {BuildValueLiteral(keyDescriptor, pair.Key)}, {BuildValueLiteral(valueDescriptor, pair.Value)} }}"));
+            var items = string.Join(", ", pairs.Select(pair => $"{{ {BuildValueLiteral(workspace, keyDescriptor, pair.Key)}, {BuildValueLiteral(workspace, valueDescriptor, pair.Value)} }}"));
             return $"new Dictionary<{MapToCSharpType(keyDescriptor)}, {MapToCSharpType(valueDescriptor)}> {{ {items} }}";
         }
 
         if (descriptor.IsReference)
         {
-            throw new LightyCoreException($"Code generation does not yet support reference value '{descriptor.RawType}'.");
+            var target = descriptor.ReferenceTarget ?? throw new LightyCoreException($"Reference type '{descriptor.RawType}' does not define a valid target.");
+            var referenceValue = value as LightyReferenceValue
+                ?? throw new LightyCoreException($"Reference value for '{descriptor.RawType}' could not be parsed.");
+            return BuildReferenceLiteral(workspace, target, referenceValue);
         }
 
         return descriptor.RawType switch
@@ -270,6 +276,69 @@ public sealed class LightyWorkbookCodeGenerator
 
         writer.Append(RenderTableClass(sheet));
 
+        return writer.ToString();
+    }
+
+    private static string RenderReferenceSupportFile()
+    {
+        var writer = new CodeWriter();
+        writer.AppendLine("using System;");
+        writer.AppendLine("using System.Collections.Generic;");
+        writer.AppendLine("using System.Globalization;");
+        writer.AppendLine();
+        writer.AppendLine($"namespace {GeneratedNamespace};");
+        writer.AppendLine();
+        writer.AppendLine("public sealed class DesignDataReference<TTarget>");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("private readonly IReadOnlyList<string> _identifiers;");
+        writer.AppendLine("private readonly Func<IReadOnlyList<string>, TTarget> _resolver;");
+        writer.AppendLine();
+        writer.AppendLine("public DesignDataReference(string workbookName, string sheetName, Func<IReadOnlyList<string>, TTarget> resolver, params string[] identifiers)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("ArgumentException.ThrowIfNullOrWhiteSpace(workbookName);");
+        writer.AppendLine("ArgumentException.ThrowIfNullOrWhiteSpace(sheetName);");
+        writer.AppendLine("ArgumentNullException.ThrowIfNull(resolver);");
+        writer.AppendLine("ArgumentNullException.ThrowIfNull(identifiers);");
+        writer.AppendLine();
+        writer.AppendLine("WorkbookName = workbookName;");
+        writer.AppendLine("SheetName = sheetName;");
+        writer.AppendLine("_resolver = resolver;");
+        writer.AppendLine("_identifiers = Array.AsReadOnly(identifiers);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public string WorkbookName { get; }");
+        writer.AppendLine("public string SheetName { get; }");
+        writer.AppendLine("public IReadOnlyList<string> Identifiers => _identifiers;");
+        writer.AppendLine();
+        writer.AppendLine("public TTarget GetValue() => _resolver(_identifiers);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("internal static class DesignDataReferenceHelper");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("public static int ParseInt32(string value) => int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture);");
+        writer.AppendLine("public static long ParseInt64(string value) => long.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture);");
+        writer.AppendLine("public static float ParseSingle(string value) => float.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture);");
+        writer.AppendLine("public static double ParseDouble(string value) => double.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture);");
+        writer.AppendLine("public static bool ParseBoolean(string value)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return value.Trim() switch");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("\"1\" => true,");
+        writer.AppendLine("\"0\" => false,");
+        writer.AppendLine("_ => bool.Parse(value),");
+        writer.Outdent();
+        writer.AppendLine("};");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
         return writer.ToString();
     }
 
@@ -451,6 +520,67 @@ public sealed class LightyWorkbookCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         return writer.ToString();
+    }
+
+    private static string BuildReferenceLiteral(LightyWorkspace workspace, LightyReferenceTarget target, LightyReferenceValue referenceValue)
+    {
+        if (!workspace.TryGetWorkbook(target.WorkbookName, out var targetWorkbook) || targetWorkbook is null)
+        {
+            throw new LightyCoreException($"Reference target workbook '{target.WorkbookName}' was not found during code generation.");
+        }
+
+        if (!targetWorkbook.TryGetSheet(target.SheetName, out var targetSheet) || targetSheet is null)
+        {
+            throw new LightyCoreException($"Reference target sheet '{target.WorkbookName}.{target.SheetName}' was not found during code generation.");
+        }
+
+        var targetFields = targetSheet.Header.Columns
+            .Select((column, index) => new { Column = column, Index = index })
+            .Where(entry => !entry.Column.TryGetExportScope(out var exportScope) || exportScope != LightyExportScope.None)
+            .Select(entry => AnalyzeField(entry.Column, entry.Index))
+            .ToList();
+        var primaryKeyFields = ResolvePrimaryKeyFields(targetFields);
+
+        if (primaryKeyFields.Count == 0)
+        {
+            throw new LightyCoreException($"Reference target '{target.WorkbookName}.{target.SheetName}' does not define ID or ID1/ID2 primary keys.");
+        }
+
+        if (primaryKeyFields.Count != referenceValue.Identifiers.Count)
+        {
+            throw new LightyCoreException($"Reference target '{target.WorkbookName}.{target.SheetName}' expects {primaryKeyFields.Count} identifier(s), but got {referenceValue.Identifiers.Count}.");
+        }
+
+        var identifierLiterals = string.Join(", ", referenceValue.Identifiers.Select(ToStringLiteral));
+        var targetRowTypeName = $"{ToTypeIdentifier(target.SheetName)}Row";
+        var resolverExpression = BuildReferenceResolverExpression(target, primaryKeyFields);
+        return $"new DesignDataReference<{targetRowTypeName}>(\"{target.WorkbookName}\", \"{target.SheetName}\", static identifiers => {resolverExpression}, {identifierLiterals})";
+    }
+
+    private static string BuildReferenceResolverExpression(LightyReferenceTarget target, IReadOnlyList<GeneratedFieldModel> primaryKeyFields)
+    {
+        var expression = $"LDD.{ToTypeIdentifier(target.WorkbookName)}.{ToTypeIdentifier(target.SheetName)}";
+        for (var index = 0; index < primaryKeyFields.Count; index += 1)
+        {
+            expression += $"[{BuildIdentifierAccessExpression(primaryKeyFields[index], index)}]";
+        }
+
+        return expression;
+    }
+
+    private static string BuildIdentifierAccessExpression(GeneratedFieldModel field, int identifierIndex)
+    {
+        var valueExpression = $"identifiers[{identifierIndex}]";
+        return field.TypeDescriptor.RawType switch
+        {
+            "string" => valueExpression,
+            "int" => $"DesignDataReferenceHelper.ParseInt32({valueExpression})",
+            "long" => $"DesignDataReferenceHelper.ParseInt64({valueExpression})",
+            "float" => $"DesignDataReferenceHelper.ParseSingle({valueExpression})",
+            "double" => $"DesignDataReferenceHelper.ParseDouble({valueExpression})",
+            "bool" => $"DesignDataReferenceHelper.ParseBoolean({valueExpression})",
+            _ => throw new LightyCoreException($"Unsupported reference key type '{field.TypeDescriptor.RawType}'."),
+        };
     }
 
     private static void AppendIndexMembers(CodeWriter writer, GeneratedSheetModel sheet, LightyExportScope? indexAvailabilityScope)

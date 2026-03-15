@@ -85,10 +85,6 @@ Assert-Command npm
 
 Set-FrontendMirrorEnvironment -UseChinaMirror:$UseChinaMirror -NpmRegistry $NpmRegistry -ElectronMirror $ElectronMirror
 
-if (-not (Test-Path $sourceElectronRuntimeRoot)) {
-    throw "未找到 app/desktop/node_modules/electron。请先执行 Bootstrap-LightyDesign.ps1 或 npm ci；大陆网络建议追加 -UseChinaMirror。"
-}
-
 Write-Host "LightyDesign 部署脚本" -ForegroundColor Cyan
 Write-Host "输出目录: $deployRoot"
 
@@ -123,6 +119,13 @@ try {
             else {
                 npm install
             }
+        }
+        elseif (-not (Test-Path $sourceElectronRuntimeRoot)) {
+            throw "未找到 app/desktop/node_modules/electron。当前使用了 -SkipFrontendInstall，因此请先执行 npm ci 或 Bootstrap-LightyDesign.ps1；大陆网络建议追加 -UseChinaMirror。"
+        }
+
+        if (-not (Test-Path $sourceElectronRuntimeRoot)) {
+            throw "未找到 app/desktop/node_modules/electron。前端依赖安装可能失败；大陆网络建议追加 -UseChinaMirror。"
         }
 
         Write-Host "[5/6] 构建桌面前端" -ForegroundColor Yellow

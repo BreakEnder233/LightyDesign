@@ -49,7 +49,6 @@ function Set-FrontendMirrorEnvironment {
 
     if (-not [string]::IsNullOrWhiteSpace($resolvedElectronMirror)) {
         $env:ELECTRON_MIRROR = $resolvedElectronMirror
-        $env:npm_config_electron_mirror = $resolvedElectronMirror
         Write-Host "使用 Electron 镜像: $resolvedElectronMirror" -ForegroundColor DarkCyan
     }
 }

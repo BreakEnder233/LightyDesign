@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnEditorDialog } from "./components/ColumnEditorDialog";
 import { ToastCenter } from "./components/ToastCenter";
 import { VirtualSheetTable } from "./components/VirtualSheetTable";
+import { useAppUpdates } from "./hooks/useAppUpdates";
 import { useDesktopHostConnection } from "./hooks/useDesktopHostConnection";
 import { isShortcutModifierPressed, useEditorShortcuts } from "./hooks/useEditorShortcuts";
 import { useToastCenter } from "./hooks/useToastCenter";
@@ -110,6 +111,24 @@ function tryGetWorkspaceRelativePath(workspaceRoot: string, absolutePath: string
   return [...upwardSegments, ...downwardSegments].join("/");
 }
 
+function formatByteSize(byteCount: number | null | undefined) {
+  if (!byteCount || byteCount <= 0) {
+    return null;
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let value = byteCount;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
+}
+
 function App() {
   const { bridgeStatus, bridgeError, hostInfo, hostHealth } = useDesktopHostConnection();
   const {
@@ -122,6 +141,10 @@ function App() {
     dismissToast,
     copySelectedErrorDetail,
   } = useToastCenter();
+  const { updateInfo, updateResult, updateStatus, updateDownloadState, checkForUpdates, installUpdate } = useAppUpdates({
+    bridgeStatus,
+    onToast: pushToastNotification,
+  });
 
   const {
     workspacePath,
@@ -190,6 +213,57 @@ function App() {
   const canChooseWorkspaceDirectory = bridgeStatus === "ready";
   const hostUrlLabel = bridgeStatus === "unavailable" ? "Electron bridge 未就绪" : hostInfo?.desktopHostUrl ?? "加载中...";
   const runtimeLabel = bridgeStatus === "unavailable" ? "不可用" : hostInfo?.shell ?? "加载中...";
+  const isUpdateInstallInProgress =
+    updateDownloadState?.status === "preparing" ||
+    updateDownloadState?.status === "downloading" ||
+    updateDownloadState?.status === "launching";
+  const canInstallUpdate =
+    bridgeStatus === "ready" &&
+    (isUpdateInstallInProgress || updateResult?.status === "available");
+  const updateDownloadProgressText =
+    updateDownloadState?.bytesReceived && updateDownloadState.totalBytes
+      ? `${formatByteSize(updateDownloadState.bytesReceived)} / ${formatByteSize(updateDownloadState.totalBytes)}`
+      : formatByteSize(updateDownloadState?.bytesReceived) ?? null;
+  const installButtonLabel =
+    updateDownloadState?.status === "downloading"
+      ? `下载中 ${updateDownloadState.progressPercent ?? 0}%`
+      : updateDownloadState?.status === "preparing"
+        ? "准备下载"
+        : updateDownloadState?.status === "launching"
+          ? "静默安装中"
+          : "静默安装";
+  const updateStatusText =
+    bridgeStatus !== "ready"
+      ? "不可用"
+      : updateDownloadState?.status === "preparing"
+        ? "准备下载"
+        : updateDownloadState?.status === "downloading"
+          ? `下载中 ${updateDownloadState.progressPercent ?? 0}%`
+          : updateDownloadState?.status === "launching"
+            ? "正在静默安装"
+            : updateDownloadState?.status === "cancelled"
+              ? "已取消下载"
+              : updateDownloadState?.status === "error"
+                ? "下载安装失败"
+                : updateStatus === "checking"
+                  ? "检查中"
+                  : updateStatus === "available"
+                    ? `可更新到 ${updateResult?.latestVersion ?? "latest"}`
+                    : updateStatus === "up-to-date"
+                      ? `已是最新 ${updateResult?.currentVersion ?? updateInfo?.currentVersion ?? ""}`.trim()
+                      : updateStatus === "unconfigured"
+                        ? "未配置更新源"
+                        : updateStatus === "error"
+                          ? "检查失败"
+                          : updateInfo?.currentVersion ?? "待检查";
+  const updateDetailText =
+    isUpdateInstallInProgress
+      ? updateDownloadProgressText ?? updateDownloadState?.fileName ?? updateDownloadState?.detail ?? "正在下载并静默安装更新"
+      : updateDownloadState?.status === "error"
+        ? updateDownloadState.detail ?? "应用内下载安装失败"
+        : updateStatus === "available"
+          ? updateResult?.downloadName ?? updateResult?.releaseName ?? "GitHub Release"
+          : updateInfo?.repository ?? "GitHub Releases";
   const [isCreateWorkspaceDialogOpen, setIsCreateWorkspaceDialogOpen] = useState(false);
   const [createWorkspaceParentDirectoryPath, setCreateWorkspaceParentDirectoryPath] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("NewWorkspace");
@@ -1168,7 +1242,83 @@ function App() {
       }
     }
 
+    if (targetToast.action.kind === "open-external-url") {
+      if (targetToast.action.url) {
+        const result = await window.lightyDesign?.openExternal(targetToast.action.url);
+        if (!result?.ok) {
+          pushToastNotification({
+            title: "打开链接失败",
+            detail: result?.error ?? `无法打开链接: ${targetToast.action.url}`,
+            source: "system",
+            variant: "error",
+            canOpenDetail: true,
+            durationMs: 8000,
+          });
+          return;
+        }
+      }
+    }
+
+    if (targetToast.action.kind === "install-update") {
+      await handleInstallUpdate();
+    }
+
     dismissToast(toastId);
+  }
+
+  async function handleCheckForUpdates() {
+    await checkForUpdates({ manual: true });
+  }
+
+  async function handleOpenUpdateRelease() {
+    const targetUrl = updateResult?.downloadUrl ?? updateResult?.releasesPageUrl ?? updateInfo?.releasesPageUrl;
+    if (!targetUrl) {
+      pushToastNotification({
+        title: "未找到更新下载地址",
+        detail: "当前还没有可用的 Release 页面地址。请先配置 GitHub Releases 更新源。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return;
+    }
+
+    const result = await window.lightyDesign?.openExternal(targetUrl);
+    if (!result?.ok) {
+      pushToastNotification({
+        title: "打开发布页失败",
+        detail: result?.error ?? `无法打开链接: ${targetUrl}`,
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+    }
+  }
+
+  async function handleInstallUpdate() {
+    const downloadState = await installUpdate({ manual: true });
+    if (!downloadState) {
+      return;
+    }
+
+    if (downloadState.status === "error" && downloadState.releasesPageUrl) {
+      pushToastNotification({
+        title: "可切换到手动安装",
+        summary: "应用内安装失败后，仍可打开发布页手动下载安装包。",
+        detail: downloadState.detail ?? downloadState.releasesPageUrl,
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+        action: {
+          label: "打开发布页",
+          kind: "open-external-url",
+          url: downloadState.releasesPageUrl,
+        },
+      });
+    }
   }
 
   async function handleOpenCreateWorkspaceDialog() {
@@ -1665,6 +1815,19 @@ function App() {
           <p className="eyebrow">Explorer</p>
           <h1>LightyDesign</h1>
           <p className="sidebar-copy">桌面工作台。左侧管理工作区与工作簿，右侧专注表格编辑。</p>
+          <div className="brand-actions">
+            <button className="secondary-button" onClick={() => void handleCheckForUpdates()} type="button">
+              检查更新
+            </button>
+            <button
+              className="secondary-button"
+              disabled={!canInstallUpdate || updateDownloadState?.status === "launching"}
+              onClick={() => void handleInstallUpdate()}
+              type="button"
+            >
+              {installButtonLabel}
+            </button>
+          </div>
         </div>
 
         <section className="sidebar-section workspace-entry-card">
@@ -2123,6 +2286,24 @@ function App() {
           <span className="status-label">Save</span>
           <strong>{saveStatusText}</strong>
           <span className="status-detail">{hostUrlLabel}</span>
+        </div>
+        <div className="status-segment status-update-segment">
+          <span className="status-label">Update</span>
+          <strong>{updateStatusText}</strong>
+          <div className="status-update-actions">
+            <span className="status-detail">{updateDetailText}</span>
+            <button className="status-link-button" onClick={() => void handleCheckForUpdates()} type="button">
+              刷新
+            </button>
+            <button
+              className="status-link-button"
+              disabled={!canInstallUpdate || updateDownloadState?.status === "launching"}
+              onClick={() => void handleInstallUpdate()}
+              type="button"
+            >
+              安装
+            </button>
+          </div>
         </div>
       </footer>
     </div>

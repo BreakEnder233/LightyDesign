@@ -190,9 +190,10 @@ export type ToastNotification = {
   durationMs?: number;
   action?: {
     label: string;
-    kind: "activate-workbook" | "open-directory";
+    kind: "activate-workbook" | "open-directory" | "open-external-url" | "install-update";
     workbookName?: string;
     directoryPath?: string;
+    url?: string;
   };
   timestamp: string;
 };

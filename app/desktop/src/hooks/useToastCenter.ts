@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ToastNotification } from "../types/desktopApp";
 
-type PushToastInput = Omit<ToastNotification, "id" | "summary" | "timestamp">;
+type PushToastInput = Omit<ToastNotification, "id" | "summary" | "timestamp"> & {
+  summary?: string;
+};
 
 export function useToastCenter() {
   const [toastNotifications, setToastNotifications] = useState<ToastNotification[]>([]);
@@ -55,6 +57,7 @@ export function useToastCenter() {
 
   function pushToastNotification({
     title,
+    summary,
     detail,
     source,
     variant,
@@ -63,7 +66,7 @@ export function useToastCenter() {
     action,
   }: PushToastInput) {
     const normalizedDetail = detail?.trim();
-    const summarySource = normalizedDetail ?? title;
+    const summarySource = summary?.trim() || normalizedDetail || title;
     const nextToast: ToastNotification = {
       id: nextToastIdRef.current,
       title,

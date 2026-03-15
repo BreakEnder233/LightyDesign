@@ -33,14 +33,73 @@ powershell -ExecutionPolicy Bypass -File .\ShellFiles\Deploy-LightyDesign.ps1
 使用方式如下：
 
 1. 在 GitHub 的 Actions 页面手动触发 `Build Desktop Package`。
-2. 工作流会在 Windows runner 上执行 `ShellFiles/Deploy-LightyDesign.ps1`。
-3. 完成后会上传一个 zip artifact，内容即现成的可运行部署目录。
+2. 如只做手动打包，`version` 可留空，此时默认使用当前 `app/desktop/package.json` 里的版本号。
+3. 如需直接发版，可勾选 `publish_release`，工作流会自动按该版本生成或更新 `v版本号` 对应的 GitHub Release。
+4. 工作流会在 Windows runner 上同时执行 `ShellFiles/Deploy-LightyDesign.ps1` 和 `ShellFiles/Build-LightyDesignInstaller.ps1`。
+5. 完成后会同时上传 zip 部署目录、Windows 安装器 artifact，以及一份 `version-metadata.json` 版本元数据。
+
+手动触发且勾选 `publish_release` 时，`version` 为必填项。工作流还会先检查目标 `v版本号` 对应的 Git tag 和 GitHub Release 是否已经存在；如果已存在，会直接失败，避免误覆盖已有版本。
 
 如果推送形如 `v1.0.0` 的 tag，该工作流还会自动：
 
 1. 构建同样的部署目录。
-2. 打包为 zip。
-3. 附加到对应的 GitHub Release，便于直接分发或下载后快速部署。
+2. 生成 NSIS Windows 安装器和 `latest.yml`。
+3. 自动把 Electron 应用版本、安装器版本和 .NET 程序集版本统一注入到本次构建。
+4. 把 zip、安装器和更新元数据附加到对应的 GitHub Release。
+
+## 桌面端更新检查
+
+桌面端现在支持基于 GitHub Releases 的更新检查，但默认需要先配置更新源。
+
+可选配置位置：
+
+1. `app/desktop/package.json` 中的 `lightyDesign.updates.githubRepository`
+2. 运行时环境变量 `LDD_GITHUB_REPOSITORY`
+3. 如需自定义 API 或发布页地址，也可配置 `lightyDesign.updates.releasesApiUrl` 与 `lightyDesign.updates.releasesPageUrl`
+
+推荐直接填成：
+
+```json
+{
+   "lightyDesign": {
+      "updates": {
+         "githubRepository": "owner/repo"
+      }
+   }
+}
+```
+
+配置完成后，桌面端会：
+
+1. 启动后自动检查最新 Release
+2. 在状态栏显示更新状态
+3. 发现新版本时支持在应用内直接下载并静默执行 Windows 安装器
+
+当前阶段已经支持“检查更新 + 应用内下载 + 静默覆盖安装”。当前实现优先支持 NSIS exe 与 MSI 资产；安装完成后的自动回前台启动仍未接入。
+
+## Windows 安装器
+
+如果要在本地构建可覆盖安装的 Windows 安装器，可在仓库根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Build-LightyDesignInstaller.ps1
+```
+
+该脚本会：
+
+1. 发布 DesktopHost 到安装器资源目录。
+2. 构建 Electron 前端与主进程产物。
+3. 调用 electron-builder 生成 NSIS 安装器。
+
+安装器默认输出到 `app\desktop\dist-installer`，运行新的安装器即可覆盖旧版本安装。
+
+如在中国大陆网络环境下构建，建议追加：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Build-LightyDesignInstaller.ps1 -UseChinaMirror
+```
+
+这个参数会同时配置 npm、Electron 和 electron-builder 二进制镜像，避免 `winCodeSign`、`nsis` 等安装器依赖从 GitHub 直连下载时超时。
 
 ## 手动命令
 

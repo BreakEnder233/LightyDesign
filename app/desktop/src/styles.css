@@ -69,6 +69,13 @@ button {
   border-bottom: 1px solid #333333;
 }
 
+.brand-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .brand-block h1,
 .viewer-header h3,
 .section-header h2,
@@ -1281,7 +1288,7 @@ button {
 .status-bar {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 220px minmax(180px, 1fr) minmax(220px, 1.15fr) minmax(180px, 0.9fr) minmax(200px, 0.95fr) minmax(220px, 1fr);
+  grid-template-columns: 220px minmax(180px, 1fr) minmax(220px, 1.15fr) minmax(180px, 0.9fr) minmax(200px, 0.95fr) minmax(220px, 1fr) minmax(240px, 1.1fr);
   gap: 1px;
   min-height: 24px;
   border-top: 1px solid #005a9e;
@@ -1301,6 +1308,10 @@ button {
 
 .status-segment.is-wide {
   min-width: 0;
+}
+
+.status-update-segment {
+  gap: 6px;
 }
 
 .status-segment strong,
@@ -1334,6 +1345,31 @@ button {
 
 .status-chip.is-warn {
   color: #ffd866;
+}
+
+.status-update-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status-link-button {
+  padding: 0;
+  border: 0;
+  color: #ffffff;
+  background: transparent;
+  opacity: 0.9;
+}
+
+.status-link-button:hover:not(:disabled) {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.status-link-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 @media (max-width: 1360px) {

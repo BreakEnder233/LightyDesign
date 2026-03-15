@@ -2,6 +2,10 @@ param(
     [string]$OutputPath = "",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
+    [string]$Version = "",
+    [string]$AssemblyVersion = "",
+    [string]$FileVersion = "",
+    [string]$InformationalVersion = "",
     [switch]$SkipTests,
     [switch]$SkipFrontendInstall,
     [switch]$CleanOutput = $true,
@@ -61,7 +65,6 @@ function Set-FrontendMirrorEnvironment {
 
     if (-not [string]::IsNullOrWhiteSpace($resolvedElectronMirror)) {
         $env:ELECTRON_MIRROR = $resolvedElectronMirror
-        $env:npm_config_electron_mirror = $resolvedElectronMirror
         Write-Host "使用 Electron 镜像: $resolvedElectronMirror" -ForegroundColor DarkCyan
     }
 }
@@ -79,11 +82,35 @@ function Copy-Directory {
     Copy-Item $Source $Destination -Recurse -Force
 }
 
+function Get-DotNetVersionArguments {
+    $arguments = @()
+
+    if (-not [string]::IsNullOrWhiteSpace($Version)) {
+        $arguments += "/p:Version=$Version"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AssemblyVersion)) {
+        $arguments += "/p:AssemblyVersion=$AssemblyVersion"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($FileVersion)) {
+        $arguments += "/p:FileVersion=$FileVersion"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($InformationalVersion)) {
+        $arguments += "/p:InformationalVersion=$InformationalVersion"
+    }
+
+    return $arguments
+}
+
 Assert-Command dotnet
 Assert-Command node
 Assert-Command npm
 
 Set-FrontendMirrorEnvironment -UseChinaMirror:$UseChinaMirror -NpmRegistry $NpmRegistry -ElectronMirror $ElectronMirror
+
+$dotNetVersionArguments = Get-DotNetVersionArguments
 
 Write-Host "LightyDesign 部署脚本" -ForegroundColor Cyan
 Write-Host "输出目录: $deployRoot"
@@ -102,11 +129,11 @@ try {
 
     if (-not $SkipTests) {
         Write-Host "[2/6] 运行测试" -ForegroundColor Yellow
-        dotnet test $solutionPath -c $Configuration --no-restore
+        dotnet test $solutionPath -c $Configuration --no-restore @dotNetVersionArguments
     }
 
     Write-Host "[3/6] 发布 DesktopHost" -ForegroundColor Yellow
-    dotnet publish $desktopHostProjectPath -c $Configuration -r $Runtime --self-contained false -o $deployDesktopHostRoot
+    dotnet publish $desktopHostProjectPath -c $Configuration -r $Runtime --self-contained false -o $deployDesktopHostRoot @dotNetVersionArguments
 
     Push-Location $desktopRoot
 
@@ -143,15 +170,27 @@ try {
 
     $sourcePackage = Get-Content (Join-Path $desktopRoot "package.json") -Raw | ConvertFrom-Json
 
-    $deployPackageJson = @"
-{
-  "name": "lightydesign-desktop-deploy",
-  "private": true,
-  "version": "$($sourcePackage.version)",
-  "type": "module",
-  "main": "dist-electron/electron/main.js"
-}
-"@
+    $deployPackage = [ordered]@{
+        name = "lightydesign-desktop-deploy"
+        private = $true
+        version = $sourcePackage.version
+        type = "module"
+        main = "dist-electron/electron/main.js"
+    }
+
+    if ($null -ne $sourcePackage.repository) {
+        $deployPackage.repository = $sourcePackage.repository
+    }
+
+    if ($null -ne $sourcePackage.homepage) {
+        $deployPackage.homepage = $sourcePackage.homepage
+    }
+
+    if ($null -ne $sourcePackage.lightyDesign) {
+        $deployPackage.lightyDesign = $sourcePackage.lightyDesign
+    }
+
+    $deployPackageJson = $deployPackage | ConvertTo-Json -Depth 8
     Set-Content -Path (Join-Path $deployDesktopRoot "package.json") -Value $deployPackageJson -Encoding UTF8
 
     $startScript = @"

@@ -3,6 +3,11 @@ name: Build Desktop Package
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: Release version to build, for example 0.2.0 or 0.2.0-beta.1
+        required: false
+        default: ""
+        type: string
       runtime:
         description: Target runtime for DesktopHost publish output
         required: true
@@ -12,6 +17,16 @@ on:
           - win-x64
       skip_tests:
         description: Skip dotnet test before packaging
+        required: true
+        default: false
+        type: boolean
+      use_china_mirror:
+        description: Use China mainland mirrors for npm, Electron and electron-builder binaries
+        required: true
+        default: false
+        type: boolean
+      publish_release:
+        description: Create or update a GitHub Release for this build
         required: true
         default: false
         type: boolean
@@ -31,6 +46,9 @@ jobs:
       CI: true
       PACKAGE_RUNTIME: ${{ github.event_name == 'workflow_dispatch' && inputs.runtime || 'win-x64' }}
       SKIP_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests || false }}
+      USE_CHINA_MIRROR: ${{ github.event_name == 'workflow_dispatch' && inputs.use_china_mirror || false }}
+      REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+      PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
 
     steps:
       - name: Checkout repository
@@ -53,20 +71,144 @@ jobs:
         shell: pwsh
         run: |
           $packageJson = Get-Content "app/desktop/package.json" -Raw | ConvertFrom-Json
+          $requestedVersion = "$env:REQUESTED_VERSION".Trim()
+          $isTagBuild = "${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true"
+          $tagNameFromRef = if ($isTagBuild) { "${{ github.ref_name }}" } else { "" }
+          $manualPublishRelease = (-not $isTagBuild) -and [System.Convert]::ToBoolean($env:PUBLISH_RELEASE)
           $version = $packageJson.version
 
-          if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
-              $label = "${{ github.ref_name }}"
+          if ($manualPublishRelease -and [string]::IsNullOrWhiteSpace($requestedVersion)) {
+            throw "手动发版时 version 为必填项。请在 workflow_dispatch 中填写明确版本号，例如 0.2.0 或 0.2.0-beta.1。"
+          }
+
+          if ($isTagBuild) {
+            $version = $tagNameFromRef
+          }
+          elseif ($requestedVersion) {
+            if ($requestedVersion.StartsWith("v", [System.StringComparison]::OrdinalIgnoreCase)) {
+              $requestedVersion = $requestedVersion.Substring(1)
+            }
+
+            $version = $requestedVersion
+          }
+
+          if ($version.StartsWith("v", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $version = $version.Substring(1)
+          }
+
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+            throw "版本号格式无效: $version"
+          }
+
+          $versionCore = $version
+          if ($versionCore.Contains("-")) {
+            $versionCore = $versionCore.Split("-")[0]
+          }
+
+          if ($versionCore.Contains("+")) {
+            $versionCore = $versionCore.Split("+")[0]
+          }
+
+          $versionParts = $versionCore.Split('.')
+          $assemblyVersion = "$($versionParts[0]).$($versionParts[1]).$($versionParts[2]).0"
+          $fileVersion = $assemblyVersion
+          $shortSha = "${{ github.sha }}".Substring(0, 7)
+          $shouldPublishRelease = $isTagBuild -or [System.Convert]::ToBoolean($env:PUBLISH_RELEASE)
+
+          if ($isTagBuild) {
+            $tagName = $tagNameFromRef
+            $label = $tagName
+            $informationalVersion = $tagName
+          }
+          elseif ($shouldPublishRelease) {
+            $tagName = "v$version"
+            $label = $tagName
+            $informationalVersion = "$version+release.${{ github.run_number }}.$shortSha"
           }
           else {
               $label = "$version-ci.$env:GITHUB_RUN_NUMBER"
+            $tagName = ""
+            $informationalVersion = "$version+ci.${{ github.run_number }}.$shortSha"
           }
 
           $zipName = "LightyDesign-$label-$env:PACKAGE_RUNTIME.zip"
 
           "version=$version" >> $env:GITHUB_OUTPUT
+          "assembly_version=$assemblyVersion" >> $env:GITHUB_OUTPUT
+          "file_version=$fileVersion" >> $env:GITHUB_OUTPUT
+          "informational_version=$informationalVersion" >> $env:GITHUB_OUTPUT
           "label=$label" >> $env:GITHUB_OUTPUT
+          "tag_name=$tagName" >> $env:GITHUB_OUTPUT
+          "publish_release=$shouldPublishRelease" >> $env:GITHUB_OUTPUT
           "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+
+      - name: Protect release version conflicts
+        if: steps.metadata.outputs.publish_release == 'True' || steps.metadata.outputs.publish_release == 'true'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $isTagBuild = "${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true"
+          if ($isTagBuild) {
+            Write-Host "Tag push 构建跳过重复 tag 保护，直接沿用现有 tag。"
+            exit 0
+          }
+
+          $tagName = "${{ steps.metadata.outputs.tag_name }}"
+          if ([string]::IsNullOrWhiteSpace($tagName)) {
+            throw "当前发布流程缺少 tag_name，无法执行版本冲突保护。"
+          }
+
+          $headers = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept = "application/vnd.github+json"
+            "User-Agent" = "LightyDesign-CI"
+          }
+
+          $ownerAndRepo = "${{ github.repository }}"
+          $tagRefUrl = "https://api.github.com/repos/$ownerAndRepo/git/ref/tags/$tagName"
+          $releaseUrl = "https://api.github.com/repos/$ownerAndRepo/releases/tags/$tagName"
+
+          try {
+            Invoke-RestMethod -Uri $tagRefUrl -Headers $headers | Out-Null
+            throw "版本号冲突：Git tag $tagName 已存在。请改用新的版本号，或改为直接推送对应 tag。"
+          }
+          catch {
+            if ($_.Exception.Message -match '404') {
+              Write-Host "未发现现有 tag $tagName，可以继续发布。"
+            }
+            elseif ($_.Exception.Message -like '版本号冲突：*') {
+              throw
+            }
+            else {
+              throw "检查 Git tag 是否存在时失败：$($_.Exception.Message)"
+            }
+          }
+
+          try {
+            Invoke-RestMethod -Uri $releaseUrl -Headers $headers | Out-Null
+            throw "版本号冲突：GitHub Release $tagName 已存在。请改用新的版本号。"
+          }
+          catch {
+            if ($_.Exception.Message -match '404') {
+              Write-Host "未发现现有 Release $tagName，可以继续发布。"
+            }
+            elseif ($_.Exception.Message -like '版本号冲突：*') {
+              throw
+            }
+            else {
+              throw "检查 GitHub Release 是否存在时失败：$($_.Exception.Message)"
+            }
+          }
+
+      - name: Apply build version
+        id: apply_version
+        shell: pwsh
+        run: |
+          & ./ShellFiles/Set-LightyDesignVersion.ps1 `
+            -Version "${{ steps.metadata.outputs.version }}" `
+            -InformationalVersion "${{ steps.metadata.outputs.informational_version }}" `
+            -MetadataOutputPath "artifacts/release/version-metadata.json"
 
       - name: Build deploy directory
         shell: pwsh
@@ -75,10 +217,18 @@ jobs:
             Configuration = "Release"
             Runtime = $env:PACKAGE_RUNTIME
             OutputPath = "artifacts/ci/LightyDesign"
+            Version = "${{ steps.metadata.outputs.version }}"
+            AssemblyVersion = "${{ steps.metadata.outputs.assembly_version }}"
+            FileVersion = "${{ steps.metadata.outputs.file_version }}"
+            InformationalVersion = "${{ steps.metadata.outputs.informational_version }}"
           }
 
           if ([System.Convert]::ToBoolean($env:SKIP_TESTS)) {
             $arguments.SkipTests = $true
+          }
+
+          if ([System.Convert]::ToBoolean($env:USE_CHINA_MIRROR)) {
+            $arguments.UseChinaMirror = $true
           }
 
           & ./ShellFiles/Deploy-LightyDesign.ps1 @arguments
@@ -100,6 +250,30 @@ jobs:
           Compress-Archive -Path $deployRoot -DestinationPath $zipPath -CompressionLevel Optimal
           "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
 
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $arguments = @{
+            Configuration = "Release"
+            Runtime = $env:PACKAGE_RUNTIME
+            OutputPath = "artifacts/installer"
+            SkipFrontendInstall = $true
+            Version = "${{ steps.metadata.outputs.version }}"
+            AssemblyVersion = "${{ steps.metadata.outputs.assembly_version }}"
+            FileVersion = "${{ steps.metadata.outputs.file_version }}"
+            InformationalVersion = "${{ steps.metadata.outputs.informational_version }}"
+          }
+
+          if ([System.Convert]::ToBoolean($env:SKIP_TESTS)) {
+            $arguments.SkipTests = $true
+          }
+
+          if ([System.Convert]::ToBoolean($env:USE_CHINA_MIRROR)) {
+            $arguments.UseChinaMirror = $true
+          }
+
+          & ./ShellFiles/Build-LightyDesignInstaller.ps1 @arguments
+
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
@@ -107,15 +281,39 @@ jobs:
           path: ${{ steps.archive.outputs.zip_path }}
           if-no-files-found: error
 
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-installer-${{ steps.metadata.outputs.label }}-${{ env.PACKAGE_RUNTIME }}
+          path: |
+            artifacts/installer/*.exe
+            artifacts/installer/latest*.yml
+          if-no-files-found: error
+
+      - name: Upload version metadata artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-version-metadata-${{ steps.metadata.outputs.label }}-${{ env.PACKAGE_RUNTIME }}
+          path: artifacts/release/version-metadata.json
+          if-no-files-found: error
+
       - name: Publish GitHub release asset
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.metadata.outputs.publish_release == 'True' || steps.metadata.outputs.publish_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.archive.outputs.zip_path }}
+          tag_name: ${{ steps.metadata.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.metadata.outputs.tag_name }}
+          files: |
+            ${{ steps.archive.outputs.zip_path }}
+            artifacts/installer/*.exe
+            artifacts/installer/latest*.yml
+            artifacts/release/version-metadata.json
           generate_release_notes: true
           append_body: true
           body: |
             产物说明：
-            - 解压后进入 desktop 目录。
-            - 运行 Start-LightyDesign.ps1 可直接启动桌面端和本地 DesktopHost。
-            - 该发布包由 Deploy-LightyDesign.ps1 自动生成。
+            - zip 产物可解压后直接运行 desktop/Start-LightyDesign.ps1。
+            - exe 安装器支持覆盖已安装版本，适合正常分发与升级。
+            - latest.yml 用于后续桌面端自动更新链路。
+            - version-metadata.json 记录本次发布的应用版本、程序集版本和信息版本。

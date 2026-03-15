@@ -71,14 +71,14 @@ jobs:
       - name: Build deploy directory
         shell: pwsh
         run: |
-          $arguments = @(
-              "-Configuration", "Release",
-              "-Runtime", $env:PACKAGE_RUNTIME,
-              "-OutputPath", "artifacts/ci/LightyDesign"
-          )
+          $arguments = @{
+            Configuration = "Release"
+            Runtime = $env:PACKAGE_RUNTIME
+            OutputPath = "artifacts/ci/LightyDesign"
+          }
 
           if ([System.Convert]::ToBoolean($env:SKIP_TESTS)) {
-              $arguments += "-SkipTests"
+            $arguments.SkipTests = $true
           }
 
           & ./ShellFiles/Deploy-LightyDesign.ps1 @arguments

@@ -1,0 +1,121 @@
+name: Build Desktop Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime:
+        description: Target runtime for DesktopHost publish output
+        required: true
+        default: win-x64
+        type: choice
+        options:
+          - win-x64
+      skip_tests:
+        description: Skip dotnet test before packaging
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: write
+
+jobs:
+  package-desktop:
+    name: Package desktop deploy bundle
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: true
+      CI: true
+      PACKAGE_RUNTIME: ${{ github.event_name == 'workflow_dispatch' && inputs.runtime || 'win-x64' }}
+      SKIP_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests || false }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/desktop/package-lock.json
+
+      - name: Resolve package metadata
+        id: metadata
+        shell: pwsh
+        run: |
+          $packageJson = Get-Content "app/desktop/package.json" -Raw | ConvertFrom-Json
+          $version = $packageJson.version
+
+          if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
+              $label = "${{ github.ref_name }}"
+          }
+          else {
+              $label = "$version-ci.$env:GITHUB_RUN_NUMBER"
+          }
+
+          $zipName = "LightyDesign-$label-$env:PACKAGE_RUNTIME.zip"
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "label=$label" >> $env:GITHUB_OUTPUT
+          "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+
+      - name: Build deploy directory
+        shell: pwsh
+        run: |
+          $arguments = @(
+              "-Configuration", "Release",
+              "-Runtime", $env:PACKAGE_RUNTIME,
+              "-OutputPath", "artifacts/ci/LightyDesign"
+          )
+
+          if ([System.Convert]::ToBoolean($env:SKIP_TESTS)) {
+              $arguments += "-SkipTests"
+          }
+
+          & ./ShellFiles/Deploy-LightyDesign.ps1 @arguments
+
+      - name: Archive deploy bundle
+        id: archive
+        shell: pwsh
+        run: |
+          $releaseRoot = Join-Path $PWD "artifacts/release"
+          $deployRoot = Join-Path $PWD "artifacts/ci/LightyDesign"
+          $zipPath = Join-Path $releaseRoot "${{ steps.metadata.outputs.zip_name }}"
+
+          New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
+
+          if (Test-Path $zipPath) {
+              Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path $deployRoot -DestinationPath $zipPath -CompressionLevel Optimal
+          "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-package-${{ steps.metadata.outputs.label }}-${{ env.PACKAGE_RUNTIME }}
+          path: ${{ steps.archive.outputs.zip_path }}
+          if-no-files-found: error
+
+      - name: Publish GitHub release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.archive.outputs.zip_path }}
+          generate_release_notes: true
+          append_body: true
+          body: |
+            产物说明：
+            - 解压后进入 desktop 目录。
+            - 运行 Start-LightyDesign.ps1 可直接启动桌面端和本地 DesktopHost。
+            - 该发布包由 Deploy-LightyDesign.ps1 自动生成。

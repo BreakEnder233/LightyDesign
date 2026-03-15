@@ -26,6 +26,22 @@ powershell -ExecutionPolicy Bypass -File .\ShellFiles\Deploy-LightyDesign.ps1
 
 部署脚本会发布 DesktopHost、构建 Electron 前端、准备本地 Electron 运行时，并在输出目录生成 `Start-LightyDesign.ps1`。
 
+## GitHub Actions 打包
+
+仓库现在包含一个可直接生成部署包的 GitHub Actions 工作流：`.github/workflows/build-desktop-package.yml`。
+
+使用方式如下：
+
+1. 在 GitHub 的 Actions 页面手动触发 `Build Desktop Package`。
+2. 工作流会在 Windows runner 上执行 `ShellFiles/Deploy-LightyDesign.ps1`。
+3. 完成后会上传一个 zip artifact，内容即现成的可运行部署目录。
+
+如果推送形如 `v1.0.0` 的 tag，该工作流还会自动：
+
+1. 构建同样的部署目录。
+2. 打包为 zip。
+3. 附加到对应的 GitHub Release，便于直接分发或下载后快速部署。
+
 ## 手动命令
 
 仓库根目录：

@@ -1,4 +1,5 @@
 import type { ToastNotification } from "../types/desktopApp";
+import { DialogBackdrop } from "./DialogBackdrop";
 
 type ToastCenterProps = {
   toasts: ToastNotification[];
@@ -65,11 +66,10 @@ export function ToastCenter({
       </div>
 
       {selectedToast ? (
-        <div className="error-detail-backdrop" onClick={onCloseSelectedToast} role="presentation">
+        <DialogBackdrop className="error-detail-backdrop" onClose={onCloseSelectedToast}>
           <section
             aria-labelledby="error-detail-title"
             className="error-detail-dialog"
-            onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <div className="error-detail-header">
@@ -92,7 +92,7 @@ export function ToastCenter({
             </div>
             <pre className="error-detail-body">{selectedToast.detail}</pre>
           </section>
-        </div>
+        </DialogBackdrop>
       ) : null}
     </>
   );

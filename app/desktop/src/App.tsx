@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ColumnEditorDialog } from "./components/ColumnEditorDialog";
+import { DialogBackdrop } from "./components/DialogBackdrop";
 import { ToastCenter } from "./components/ToastCenter";
 import { VirtualSheetTable } from "./components/VirtualSheetTable";
 import { useDesktopHostConnection } from "./hooks/useDesktopHostConnection";
@@ -1298,12 +1299,11 @@ function App() {
   return (
     <div className="app-shell">
       {isCreateWorkspaceDialogOpen ? (
-        <div className="workspace-create-backdrop" onClick={handleCloseCreateWorkspaceDialog} role="presentation">
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateWorkspaceDialog}>
           <div
             aria-labelledby="workspace-create-title"
             aria-modal="true"
             className="workspace-create-dialog"
-            onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <div className="workspace-create-header">
@@ -1344,16 +1344,15 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       {isCreateWorkbookDialogOpen ? (
-        <div className="workspace-create-backdrop" onClick={handleCloseCreateWorkbookDialog} role="presentation">
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateWorkbookDialog}>
           <div
             aria-labelledby="workbook-create-title"
             aria-modal="true"
             className="workspace-create-dialog"
-            onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <div className="workspace-create-header">
@@ -1394,16 +1393,15 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       {isCreateSheetDialogOpen ? (
-        <div className="workspace-create-backdrop" onClick={handleCloseCreateSheetDialog} role="presentation">
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateSheetDialog}>
           <div
             aria-labelledby="sheet-create-title"
             aria-modal="true"
             className="workspace-create-dialog"
-            onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <div className="workspace-create-header">
@@ -1444,16 +1442,15 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       {isRenameSheetDialogOpen ? (
-        <div className="workspace-create-backdrop" onClick={handleCloseRenameSheetDialog} role="presentation">
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseRenameSheetDialog}>
           <div
             aria-labelledby="sheet-rename-title"
             aria-modal="true"
             className="workspace-create-dialog"
-            onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <div className="workspace-create-header">
@@ -1498,16 +1495,15 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       {isCodegenDialogOpen ? (
-        <div className="workspace-create-backdrop" onClick={handleCloseCodegenDialog} role="presentation">
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCodegenDialog}>
           <div
             aria-labelledby="codegen-dialog-title"
             aria-modal="true"
             className="workspace-create-dialog"
-            onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <div className="workspace-create-header">
@@ -1564,16 +1560,15 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       {isFreezeDialogOpen ? (
-        <div className="workspace-create-backdrop" onClick={handleCloseFreezeDialog} role="presentation">
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseFreezeDialog}>
           <div
             aria-labelledby="freeze-dialog-title"
             aria-modal="true"
             className="workspace-create-dialog freeze-dialog"
-            onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <div className="workspace-create-header">
@@ -1646,7 +1641,7 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       <ToastCenter

@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 
+import { DialogBackdrop } from "./DialogBackdrop";
+
 import {
   applyHeaderPropertyInputValue,
   getHeaderPropertyInputValue,
@@ -131,12 +133,11 @@ export function ColumnEditorDialog({
   }
 
   return (
-    <div className="workspace-create-backdrop" onClick={onClose} role="presentation">
+    <DialogBackdrop className="workspace-create-backdrop" onClose={onClose}>
       <div
         aria-labelledby="column-editor-dialog-title"
         aria-modal="true"
         className="workspace-create-dialog column-editor-dialog"
-        onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
         <div className="workspace-create-header">
@@ -238,6 +239,6 @@ export function ColumnEditorDialog({
           </button>
         </div>
       </div>
-    </div>
+    </DialogBackdrop>
   );
 }

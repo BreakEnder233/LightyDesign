@@ -267,7 +267,7 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine();
         writer.AppendLine($"namespace {GeneratedNamespace};");
         writer.AppendLine();
-        writer.AppendLine($"public sealed class {sheet.RowTypeName}");
+        writer.AppendLine($"public sealed partial class {sheet.RowTypeName}");
         writer.AppendLine("{");
         writer.Indent();
         AppendScopedItems(writer, sheet.Fields, field => field.ExportScope, (scopedWriter, field) =>
@@ -277,7 +277,7 @@ public sealed class LightyWorkbookCodeGenerator
                 scopedWriter.AppendLine($"// {field.DisplayName}");
             }
 
-            scopedWriter.AppendLine($"public required {field.CSharpTypeName} {field.PropertyName} {{ get; init; }}");
+            scopedWriter.AppendLine($"public required {field.CSharpTypeName} {field.PropertyName} {{ get; set; }}");
         });
         writer.Outdent();
         writer.AppendLine("}");
@@ -321,7 +321,7 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine();
         writer.AppendLine($"namespace {GeneratedNamespace};");
         writer.AppendLine();
-        writer.AppendLine("public sealed class DesignDataReference<TTarget>");
+        writer.AppendLine("public sealed partial class DesignDataReference<TTarget>");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine("private readonly IReadOnlyList<string> _identifiers;");
@@ -350,7 +350,7 @@ public sealed class LightyWorkbookCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
-        writer.AppendLine("internal static class DesignDataReferenceHelper");
+        writer.AppendLine("internal static partial class DesignDataReferenceHelper");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine("public static int ParseInt32(string value) => int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture);");
@@ -446,7 +446,7 @@ public sealed class LightyWorkbookCodeGenerator
         var isLeaf = level == sheet.PrimaryKeyFields.Count - 1;
         var valueTypeName = isLeaf ? sheet.RowTypeName : BuildIndexNodeTypeName(sheet, level + 1);
 
-        writer.AppendLine($"public sealed class {currentTypeName}");
+        writer.AppendLine($"public sealed partial class {currentTypeName}");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine($"private readonly IReadOnlyDictionary<{MapToCSharpType(currentKeyField.TypeDescriptor)}, {valueTypeName}> _by{currentKeyField.PropertyName};");
@@ -478,7 +478,7 @@ public sealed class LightyWorkbookCodeGenerator
         var writer = new CodeWriter();
         writer.AppendLine($"namespace {GeneratedNamespace};");
         writer.AppendLine();
-        writer.AppendLine($"public sealed class {ToTypeIdentifier(workbook.Name)}Workbook");
+        writer.AppendLine($"public sealed partial class {ToTypeIdentifier(workbook.Name)}Workbook");
         writer.AppendLine("{");
         writer.Indent();
         foreach (var sheet in sheets)
@@ -528,7 +528,7 @@ public sealed class LightyWorkbookCodeGenerator
         var writer = new CodeWriter();
         writer.AppendLine($"namespace {GeneratedNamespace};");
         writer.AppendLine();
-        writer.AppendLine("public static class LDD");
+        writer.AppendLine("public static partial class LDD");
         writer.AppendLine("{");
         writer.Indent();
 

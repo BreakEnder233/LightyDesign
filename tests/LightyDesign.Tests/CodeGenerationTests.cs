@@ -24,15 +24,23 @@ public class CodeGenerationTests
 
         var consumableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/Consumable.cs");
         Assert.Contains("namespace LightyDesignData;", consumableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public sealed partial class ConsumableRow", consumableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required int ID { get; set; }", consumableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required string Name { get; set; }", consumableFile.Content, StringComparison.Ordinal);
         Assert.Contains("public ConsumableRow this[int id]", consumableFile.Content, StringComparison.Ordinal);
         Assert.Contains("Name = \"Potion\"", consumableFile.Content, StringComparison.Ordinal);
 
         var stageFile = Assert.Single(package.Files, file => file.RelativePath == "Item/Stage.cs");
+        Assert.Contains("public sealed partial class StageByID1Index", stageFile.Content, StringComparison.Ordinal);
         Assert.Contains("public StageByID1Index this[int id1]", stageFile.Content, StringComparison.Ordinal);
         Assert.Contains("public StageRow this[int id2]", stageFile.Content, StringComparison.Ordinal);
 
+        var workbookFile = Assert.Single(package.Files, file => file.RelativePath == "Item/Item.cs");
+        Assert.Contains("public sealed partial class ItemWorkbook", workbookFile.Content, StringComparison.Ordinal);
+
         var entryFile = Assert.Single(package.Files, file => file.RelativePath == "LDD.cs");
         Assert.Contains("namespace LightyDesignData;", entryFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public static partial class LDD", entryFile.Content, StringComparison.Ordinal);
         Assert.Contains("public static ItemWorkbook Item", entryFile.Content, StringComparison.Ordinal);
     }
 
@@ -74,12 +82,12 @@ public class CodeGenerationTests
         var normalizedContent = NormalizeNewlines(sheetFile.Content);
 
         Assert.Contains("namespace LightyDesignData;", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required int ID { get; init; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required string SharedName { get; init; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required int ID { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required string SharedName { get; set; }", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("#if LDD_Client", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("public required string ClientOnlyName { get; init; }", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("public required string ClientOnlyName { get; set; }", normalizedContent, StringComparison.Ordinal);
         Assert.Contains("#if LDD_Server", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("public required string ServerOnlyNote { get; init; }", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("public required string ServerOnlyNote { get; set; }", normalizedContent, StringComparison.Ordinal);
         Assert.Contains("new()", normalizedContent, StringComparison.Ordinal);
         Assert.Contains("ID = 1,", normalizedContent, StringComparison.Ordinal);
         Assert.Contains("SharedName = \"Shared\",", normalizedContent, StringComparison.Ordinal);
@@ -98,11 +106,12 @@ public class CodeGenerationTests
         var supportFile = Assert.Single(package.Files, file => file.RelativePath == "DesignDataReference.cs");
         var sheetFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureLink.cs");
 
-        Assert.Contains("public sealed class DesignDataReference<TTarget>", supportFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public sealed partial class DesignDataReference<TTarget>", supportFile.Content, StringComparison.Ordinal);
         Assert.Contains("public TTarget GetValue() => _resolver(_identifiers);", supportFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required DesignDataReference<ConsumableRow> PrimaryItem { get; init; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required DesignDataReference<StageRow> TargetStage { get; init; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required IReadOnlyList<DesignDataReference<StageRow>> StageHistory { get; init; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("internal static partial class DesignDataReferenceHelper", supportFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required DesignDataReference<ConsumableRow> PrimaryItem { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required DesignDataReference<StageRow> TargetStage { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public required IReadOnlyList<DesignDataReference<StageRow>> StageHistory { get; set; }", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("new DesignDataReference<ConsumableRow>(\"Item\", \"Consumable\", static identifiers => LDD.Item.Consumable[DesignDataReferenceHelper.ParseInt32(identifiers[0])], \"1001\")", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("new DesignDataReference<StageRow>(\"Item\", \"Stage\", static identifiers => LDD.Item.Stage[DesignDataReferenceHelper.ParseInt32(identifiers[0])][DesignDataReferenceHelper.ParseInt32(identifiers[1])], \"1\", \"10\")", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("new List<DesignDataReference<StageRow>>", sheetFile.Content, StringComparison.Ordinal);
@@ -124,6 +133,7 @@ public class CodeGenerationTests
         var mainFile = Assert.Single(package.Files, file => file.RelativePath == "Massive/LargeSheet.cs");
         var chunkFile = Assert.Single(package.Files, file => file.RelativePath == "Massive/LargeSheet_Data1.cs");
 
+        Assert.Contains("public sealed partial class LargeSheetRow", mainFile.Content, StringComparison.Ordinal);
         Assert.Contains("public sealed partial class LargeSheetTable", mainFile.Content, StringComparison.Ordinal);
         Assert.Contains("AppendData1(rows);", mainFile.Content, StringComparison.Ordinal);
         Assert.Contains("AppendData2(rows);", mainFile.Content, StringComparison.Ordinal);

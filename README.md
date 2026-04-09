@@ -85,11 +85,18 @@ powershell -ExecutionPolicy Bypass -File .\ShellFiles\Deploy-LightyDesign.ps1
 powershell -ExecutionPolicy Bypass -File .\ShellFiles\Build-LightyDesignInstaller.ps1
 ```
 
+如需在构建时显式指定安装器版本，可直接传入：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Build-LightyDesignInstaller.ps1 -Version 0.1.3
+```
+
 该脚本会：
 
 1. 发布 DesktopHost 到安装器资源目录。
 2. 构建 Electron 前端与主进程产物。
-3. 调用 electron-builder 生成 NSIS 安装器。
+3. 在传入 `-Version` 时先同步 Electron `package.json` 版本。
+4. 调用 electron-builder 生成 NSIS 安装器。
 
 安装器默认输出到 `app\desktop\dist-installer`，运行新的安装器即可覆盖旧版本安装。
 

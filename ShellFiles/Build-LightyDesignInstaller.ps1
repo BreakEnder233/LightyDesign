@@ -19,6 +19,7 @@ $ErrorActionPreference = "Stop"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptRoot
+$setVersionScriptPath = Join-Path $scriptRoot "Set-LightyDesignVersion.ps1"
 $solutionPath = Join-Path $repoRoot "LightyDesign.sln"
 $desktopRoot = Join-Path $repoRoot "app\desktop"
 $desktopHostProjectPath = Join-Path $repoRoot "src\LightyDesign.DesktopHost\LightyDesign.DesktopHost.csproj"
@@ -98,6 +99,14 @@ function Assert-LastExitCode {
     }
 }
 
+function Assert-ScriptSucceeded {
+    param([string]$CommandDisplayName)
+
+    if (-not $?) {
+        throw "$CommandDisplayName 执行失败。"
+    }
+}
+
 function Get-DotNetVersionArguments {
     $arguments = @()
 
@@ -117,12 +126,16 @@ function Get-DotNetVersionArguments {
         $arguments += "/p:InformationalVersion=$InformationalVersion"
     }
 
-    return $arguments
+    return ,$arguments
 }
 
 Assert-Command dotnet
 Assert-Command node
 Assert-Command npm
+
+if (-not (Test-Path $setVersionScriptPath)) {
+    throw "未找到版本同步脚本: $setVersionScriptPath"
+}
 
 Set-FrontendMirrorEnvironment -UseChinaMirror:$UseChinaMirror -NpmRegistry $NpmRegistry -ElectronMirror $ElectronMirror
 Set-InstallerMirrorEnvironment -UseChinaMirror:$UseChinaMirror -ElectronBuilderBinariesMirror $ElectronBuilderBinariesMirror
@@ -139,17 +152,30 @@ if ($CleanOutput -and (Test-Path $installerOutputRoot)) {
 Push-Location $repoRoot
 
 try {
-    Write-Host "[1/6] 还原解决方案" -ForegroundColor Yellow
+    if (-not [string]::IsNullOrWhiteSpace($Version)) {
+        Write-Host "[1/7] 同步桌面安装器版本" -ForegroundColor Yellow
+
+        $setVersionArguments = @{ Version = $Version }
+
+        if (-not [string]::IsNullOrWhiteSpace($InformationalVersion)) {
+            $setVersionArguments.InformationalVersion = $InformationalVersion
+        }
+
+        & $setVersionScriptPath @setVersionArguments
+        Assert-ScriptSucceeded "Set-LightyDesignVersion"
+    }
+
+    Write-Host "[2/7] 还原解决方案" -ForegroundColor Yellow
     dotnet restore $solutionPath
     Assert-LastExitCode "dotnet restore"
 
     if (-not $SkipTests) {
-        Write-Host "[2/6] 运行测试" -ForegroundColor Yellow
+        Write-Host "[3/7] 运行测试" -ForegroundColor Yellow
         dotnet test $solutionPath -c $Configuration --no-restore @dotNetVersionArguments
         Assert-LastExitCode "dotnet test"
     }
 
-    Write-Host "[3/6] 发布 DesktopHost 给安装器" -ForegroundColor Yellow
+    Write-Host "[4/7] 发布 DesktopHost 给安装器" -ForegroundColor Yellow
     if (Test-Path $builderDesktopHostRoot) {
         Remove-Item $builderDesktopHostRoot -Recurse -Force
     }
@@ -161,7 +187,7 @@ try {
 
     try {
         if (-not $SkipFrontendInstall) {
-            Write-Host "[4/6] 安装前端依赖" -ForegroundColor Yellow
+            Write-Host "[5/7] 安装前端依赖" -ForegroundColor Yellow
             if (Test-Path (Join-Path $desktopRoot "package-lock.json")) {
                 npm ci
                 Assert-LastExitCode "npm ci"
@@ -172,11 +198,11 @@ try {
             }
         }
 
-        Write-Host "[5/6] 构建 Electron 前端" -ForegroundColor Yellow
+        Write-Host "[6/7] 构建 Electron 前端" -ForegroundColor Yellow
         npm run build
         Assert-LastExitCode "npm run build"
 
-        Write-Host "[6/6] 生成 Windows 安装器" -ForegroundColor Yellow
+        Write-Host "[7/7] 生成 Windows 安装器" -ForegroundColor Yellow
         npx electron-builder --win nsis --publish never --config.directories.output=$installerOutputRoot
         Assert-LastExitCode "electron-builder"
     }

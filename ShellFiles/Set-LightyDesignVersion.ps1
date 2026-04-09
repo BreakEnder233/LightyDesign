@@ -12,6 +12,16 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptRoot
 $resolvedPackageJsonPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $PackageJsonPath))
 
+function Write-Utf8NoBomFile {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
 function Normalize-Version {
     param([string]$Value)
 
@@ -74,9 +84,19 @@ if (-not (Test-Path $resolvedPackageJsonPath)) {
     throw "未找到 package.json: $resolvedPackageJsonPath"
 }
 
-$packageJson = Get-Content $resolvedPackageJsonPath -Raw | ConvertFrom-Json
-$packageJson.version = $normalizedVersion
-$packageJson | ConvertTo-Json -Depth 20 | Set-Content -Path $resolvedPackageJsonPath -Encoding UTF8
+$packageJsonContent = Get-Content $resolvedPackageJsonPath -Raw
+if ($packageJsonContent -notmatch '"version"\s*:\s*"[^"]+"') {
+    throw "未在 package.json 中找到 version 字段: $resolvedPackageJsonPath"
+}
+
+$updatedPackageJsonContent = [System.Text.RegularExpressions.Regex]::Replace(
+    $packageJsonContent,
+    '"version"(\s*:\s*)"[^"]+"',
+    ('"version"$1"{0}"' -f $normalizedVersion),
+    1
+)
+
+Write-Utf8NoBomFile -Path $resolvedPackageJsonPath -Content $updatedPackageJsonContent
 
 $metadata = [ordered]@{
     version = $normalizedVersion
@@ -93,7 +113,8 @@ if (-not [string]::IsNullOrWhiteSpace($MetadataOutputPath)) {
         New-Item -ItemType Directory -Path $metadataDirectory -Force | Out-Null
     }
 
-    $metadata | ConvertTo-Json -Depth 10 | Set-Content -Path $resolvedMetadataOutputPath -Encoding UTF8
+    $metadataContent = $metadata | ConvertTo-Json -Depth 10
+    Write-Utf8NoBomFile -Path $resolvedMetadataOutputPath -Content $metadataContent
 }
 
 Write-Host "已应用版本号: $normalizedVersion" -ForegroundColor Green

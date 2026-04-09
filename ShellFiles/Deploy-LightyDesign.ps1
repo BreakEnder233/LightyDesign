@@ -30,6 +30,16 @@ $deployDesktopRoot = Join-Path $deployRoot "desktop"
 $deployDesktopHostRoot = Join-Path $deployDesktopRoot "desktop-host"
 $sourceElectronRuntimeRoot = Join-Path $desktopRoot "node_modules\electron"
 
+function Write-Utf8NoBomFile {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
 function Assert-Command {
     param([string]$Name)
 
@@ -101,7 +111,7 @@ function Get-DotNetVersionArguments {
         $arguments += "/p:InformationalVersion=$InformationalVersion"
     }
 
-    return $arguments
+    return ,$arguments
 }
 
 Assert-Command dotnet
@@ -191,7 +201,7 @@ try {
     }
 
     $deployPackageJson = $deployPackage | ConvertTo-Json -Depth 8
-    Set-Content -Path (Join-Path $deployDesktopRoot "package.json") -Value $deployPackageJson -Encoding UTF8
+    Write-Utf8NoBomFile -Path (Join-Path $deployDesktopRoot "package.json") -Content $deployPackageJson
 
     $startScript = @"
 param(

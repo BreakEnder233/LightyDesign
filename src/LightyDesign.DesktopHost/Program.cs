@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using LightyDesign.Core;
+using LightyDesign.DesktopHost;
 using LightyDesign.FileProcess;
 using LightyDesign.Generator;
 
@@ -852,7 +853,7 @@ app.MapPost("/api/workspace/workbooks/codegen/config", (SaveWorkbookCodegenConfi
         }
 
         var codegenOptions = new LightyWorkbookCodegenOptions(request.OutputRelativePath);
-        ValidateWorkbookCodegenOutputRelativePath(workspace.RootPath, codegenOptions.OutputRelativePath, allowEmpty: true);
+        GeneratedCodeOutputWriter.ValidateWorkbookCodegenOutputRelativePath(workspace.RootPath, codegenOptions.OutputRelativePath, allowEmpty: true);
 
         var updatedWorkbook = new LightyWorkbook(
             workbook.Name,
@@ -938,7 +939,7 @@ app.MapPost("/api/workspace/workbooks/codegen/export", (ExportWorkbookCodegenReq
 
         var generator = new LightyWorkbookCodeGenerator();
         var package = generator.Generate(workspace, workbook);
-        var outputDirectoryPath = WriteGeneratedWorkbookPackage(workspace.RootPath, workbook.Name, package);
+        var outputDirectoryPath = GeneratedCodeOutputWriter.WriteGeneratedWorkbookPackage(workspace.RootPath, workbook.Name, package);
 
         return Results.Ok(new
         {
@@ -1458,92 +1459,6 @@ bool ContainsSheetName(LightyWorkbook workbook, string candidateSheetName, strin
     return workbook.Sheets.Any(sheet =>
         string.Equals(sheet.Name, candidateSheetName, StringComparison.OrdinalIgnoreCase)
         && (excludedSheetName is null || !string.Equals(sheet.Name, excludedSheetName, StringComparison.OrdinalIgnoreCase)));
-}
-
-string WriteGeneratedWorkbookPackage(string workspaceRootPath, string workbookName, LightyGeneratedWorkbookPackage package)
-{
-    var outputRootPath = ValidateWorkbookCodegenOutputRelativePath(workspaceRootPath, package.OutputRelativePath, allowEmpty: false);
-    var workbookOutputDirectoryPath = Path.Combine(outputRootPath, workbookName);
-    if (Directory.Exists(workbookOutputDirectoryPath))
-    {
-        Directory.Delete(workbookOutputDirectoryPath, recursive: true);
-    }
-
-    Directory.CreateDirectory(outputRootPath);
-
-    foreach (var file in package.Files)
-    {
-        var absolutePath = Path.Combine(outputRootPath, file.RelativePath.Replace('/', Path.DirectorySeparatorChar));
-        var directoryPath = Path.GetDirectoryName(absolutePath);
-        if (!string.IsNullOrWhiteSpace(directoryPath))
-        {
-            Directory.CreateDirectory(directoryPath);
-        }
-
-        File.WriteAllText(absolutePath, file.Content);
-    }
-
-    var generatedWorkbookNames = GetGeneratedWorkbookNames(outputRootPath);
-    if (!generatedWorkbookNames.Contains(workbookName, StringComparer.OrdinalIgnoreCase))
-    {
-        generatedWorkbookNames.Add(workbookName);
-    }
-
-    var generator = new LightyWorkbookCodeGenerator();
-    var entryPointContent = generator.GenerateEntryPointFile(generatedWorkbookNames);
-    File.WriteAllText(Path.Combine(outputRootPath, "LDD.cs"), entryPointContent);
-
-    return outputRootPath;
-}
-
-List<string> GetGeneratedWorkbookNames(string outputRootPath)
-{
-    if (!Directory.Exists(outputRootPath))
-    {
-        return new List<string>();
-    }
-
-    return Directory.GetDirectories(outputRootPath)
-        .Select(directoryPath => new
-        {
-            DirectoryPath = directoryPath,
-            WorkbookName = Path.GetFileName(directoryPath),
-        })
-        .Where(entry => !string.IsNullOrWhiteSpace(entry.WorkbookName))
-        .Where(entry => File.Exists(Path.Combine(entry.DirectoryPath, $"{entry.WorkbookName}.cs")))
-        .Select(entry => entry.WorkbookName)
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-        .ToList();
-}
-
-string ValidateWorkbookCodegenOutputRelativePath(string workspaceRootPath, string? outputRelativePath, bool allowEmpty)
-{
-    if (string.IsNullOrWhiteSpace(outputRelativePath))
-    {
-        if (allowEmpty)
-        {
-            return workspaceRootPath;
-        }
-
-        throw new LightyCoreException("Workbook code generation output path is not configured. Please configure an output relative path first.");
-    }
-
-    var trimmed = outputRelativePath.Trim();
-    if (Path.IsPathRooted(trimmed))
-    {
-        throw new LightyCoreException("Workbook code generation output path must be relative to the workspace root.");
-    }
-
-    var workspaceRootFullPath = Path.GetFullPath(workspaceRootPath);
-    var combinedFullPath = Path.GetFullPath(Path.Combine(workspaceRootFullPath, trimmed));
-
-    if (!combinedFullPath.StartsWith(workspaceRootFullPath, StringComparison.OrdinalIgnoreCase))
-    {
-        throw new LightyCoreException("Workbook code generation output path cannot escape the workspace root.");
-    }
-
-    return combinedFullPath;
 }
 
 static string ResolveWorkbookName(string workbookName, string fileName)

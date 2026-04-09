@@ -113,6 +113,120 @@ let appUpdateDownloadState: AppUpdateDownloadState = {
 };
 let appUpdateInstallPromise: Promise<AppUpdateDownloadState> | null = null;
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function resolveRendererEntryPath() {
+  const candidates = [
+    path.resolve(__dirname, "..", "..", "dist", "index.html"),
+    path.join(desktopRoot, "dist", "index.html"),
+  ];
+
+  return candidates.find((candidate, index) => candidates.indexOf(candidate) === index && fs.existsSync(candidate)) ?? null;
+}
+
+function buildRendererLoadErrorPage(title: string, detail: string) {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(47, 104, 95, 0.28), transparent 42%),
+          linear-gradient(180deg, #0d1516 0%, #081011 100%);
+        color: #eff7f4;
+      }
+
+      main {
+        width: min(720px, calc(100vw - 48px));
+        padding: 28px 32px;
+        border: 1px solid rgba(183, 227, 212, 0.18);
+        border-radius: 20px;
+        background: rgba(10, 19, 20, 0.9);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: 24px;
+      }
+
+      p {
+        margin: 0 0 16px;
+        line-height: 1.6;
+        color: rgba(239, 247, 244, 0.82);
+      }
+
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        padding: 16px;
+        border-radius: 14px;
+        background: rgba(0, 0, 0, 0.26);
+        border: 1px solid rgba(183, 227, 212, 0.1);
+        color: #bfe7d8;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtml(title)}</h1>
+      <p>安装版未能正确加载渲染界面。请重新构建安装器，或检查构建产物是否包含 dist/index.html。</p>
+      <pre>${escapeHtml(detail)}</pre>
+    </main>
+  </body>
+</html>`;
+}
+
+async function showRendererLoadError(mainWindow: BrowserWindow, title: string, detail: string) {
+  const errorPage = buildRendererLoadErrorPage(title, detail);
+  await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorPage)}`);
+}
+
+async function loadRenderer(mainWindow: BrowserWindow) {
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devServerUrl) {
+    await mainWindow.loadURL(devServerUrl);
+    mainWindow.webContents.openDevTools({ mode: "detach" });
+    return;
+  }
+
+  const rendererEntryPath = resolveRendererEntryPath();
+  if (!rendererEntryPath) {
+    await showRendererLoadError(
+      mainWindow,
+      "未找到桌面界面入口文件",
+      [
+        "Electron 在安装版中没有找到渲染入口文件。",
+        "预期位置: dist/index.html",
+        `当前主进程目录: ${__dirname}`,
+        `desktopRoot: ${desktopRoot}`,
+      ].join("\n"),
+    );
+    return;
+  }
+
+  await mainWindow.loadFile(rendererEntryPath);
+}
+
 function tryParseGitHubRepository(value: string | null | undefined) {
   if (typeof value !== "string") {
     return null;
@@ -791,13 +905,33 @@ function createMainWindow() {
     },
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devServerUrl) {
-    void mainWindow.loadURL(devServerUrl);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
-  } else {
-    void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
-  }
+  let hasLoadedFallbackPage = false;
+
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (!isMainFrame || hasLoadedFallbackPage || errorCode === -3) {
+      return;
+    }
+
+    hasLoadedFallbackPage = true;
+    void showRendererLoadError(
+      mainWindow,
+      "桌面界面加载失败",
+      [`URL: ${validatedUrl}`, `错误码: ${errorCode}`, `错误信息: ${errorDescription}`].join("\n"),
+    );
+  });
+
+  void loadRenderer(mainWindow).catch((error) => {
+    if (hasLoadedFallbackPage) {
+      return;
+    }
+
+    hasLoadedFallbackPage = true;
+    void showRendererLoadError(
+      mainWindow,
+      "桌面界面初始化失败",
+      error instanceof Error ? error.stack ?? error.message : "未知错误",
+    );
+  });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -898,8 +1032,15 @@ ipcMain.on("app:set-dirty-state", (_event, nextHasDirtyChanges: boolean) => {
 
 app.whenReady().then(async () => {
   startDesktopHost();
-  await waitForDesktopHostReady(12000);
   createMainWindow();
+  void waitForDesktopHostReady(12000).then((health) => {
+    if (health?.ok) {
+      console.log(`[LightyDesign] DesktopHost is ready at ${health.url}.`);
+      return;
+    }
+
+    console.warn("[LightyDesign] DesktopHost was not ready within 12 seconds. The UI will continue polling in the background.");
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

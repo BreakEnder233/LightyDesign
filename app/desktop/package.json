@@ -1,7 +1,7 @@
 {
     "name": "lightydesign-desktop",
     "private": true,
-    "version": "0.1.3",
+    "version": "0.1.4",
     "description": "LightyDesign desktop shell built with Electron and Vite",
     "author": "BreakEnder233",
     "homepage": "https://github.com/BreakEnder233/LightyDesign/releases/latest",
@@ -44,7 +44,7 @@
             "output": "dist-installer"
         },
         "win": {
-            "executableName": "electron",
+            "executableName": "LightyDesign",
             "signAndEditExecutable": false,
             "target": [
                 {

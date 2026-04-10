@@ -142,7 +142,7 @@ export function ColumnEditorDialog({
       >
         <div className="workspace-create-header">
           <div>
-            <p className="eyebrow">Header</p>
+            <p className="eyebrow">表头</p>
             <h2 id="column-editor-dialog-title">{dialogTitle}</h2>
           </div>
           <span className="badge">{propertySchemas.length} 个字段</span>

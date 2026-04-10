@@ -42,12 +42,155 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 24px;
+  grid-template-rows: 44px minmax(0, 1fr) auto;
   height: 100vh;
   background: #1e1e1e;
 }
 
+.app-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid #333333;
+  background: #252526;
+}
+
+.toolbar-menu-bar,
+.toolbar-status-cluster {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.toolbar-menu-bar {
+  gap: 4px;
+}
+
+.app-toolbar-menu-group {
+  position: relative;
+}
+
+.toolbar-menu-trigger {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #dcdcdc;
+}
+
+.toolbar-menu-trigger:hover,
+.toolbar-menu-trigger.is-open {
+  border-color: #3c3c3c;
+  background: #313131;
+}
+
+.toolbar-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid #3c3c3c;
+  background: #252526;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.toolbar-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toolbar-menu-section-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar-menu-section-title {
+  padding: 2px 10px 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b8b8b;
+}
+
+.toolbar-menu-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: #dcdcdc;
+  text-align: left;
+}
+
+.toolbar-menu-item:hover:not(:disabled) {
+  background: #2a2d2e;
+}
+
+.toolbar-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.toolbar-menu-check,
+.toolbar-menu-shortcut {
+  font-size: 12px;
+  color: #8b8b8b;
+}
+
+.toolbar-menu-check {
+  opacity: 0;
+}
+
+.toolbar-menu-check.is-visible {
+  opacity: 1;
+  color: #4fc1ff;
+}
+
+.toolbar-menu-label {
+  min-width: 0;
+}
+
+.toolbar-menu-shortcut {
+  justify-self: end;
+}
+
+.toolbar-menu-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: #333333;
+}
+
+.toolbar-status-cluster {
+  justify-content: flex-end;
+  flex: 1;
+}
+
+.toolbar-status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9da0a6;
+}
+
+.toolbar-inline-button {
+  min-height: 28px;
+}
+
 .workspace-sidebar {
+  grid-row: 2;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -58,6 +201,7 @@ button {
 }
 
 .workspace-main {
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   padding: 8px;
@@ -65,15 +209,7 @@ button {
 }
 
 .brand-block {
-  padding: 8px 8px 10px;
-  border-bottom: 1px solid #333333;
-}
-
-.brand-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
+  padding: 10px;
 }
 
 .brand-block h1,
@@ -87,7 +223,6 @@ button {
   color: #f3f3f3;
 }
 
-.sidebar-copy,
 .workspace-path,
 .empty-panel p,
 .viewer-empty-state p,
@@ -123,6 +258,24 @@ button {
 .workspace-entry-card,
 .tree-card {
   padding: 10px;
+}
+
+.workspace-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.compact-workspace-path {
+  margin: 8px 0 0;
+  min-height: 0;
+  padding: 8px 10px;
+}
+
+.workspace-summary-meta {
+  margin: 0;
+  color: #9da0a6;
+  font-size: 12px;
 }
 
 .tree-card {
@@ -303,15 +456,28 @@ button {
   overflow: auto;
 }
 
-.tree-workbook {
-  padding: 8px;
+.tree-workbook-card {
+  width: 100%;
+  padding: 10px;
   border: 1px solid #333333;
   background: #1f1f1f;
+  color: inherit;
+  text-align: left;
+}
+
+.tree-workbook-card:hover {
+  border-color: #4f4f4f;
+  background: #252526;
+}
+
+.tree-workbook-card.is-selected {
+  border-color: #007acc;
+  background: #0f2434;
 }
 
 .tree-workbook-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
@@ -332,53 +498,18 @@ button {
   min-width: 0;
 }
 
-.tree-sheet-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.tree-sheet-button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid #333333;
-  background: #252526;
-  color: #dcdcdc;
-  text-align: left;
-}
-
-.tree-sheet-button:hover:not(:disabled) {
-  background: #2a2d2e;
-  border-color: #4f4f4f;
-}
-
-.tree-sheet-button.is-active {
-  border-color: #007acc;
-  background: #09395e;
-}
-
-.tree-sheet-name {
-  display: block;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tree-sheet-button em {
-  font-style: normal;
+.tree-workbook-summary {
+  margin: 8px 0 0;
+  color: #9da0a6;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .tree-context-menu {
   position: fixed;
   z-index: 50;
-  min-width: 140px;
-  padding: 4px;
+  min-width: 168px;
+  padding: 6px;
   border: 1px solid #3c3c3c;
   background: #252526;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
@@ -386,8 +517,8 @@ button {
 
 .tree-context-menu-item {
   width: 100%;
-  min-height: 30px;
-  padding: 6px 10px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 0;
   background: transparent;
   color: #dcdcdc;
@@ -400,6 +531,14 @@ button {
 
 .tree-context-menu-item.is-danger {
   color: #f2b8b5;
+}
+
+.viewer-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
 }
 
 .codegen-dialog-caption {
@@ -533,41 +672,31 @@ button {
   background: #1f1f1f;
 }
 
-.viewer-toolbar {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-}
-
 .sheet-filter-field {
   margin-top: 0;
 }
 
-.toolbar-side {
+.viewer-toolbar-summary {
   display: inline-flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.toolbar-button-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.freeze-toolbar {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
+.viewer-toolbar-summary span,
 .freeze-summary,
 .freeze-dialog-caption {
   font-size: 11px;
   color: #8b8b8b;
+}
+
+.viewer-toolbar-summary span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid #3c3c3c;
+  background: #1f1f1f;
 }
 
 .freeze-summary {
@@ -635,10 +764,11 @@ button {
 
 .sheet-formula-shell {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: center;
-  padding: 0 8px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 6px 8px;
+  align-items: start;
+  padding: 8px;
 }
 
 .sheet-formula-prefix,
@@ -660,12 +790,13 @@ button {
 
 .sheet-formula-input {
   min-width: 0;
-  min-height: 26px;
+  min-height: 64px;
   border: 0;
-  padding: 0 2px;
+  padding: 0;
   color: #dcdcdc;
   background: transparent;
   outline: none;
+  resize: vertical;
 }
 
 .sheet-formula-input:focus {
@@ -678,9 +809,65 @@ button {
 }
 
 .sheet-formula-meta {
+  grid-column: 2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sheet-selector-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #3c3c3c;
+  border-radius: 2px;
+  background: #252526;
+}
+
+.sheet-selector-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sheet-selector-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 140px;
+  max-width: 220px;
+  padding: 8px 10px;
+  border: 1px solid #333333;
+  border-radius: 2px;
+  background: #1f1f1f;
+  color: #dcdcdc;
+  text-align: left;
+}
+
+.sheet-selector-button:hover {
+  border-color: #4f4f4f;
+  background: #2a2d2e;
+}
+
+.sheet-selector-button.is-active {
+  border-color: #007acc;
+  background: #09395e;
+}
+
+.sheet-selector-name {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-selector-button em {
+  font-style: normal;
+  font-size: 11px;
+  color: #8b8b8b;
 }
 
 .virtual-table-shell {
@@ -1049,8 +1236,8 @@ button {
   z-index: 50;
   display: flex;
   flex-direction: column;
-  min-width: 160px;
-  padding: 4px;
+  min-width: 176px;
+  padding: 6px;
   border: 1px solid #454545;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
   background: #252526;
@@ -1059,8 +1246,8 @@ button {
 .sheet-context-menu-item {
   display: flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 0;
   color: #dcdcdc;
   background: transparent;
@@ -1287,31 +1474,38 @@ button {
 
 .status-bar {
   grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 220px minmax(180px, 1fr) minmax(220px, 1.15fr) minmax(180px, 0.9fr) minmax(200px, 0.95fr) minmax(220px, 1fr) minmax(240px, 1.1fr);
-  gap: 1px;
-  min-height: 24px;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-height: 40px;
   border-top: 1px solid #005a9e;
   background: #007acc;
   color: #ffffff;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .status-segment {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 2px;
+  flex: 0 0 auto;
   min-width: 0;
-  padding: 0 8px;
+  min-height: 40px;
+  padding: 4px 10px;
   background: #007acc;
   overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .status-segment.is-wide {
-  min-width: 0;
+  min-width: 220px;
 }
 
 .status-update-segment {
-  gap: 6px;
+  min-width: 300px;
 }
 
 .status-segment strong,
@@ -1319,6 +1513,12 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-segment strong,
+.status-update-actions,
+.status-detail {
+  grid-column: 2;
 }
 
 .status-label {
@@ -1381,13 +1581,24 @@ button {
     grid-template-columns: 260px minmax(0, 1fr);
   }
 
+  .app-toolbar {
+    flex-wrap: wrap;
+    align-items: stretch;
+    min-height: 44px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .toolbar-status-cluster {
+    justify-content: flex-start;
+  }
+
   .viewer-toolbar,
   .sheet-table-topbar,
   .status-bar {
     grid-template-columns: 1fr;
   }
 
-  .tree-sheet-grid,
   .action-grid {
     grid-template-columns: 1fr;
   }

@@ -422,7 +422,15 @@ function resolveCurrentInstallDirectory() {
     return null;
   }
 
-  return path.dirname(process.execPath);
+  const currentInstallDirectory = path.dirname(process.execPath);
+  const executableFileName = path.parse(process.execPath).name.toLowerCase();
+  const terminalDirectoryName = path.basename(currentInstallDirectory).toLowerCase();
+
+  if (terminalDirectoryName === executableFileName) {
+    return path.dirname(currentInstallDirectory);
+  }
+
+  return currentInstallDirectory;
 }
 
 async function confirmInstallWithDirtyChanges() {
@@ -968,7 +976,7 @@ function createMainWindow() {
 }
 
 ipcMain.handle("desktop-host:info", async () => ({
-  shell: "electron",
+  shell: "LightyDesign",
   desktopHostUrl,
   repositoryRoot,
 }));

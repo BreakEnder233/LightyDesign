@@ -614,6 +614,19 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     }
   }
 
+  function closeWorkspace() {
+    if (hasDirtyChanges) {
+      const shouldClose = window.confirm("当前存在未保存修改，确认关闭当前工作区吗？");
+      if (!shouldClose) {
+        return false;
+      }
+    }
+
+    setWorkspacePath("");
+    setWorkspaceSearch("");
+    return true;
+  }
+
   async function chooseParentDirectoryForWorkspaceCreation() {
     if (hasDirtyChanges) {
       const shouldSwitch = window.confirm("当前存在未保存修改，确认新建并切换工作区目录吗？");
@@ -2117,6 +2130,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     saveWorkbookCodegenOptions,
     exportWorkbookCode,
     chooseWorkspaceDirectory,
+    closeWorkspace,
     retryWorkspaceLoad,
     retryActiveSheetLoad,
     applyCellEdits,

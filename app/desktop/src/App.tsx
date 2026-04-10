@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ColumnEditorDialog } from "./components/ColumnEditorDialog";
 import { DialogBackdrop } from "./components/DialogBackdrop";
@@ -17,6 +17,8 @@ type CopiedSelectionSnapshot = {
   canInsertRows: boolean;
   canInsertColumns: boolean;
 };
+
+type ToolbarMenuId = "file" | "edit" | "table";
 
 const defaultColumnWidth = 140;
 const minColumnWidth = 88;
@@ -170,6 +172,7 @@ function App() {
     activeWorkbookSaveState,
     activeWorkbookDirtyTabs,
     filteredRowEntries,
+    hasDirtyChanges,
     openSheet,
     closeTab,
     chooseParentDirectoryForWorkspaceCreation,
@@ -182,6 +185,7 @@ function App() {
     saveWorkbookCodegenOptions,
     exportWorkbookCode,
     chooseWorkspaceDirectory,
+    closeWorkspace,
     retryWorkspaceLoad,
     retryActiveSheetLoad,
     applyCellEdits,
@@ -290,6 +294,8 @@ function App() {
   const [freezeDialogRowCount, setFreezeDialogRowCount] = useState(0);
   const [freezeDialogColumnCount, setFreezeDialogColumnCount] = useState(0);
   const [editingColumnIndex, setEditingColumnIndex] = useState<number | null>(null);
+  const [openToolbarMenu, setOpenToolbarMenu] = useState<ToolbarMenuId | null>(null);
+  const [focusedWorkbookName, setFocusedWorkbookName] = useState<string | null>(null);
   const [sheetContextMenu, setSheetContextMenu] = useState<{
     workbookName: string;
     sheetName: string;
@@ -299,6 +305,71 @@ function App() {
   const [copiedSelectionSnapshot, setCopiedSelectionSnapshot] = useState<CopiedSelectionSnapshot | null>(null);
 
   const editingColumn = editingColumnIndex !== null ? (activeSheetColumns[editingColumnIndex] ?? null) : null;
+  const focusedWorkbook = useMemo(
+    () => workbookTree.find((workbook) => workbook.name === focusedWorkbookName) ?? null,
+    [focusedWorkbookName, workbookTree],
+  );
+  const focusedWorkbookSheets = focusedWorkbook?.sheets ?? [];
+  const canCreateSheet = workspaceStatus === "ready" && Boolean(focusedWorkbookName);
+  const canCloseWorkspace = Boolean(workspacePath);
+
+  function handleToolbarMenuHover(menuId: ToolbarMenuId) {
+    if (!openToolbarMenu || openToolbarMenu === menuId) {
+      return;
+    }
+
+    setOpenToolbarMenu(menuId);
+  }
+
+  function toggleToolbarMenu(menuId: ToolbarMenuId) {
+    setOpenToolbarMenu((current) => (current === menuId ? null : menuId));
+  }
+
+  function closeToolbarMenu() {
+    setOpenToolbarMenu(null);
+  }
+
+  function handleFocusWorkbook(workbookName: string) {
+    setFocusedWorkbookName(workbookName);
+  }
+
+  function handleCloseWorkspace() {
+    const closed = closeWorkspace();
+    if (closed) {
+      setFocusedWorkbookName(null);
+    }
+  }
+
+  function renderToolbarMenuSection(title: string, children: ReactNode) {
+    return (
+      <div className="toolbar-menu-section" role="presentation">
+        <div className="toolbar-menu-section-title">{title}</div>
+        <div className="toolbar-menu-section-body">{children}</div>
+      </div>
+    );
+  }
+
+  function renderToolbarMenuItem({
+    label,
+    shortcut,
+    checked = false,
+    disabled = false,
+    onClick,
+  }: {
+    label: string;
+    shortcut?: string;
+    checked?: boolean;
+    disabled?: boolean;
+    onClick: () => void;
+  }) {
+    return (
+      <button className="toolbar-menu-item" disabled={disabled} onClick={onClick} type="button">
+        <span className={`toolbar-menu-check${checked ? " is-visible" : ""}`} aria-hidden="true">✓</span>
+        <span className="toolbar-menu-label">{label}</span>
+        <span className="toolbar-menu-shortcut">{shortcut ?? ""}</span>
+      </button>
+    );
+  }
 
   function applySelectionRange(anchor: SheetSelection, focus: SheetSelection) {
     setSelectionAnchor(anchor);
@@ -447,6 +518,7 @@ function App() {
   }
 
   function handleOpenCreateSheetDialog(workbookName: string) {
+    setFocusedWorkbookName(workbookName);
     setSheetDialogWorkbookName(workbookName);
     setNewSheetName("NewSheet");
     setIsCreateSheetDialogOpen(true);
@@ -515,6 +587,7 @@ function App() {
 
   function handleConvertWorkbookCode(workbookName: string) {
     const targetWorkbook = workspace?.workbooks.find((workbook) => workbook.name === workbookName) ?? null;
+    setFocusedWorkbookName(workbookName);
     setCodegenWorkbookName(workbookName);
     setCodegenOutputRelativePath(targetWorkbook?.codegen.outputRelativePath ?? "");
     setIsCodegenDialogOpen(true);
@@ -777,7 +850,7 @@ function App() {
 
   const sheetStatusText = activeTab && activeSheetData
     ? `${activeTab.workbookName} / ${activeTab.sheetName} · ${filteredRowEntries.length}/${activeSheetRows.length} 行 · ${activeSheetColumns.length} 列`
-    : "未打开 Sheet";
+    : "未打开表格";
 
   const selectionRange = useMemo<SheetSelectionRange | null>(() => {
     if (!selectedCell) {
@@ -1374,6 +1447,48 @@ function App() {
   }, [activeTabId]);
 
   useEffect(() => {
+    if (activeTab?.workbookName) {
+      setFocusedWorkbookName(activeTab.workbookName);
+      return;
+    }
+
+    if (focusedWorkbookName && workbookTree.some((workbook) => workbook.name === focusedWorkbookName)) {
+      return;
+    }
+
+    setFocusedWorkbookName(workbookTree[0]?.name ?? null);
+  }, [activeTab, focusedWorkbookName, workbookTree]);
+
+  useEffect(() => {
+    if (!openToolbarMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".app-toolbar-menu-group")) {
+        return;
+      }
+
+      setOpenToolbarMenu(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenToolbarMenu(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [openToolbarMenu]);
+
+  useEffect(() => {
     if (!isRenameSheetDialogOpen) {
       return;
     }
@@ -1507,7 +1622,7 @@ function App() {
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">Workbook</p>
+                <p className="eyebrow">工作簿</p>
                 <h2 id="workbook-create-title">新建工作簿</h2>
               </div>
             </div>
@@ -1556,8 +1671,8 @@ function App() {
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">Sheet</p>
-                <h2 id="sheet-create-title">新建 Sheet</h2>
+                <p className="eyebrow">表格</p>
+                <h2 id="sheet-create-title">新建表格</h2>
               </div>
             </div>
 
@@ -1566,7 +1681,7 @@ function App() {
               <p className="workspace-create-path-value">{sheetDialogWorkbookName ?? "未选择工作簿"}</p>
 
               <label className="search-field workspace-create-name-field">
-                <span>Sheet 名称</span>
+                <span>表格名称</span>
                 <input
                   autoFocus
                   onChange={(event) => setNewSheetName(event.target.value)}
@@ -1605,15 +1720,15 @@ function App() {
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">Sheet</p>
-                <h2 id="sheet-rename-title">重命名 Sheet</h2>
+                <p className="eyebrow">表格</p>
+                <h2 id="sheet-rename-title">重命名表格</h2>
               </div>
             </div>
 
             <div className="workspace-create-body">
               <p className="workspace-create-path-label">目标</p>
               <p className="workspace-create-path-value">
-                {renameSheetTarget ? `${renameSheetTarget.workbookName} / ${renameSheetTarget.sheetName}` : "未选择 Sheet"}
+                {renameSheetTarget ? `${renameSheetTarget.workbookName} / ${renameSheetTarget.sheetName}` : "未选择表格"}
               </p>
 
               <label className="search-field workspace-create-name-field">
@@ -1659,7 +1774,7 @@ function App() {
             <div className="workspace-create-header">
               <div>
                 <p className="eyebrow">Codegen</p>
-                <h2 id="codegen-dialog-title">导出 C# 代码</h2>
+                <h2 id="codegen-dialog-title">导出工作簿 C# 代码</h2>
               </div>
             </div>
 
@@ -1729,8 +1844,8 @@ function App() {
             </div>
 
             <div className="workspace-create-body freeze-dialog-body">
-              <p className="workspace-create-path-label">当前 Sheet</p>
-              <p className="workspace-create-path-value">{activeTab ? `${activeTab.workbookName} / ${activeTab.sheetName}` : "尚未打开 Sheet"}</p>
+              <p className="workspace-create-path-label">当前表格</p>
+              <p className="workspace-create-path-value">{activeTab ? `${activeTab.workbookName} / ${activeTab.sheetName}` : "尚未打开表格"}</p>
 
               <div className="freeze-dialog-grid">
                 <label className="search-field freeze-dialog-field">
@@ -1805,58 +1920,290 @@ function App() {
         toasts={toastNotifications}
       />
 
-      <aside className="workspace-sidebar">
-        <div className="brand-block">
-          <p className="eyebrow">Explorer</p>
-          <h1>LightyDesign</h1>
-          <p className="sidebar-copy">桌面工作台。左侧管理工作区与工作簿，右侧专注表格编辑。</p>
-          <div className="brand-actions">
-            <button className="secondary-button" onClick={() => void handleCheckForUpdates()} type="button">
-              检查更新
-            </button>
+      <header className="app-toolbar">
+        <div className="toolbar-menu-bar">
+          <div className="app-toolbar-menu-group">
             <button
-              className="secondary-button"
-              disabled={!canInstallUpdate || updateDownloadState?.status === "launching"}
-              onClick={() => void handleInstallUpdate()}
+              aria-expanded={openToolbarMenu === "file"}
+              className={`toolbar-menu-trigger${openToolbarMenu === "file" ? " is-open" : ""}`}
+              onMouseEnter={() => handleToolbarMenuHover("file")}
+              onClick={() => toggleToolbarMenu("file")}
               type="button"
             >
-              {installButtonLabel}
+              文件
             </button>
+            {openToolbarMenu === "file" ? (
+              <div className="toolbar-menu-dropdown" role="menu">
+                {renderToolbarMenuSection("工作区", <>
+                  {renderToolbarMenuItem({
+                    label: "已打开工作区",
+                    checked: canCloseWorkspace,
+                    disabled: true,
+                    onClick: () => {},
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "新建工作区",
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleOpenCreateWorkspaceDialog();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "选择工作区目录",
+                    shortcut: "Ctrl+O",
+                    disabled: !canChooseWorkspaceDirectory,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void chooseWorkspaceDirectory();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "关闭工作区",
+                    shortcut: "Ctrl+Shift+W",
+                    disabled: !canCloseWorkspace,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      handleCloseWorkspace();
+                    },
+                  })}
+                </>)}
+                <div className="toolbar-menu-separator" />
+                {renderToolbarMenuSection("内容", <>
+                  {renderToolbarMenuItem({
+                    label: "新建工作簿",
+                    shortcut: "Ctrl+N",
+                    disabled: workspaceStatus !== "ready",
+                    onClick: () => {
+                      closeToolbarMenu();
+                      handleOpenCreateWorkbookDialog();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "新建表格",
+                    disabled: !canCreateSheet,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      if (focusedWorkbookName) {
+                        handleOpenCreateSheetDialog(focusedWorkbookName);
+                      }
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "导出当前工作簿代码",
+                    disabled: !focusedWorkbookName,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      if (focusedWorkbookName) {
+                        handleConvertWorkbookCode(focusedWorkbookName);
+                      }
+                    },
+                  })}
+                </>)}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="app-toolbar-menu-group">
+            <button
+              aria-expanded={openToolbarMenu === "edit"}
+              className={`toolbar-menu-trigger${openToolbarMenu === "edit" ? " is-open" : ""}`}
+              onMouseEnter={() => handleToolbarMenuHover("edit")}
+              onClick={() => toggleToolbarMenu("edit")}
+              type="button"
+            >
+              编辑
+            </button>
+            {openToolbarMenu === "edit" ? (
+              <div className="toolbar-menu-dropdown" role="menu">
+                {renderToolbarMenuSection("历史记录", <>
+                  {renderToolbarMenuItem({
+                    label: "表格有未保存修改",
+                    checked: Boolean(activeSheetState?.dirty),
+                    disabled: true,
+                    onClick: () => {},
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "撤销",
+                    shortcut: "Ctrl+Z",
+                    disabled: !canUndoActiveSheet,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      undoActiveSheetEdit();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "恢复",
+                    shortcut: "Ctrl+Y",
+                    disabled: !canRedoActiveSheet,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      redoActiveSheetEdit();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "还原当前表格",
+                    disabled: !activeSheetState?.dirty,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      restoreActiveSheetDraft();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "保存当前工作簿",
+                    shortcut: "Ctrl+S",
+                    disabled: !canSaveActiveWorkbook,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void saveActiveWorkbook();
+                    },
+                  })}
+                </>)}
+                <div className="toolbar-menu-separator" />
+                {renderToolbarMenuSection("剪贴板", <>
+                  {renderToolbarMenuItem({
+                    label: "复制选区",
+                    shortcut: "Ctrl+C",
+                    disabled: !selectedCell,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleCopySelectionToClipboard();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "剪切选区",
+                    shortcut: "Ctrl+X",
+                    disabled: !selectedCell,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleCutSelection();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "清空选区",
+                    shortcut: "Delete",
+                    disabled: !selectedCell,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      handleClearSelectionContents();
+                    },
+                  })}
+                </>)}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="app-toolbar-menu-group">
+            <button
+              aria-expanded={openToolbarMenu === "table"}
+              className={`toolbar-menu-trigger${openToolbarMenu === "table" ? " is-open" : ""}`}
+              onMouseEnter={() => handleToolbarMenuHover("table")}
+              onClick={() => toggleToolbarMenu("table")}
+              type="button"
+            >
+              表格
+            </button>
+            {openToolbarMenu === "table" ? (
+              <div className="toolbar-menu-dropdown" role="menu">
+                {renderToolbarMenuSection("表格状态", <>
+                  {renderToolbarMenuItem({
+                    label: "已启用冻结",
+                    checked: appliedFreezeRowCount > 0 || appliedFreezeColumnCount > 0,
+                    disabled: true,
+                    onClick: () => {},
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "当前工作簿已聚焦",
+                    checked: Boolean(focusedWorkbookName),
+                    disabled: true,
+                    onClick: () => {},
+                  })}
+                </>)}
+                <div className="toolbar-menu-separator" />
+                {renderToolbarMenuSection("结构", <>
+                  {renderToolbarMenuItem({
+                    label: "新建表格",
+                    disabled: !canCreateSheet,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      if (focusedWorkbookName) {
+                        handleOpenCreateSheetDialog(focusedWorkbookName);
+                      }
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "在末尾添加行",
+                    disabled: !activeSheetData,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      handleAppendRow();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "在末尾添加列",
+                    disabled: !activeSheetData,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      handleAppendColumn();
+                    },
+                  })}
+                </>)}
+                <div className="toolbar-menu-separator" />
+                {renderToolbarMenuSection("视图", <>
+                  {renderToolbarMenuItem({
+                    label: "设置冻结",
+                    disabled: !activeSheetData,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      handleOpenFreezeDialog();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "取消冻结",
+                    disabled: appliedFreezeRowCount === 0 && appliedFreezeColumnCount === 0,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      setFreezeRowCount(0);
+                      setFreezeColumnCount(0);
+                    },
+                  })}
+                </>)}
+              </div>
+            ) : null}
           </div>
         </div>
 
-        <section className="sidebar-section workspace-entry-card">
+        <div className="toolbar-status-cluster">
+          <span className={hostStatusClassName}>{hostStatusLabel}</span>
+          <span className="toolbar-status-text">{workspacePath || "未打开工作区"}</span>
+          <button className="secondary-button toolbar-inline-button" onClick={() => void handleCheckForUpdates()} type="button">
+            检查更新
+          </button>
+          <button
+            className="secondary-button toolbar-inline-button"
+            disabled={!canInstallUpdate || updateDownloadState?.status === "launching"}
+            onClick={() => void handleInstallUpdate()}
+            type="button"
+          >
+            {installButtonLabel}
+          </button>
+        </div>
+      </header>
+
+      <aside className="workspace-sidebar">
+        <div className="brand-block">
+          <p className="eyebrow">Workspace</p>
+          <h1>LightyDesign</h1>
+          <p className="workspace-path compact-workspace-path">{workspacePath || "未打开工作区"}</p>
+        </div>
+
+        <section className="sidebar-section workspace-entry-card workspace-summary-card">
           <div className="section-header">
             <div>
               <p className="eyebrow">Workspace</p>
-              <h2>当前工作区</h2>
+              <h2>工作区概览</h2>
             </div>
             {workspaceStatus === "loading" ? <span className="badge">加载中</span> : null}
           </div>
-
-          <div className="action-grid">
-            <button
-              className="secondary-button"
-              disabled={!canChooseWorkspaceDirectory}
-              onClick={() => void handleOpenCreateWorkspaceDialog()}
-              title={canChooseWorkspaceDirectory ? "选择父目录并新建工作区" : bridgeError ?? "当前环境不支持原生目录选择"}
-              type="button"
-            >
-              新建工作区
-            </button>
-            <button
-              className="primary-button"
-              disabled={!canChooseWorkspaceDirectory}
-              onClick={chooseWorkspaceDirectory}
-              title={canChooseWorkspaceDirectory ? "选择一个工作区目录" : bridgeError ?? "当前环境不支持原生目录选择"}
-              type="button"
-            >
-              选择目录
-            </button>
-          </div>
-
-          <p className="path-label">工作区路径</p>
-          <p className="workspace-path">{workspacePath || "尚未选择工作区目录"}</p>
 
           <div className="workspace-stats">
             <div>
@@ -1864,21 +2211,25 @@ function App() {
               <strong>{workbookTree.length}</strong>
             </div>
             <div>
-              <span>Sheets</span>
+              <span>表格</span>
               <strong>{totalSheetCount}</strong>
             </div>
             <div>
-              <span>Header</span>
+              <span>表头</span>
               <strong>{workspace?.headerLayout.count ?? 0}</strong>
             </div>
           </div>
+
+          <p className="workspace-summary-meta">
+            {hasDirtyChanges ? "当前工作区包含未保存修改。" : "当前工作区已同步到界面。"}
+          </p>
         </section>
 
         <section className="sidebar-section tree-card">
           <div className="section-header">
             <div>
               <p className="eyebrow">Navigator</p>
-              <h2>工作簿树</h2>
+              <h2>工作簿</h2>
             </div>
           </div>
 
@@ -1897,12 +2248,12 @@ function App() {
               onClick={retryWorkspaceLoad}
               type="button"
             >
-              刷新工作区
+              刷新列表
             </button>
           </div>
 
           <label className="search-field compact-field">
-            <span>搜索工作簿或 Sheet</span>
+            <span>搜索工作簿或表格</span>
             <input
               onChange={(event) => setWorkspaceSearch(event.target.value)}
               placeholder="例如 Item / Consumable"
@@ -1914,7 +2265,7 @@ function App() {
           {workspaceStatus === "idle" ? (
             <div className="empty-panel">
               <strong>等待工作区</strong>
-              <p>先选择一个包含 headers.json 和工作簿目录的工作区。</p>
+              <p>先从顶部“文件”菜单选择一个包含 headers.json 和工作簿目录的工作区。</p>
             </div>
           ) : null}
 
@@ -1931,30 +2282,41 @@ function App() {
           {workspaceStatus === "ready" && workbookTree.length === 0 ? (
             <div className="empty-panel">
               <strong>工作区为空</strong>
-              <p>{workspaceSearch ? "当前搜索条件没有匹配结果。" : "已读取 headers.json，但暂未发现任何工作簿或 Sheet。"}</p>
+              <p>{workspaceSearch ? "当前搜索条件没有匹配结果。" : "已读取 headers.json，但暂未发现任何工作簿或表格。"}</p>
             </div>
           ) : null}
 
           {workspaceStatus === "ready" && workbookTree.length > 0 ? (
             <div className="tree-list">
               {workbookTree.map((workbook) => (
-                <div className="tree-workbook" key={workbook.name}>
+                <button
+                  className={`tree-workbook-card${focusedWorkbookName === workbook.name ? " is-selected" : ""}`}
+                  key={workbook.name}
+                  onClick={() => handleFocusWorkbook(workbook.name)}
+                  type="button"
+                >
                   <div className="tree-workbook-header">
                     <div className="tree-workbook-title">
                       <strong>{workbook.name}</strong>
-                      <span>{workbook.sheets.length} 个 Sheet</span>
+                      <span>{workbook.sheets.length} 个表格</span>
                     </div>
                     <div className="tree-workbook-actions">
                       <button
                         className="secondary-button tree-workbook-action"
-                        onClick={() => handleOpenCreateSheetDialog(workbook.name)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleOpenCreateSheetDialog(workbook.name);
+                        }}
                         type="button"
                       >
-                        添加 Sheet
+                        新建表格
                       </button>
                       <button
                         className="secondary-button tree-workbook-action"
-                        onClick={() => handleConvertWorkbookCode(workbook.name)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleConvertWorkbookCode(workbook.name);
+                        }}
                         type="button"
                       >
                         转换代码
@@ -1962,7 +2324,10 @@ function App() {
                       <button
                         aria-label={`删除工作簿 ${workbook.name}`}
                         className="tree-workbook-delete"
-                        onClick={() => void deleteWorkbook(workbook.name)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void deleteWorkbook(workbook.name);
+                        }}
                         type="button"
                       >
                         删除
@@ -1970,26 +2335,12 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="tree-sheet-grid">
-                    {workbook.sheets.map((sheet) => {
-                      const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
-                      const isActive = activeTabId === tabId;
-
-                      return (
-                        <button
-                          className={`tree-sheet-button${isActive ? " is-active" : ""}`}
-                          key={tabId}
-                          onClick={() => openSheet(sheet.workbookName, sheet.sheetName)}
-                          onContextMenu={(event) => handleOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
-                          type="button"
-                        >
-                          <span className="tree-sheet-name">{sheet.sheetName}</span>
-                          <em>{sheet.columnCount} × {sheet.rowCount}</em>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                  <p className="tree-workbook-summary">
+                    {workbook.sheets.length > 0
+                      ? `包含 ${workbook.sheets.length} 个表格，当前可在主编辑区底部切换。`
+                      : "当前工作簿还没有表格。"}
+                  </p>
+                </button>
               ))}
             </div>
           ) : null}
@@ -2019,14 +2370,14 @@ function App() {
           <div className="viewer-panel">
             {!activeTab ? (
               <div className="viewer-empty-state">
-                <strong>暂无已打开的 Sheet</strong>
-                <p>从左侧工作簿树中选择一个 Sheet，主区域会按需加载真实数据。</p>
+                <strong>暂无已打开的表格</strong>
+                <p>从左侧选择工作簿，再从主编辑区底部按钮组打开表格。</p>
               </div>
             ) : null}
 
             {activeTab && activeSheetState?.status === "loading" ? (
               <div className="viewer-empty-state">
-                <strong>正在加载 Sheet</strong>
+                <strong>正在加载表格</strong>
                 <p>
                   {activeTab.workbookName} / {activeTab.sheetName}
                 </p>
@@ -2035,8 +2386,8 @@ function App() {
 
             {activeTab && activeSheetState?.status === "error" ? (
               <div className="viewer-empty-state is-error">
-                <strong>Sheet 加载失败</strong>
-                <p>{activeSheetState.error ?? "未能读取当前 Sheet。"}</p>
+                <strong>表格加载失败</strong>
+                <p>{activeSheetState.error ?? "未能读取当前表格。"}</p>
                 <button className="secondary-button" onClick={retryActiveSheetLoad} type="button">
                   重试
                 </button>
@@ -2047,20 +2398,20 @@ function App() {
               <>
                 <div className="viewer-header">
                   <div>
-                    <p className="eyebrow">Sheet</p>
+                    <p className="eyebrow">Table</p>
                     <h3>{activeSheetData.metadata.name}</h3>
                   </div>
                   <div className="viewer-metadata">
                     <span>{activeTab.workbookName}</span>
                     <span>{activeSheetColumns.length} 列</span>
                     <span>{activeSheetRows.length} 行</span>
-                    <span>{activeWorkbookDirtyTabs.length} dirty</span>
+                    <span>{activeWorkbookDirtyTabs.length} 个未保存标签</span>
                   </div>
                 </div>
 
                 <div className="viewer-toolbar">
                   <label className="search-field sheet-filter-field compact-field">
-                    <span>筛选当前 Sheet</span>
+                    <span>筛选当前表格</span>
                     <input
                       onChange={(event) => setSheetFilter(event.target.value)}
                       placeholder="按任意单元格文本过滤"
@@ -2069,81 +2420,10 @@ function App() {
                     />
                   </label>
 
-                  <div className="toolbar-side">
-                    <div className="toolbar-button-group">
-                      <button
-                        className="secondary-button"
-                        disabled={!activeSheetState.undoStack?.length}
-                        onClick={undoActiveSheetEdit}
-                        title="撤销当前 Sheet 编辑 (Ctrl+Z)"
-                        type="button"
-                      >
-                        撤销
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={!activeSheetState.redoStack?.length}
-                        onClick={redoActiveSheetEdit}
-                        title="恢复当前 Sheet 编辑 (Ctrl+Y / Ctrl+Shift+Z)"
-                        type="button"
-                      >
-                        恢复
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={!activeSheetState.dirty}
-                        onClick={restoreActiveSheetDraft}
-                        type="button"
-                      >
-                        还原
-                      </button>
-                      <button
-                        className="primary-button"
-                        disabled={activeWorkbookDirtyTabs.length === 0 || activeWorkbookSaveState?.status === "saving"}
-                        onClick={() => void saveActiveWorkbook()}
-                        title="保存当前工作簿 (Ctrl+S)"
-                        type="button"
-                      >
-                        保存
-                      </button>
-                    </div>
-
-                    <div className="toolbar-button-group">
-                      <button
-                        className="secondary-button"
-                        onClick={handleAppendRow}
-                        title="在当前 Sheet 末尾添加一行"
-                        type="button"
-                      >
-                        在末尾添加行
-                      </button>
-                      <button
-                        className="secondary-button"
-                        onClick={handleAppendColumn}
-                        title="在当前 Sheet 末尾添加一列"
-                        type="button"
-                      >
-                        在末尾添加列
-                      </button>
-                    </div>
-
-                    <div className="freeze-toolbar">
-                      <span className="freeze-summary">{freezeStatusText}</span>
-                      <button className="secondary-button" onClick={handleOpenFreezeDialog} type="button">
-                        设置冻结
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={appliedFreezeRowCount === 0 && appliedFreezeColumnCount === 0}
-                        onClick={() => {
-                          setFreezeRowCount(0);
-                          setFreezeColumnCount(0);
-                        }}
-                        type="button"
-                      >
-                        取消冻结
-                      </button>
-                    </div>
+                  <div className="viewer-toolbar-summary">
+                    <span>工作簿: {focusedWorkbook?.name ?? activeTab.workbookName}</span>
+                    <span>冻结: {freezeStatusText}</span>
+                    <span>保存: {saveStatusText}</span>
                   </div>
                 </div>
 
@@ -2151,12 +2431,12 @@ function App() {
                   <div className={`sheet-name-box${selectedCell ? "" : " is-empty"}${selectedCellCount > 1 ? " is-range" : ""}`}>{selectedCellAddress}</div>
                   <div className="sheet-formula-shell">
                     <span className="sheet-formula-prefix">fx</span>
-                    <input
+                    <textarea
                       className="sheet-formula-input"
                       disabled={!selectedCell}
                       onChange={(event) => handleFormulaBarChange(event.target.value)}
                       placeholder="选择单元格后可直接编辑内容"
-                      type="text"
+                      rows={3}
                       value={selectedCellValue}
                     />
                     <span className="sheet-formula-meta">{selectedCellDescription}</span>
@@ -2218,6 +2498,45 @@ function App() {
                 />
               </>
             ) : null}
+
+            {workspaceStatus === "ready" && focusedWorkbook ? (
+              <section className="sheet-selector-panel">
+                <div className="section-header">
+                  <div>
+                    <p className="eyebrow">Tables</p>
+                    <h2>{focusedWorkbook.name}</h2>
+                  </div>
+                  <span className="badge">{focusedWorkbookSheets.length} 个表格</span>
+                </div>
+
+                {focusedWorkbookSheets.length === 0 ? (
+                  <div className="table-empty-panel">
+                    <strong>当前工作簿还没有表格</strong>
+                    <p>可以从顶部“表格”菜单或左侧卡片按钮新建表格。</p>
+                  </div>
+                ) : (
+                  <div className="sheet-selector-grid">
+                    {focusedWorkbookSheets.map((sheet) => {
+                      const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
+                      const isActive = activeTabId === tabId;
+
+                      return (
+                        <button
+                          className={`sheet-selector-button${isActive ? " is-active" : ""}`}
+                          key={tabId}
+                          onClick={() => openSheet(sheet.workbookName, sheet.sheetName)}
+                          onContextMenu={(event) => handleOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
+                          type="button"
+                        >
+                          <span className="sheet-selector-name">{sheet.sheetName}</span>
+                          <em>{sheet.columnCount} 列 × {sheet.rowCount} 行</em>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : null}
           </div>
         </section>
       </main>
@@ -2234,56 +2553,56 @@ function App() {
             onClick={() => handleOpenRenameSheetDialog(sheetContextMenu.workbookName, sheetContextMenu.sheetName)}
             type="button"
           >
-            重命名 Sheet
+            重命名表格
           </button>
           <button
             className="tree-context-menu-item"
             onClick={() => handleOpenCreateSheetDialog(sheetContextMenu.workbookName)}
             type="button"
           >
-            添加 Sheet
+            新建表格
           </button>
           <button
             className="tree-context-menu-item is-danger"
             onClick={() => void handleDeleteSheet(sheetContextMenu.workbookName, sheetContextMenu.sheetName)}
             type="button"
           >
-            删除 Sheet
+            删除表格
           </button>
         </div>
       ) : null}
 
       <footer className="status-bar">
         <div className="status-segment">
-          <span className="status-label">Backend</span>
+          <span className="status-label">后端</span>
           <strong className={hostStatusClassName}>{hostStatusLabel}</strong>
           <span className="status-detail">{runtimeLabel}</span>
         </div>
         <div className="status-segment is-wide">
-          <span className="status-label">Workspace</span>
+          <span className="status-label">工作区</span>
           <strong>{workspacePath || "未选择工作区"}</strong>
         </div>
         <div className="status-segment is-wide">
-          <span className="status-label">Sheet</span>
+          <span className="status-label">表格</span>
           <strong>{sheetStatusText}</strong>
         </div>
         <div className="status-segment">
-          <span className="status-label">Selection</span>
+          <span className="status-label">选区</span>
           <strong>{selectionStatusText}</strong>
           <span className="status-detail">{selectedValueLength} chars</span>
         </div>
         <div className="status-segment">
-          <span className="status-label">Freeze</span>
+          <span className="status-label">冻结</span>
           <strong>{freezeStatusText}</strong>
           <span className="status-detail">滚动区继续支持筛选与编辑</span>
         </div>
         <div className="status-segment">
-          <span className="status-label">Save</span>
+          <span className="status-label">保存</span>
           <strong>{saveStatusText}</strong>
           <span className="status-detail">{hostUrlLabel}</span>
         </div>
         <div className="status-segment status-update-segment">
-          <span className="status-label">Update</span>
+          <span className="status-label">更新</span>
           <strong>{updateStatusText}</strong>
           <div className="status-update-actions">
             <span className="status-detail">{updateDetailText}</span>

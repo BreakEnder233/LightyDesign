@@ -4,7 +4,6 @@ import { flushSync } from "react-dom";
 
 import {
   buildCellKey,
-  getColumnExportScope,
   getColumnEditorKind,
   getSelectionBounds,
   type SheetColumn,
@@ -13,6 +12,9 @@ import {
 } from "../types/desktopApp";
 
 type VirtualSheetTableProps = {
+  canInsertCopiedCellsDown: boolean;
+  canInsertCopiedColumns: boolean;
+  canInsertCopiedRows: boolean;
   columns: SheetColumn[];
   columnWidths: number[];
   rows: Array<{
@@ -28,6 +30,7 @@ type VirtualSheetTableProps = {
   onSelectRow: (rowIndex: number, options?: { extendSelection?: boolean }) => void;
   onSelectColumn: (columnIndex: number, options?: { extendSelection?: boolean }) => void;
   onSelectAll: () => void;
+  onEditColumn: (columnIndex: number) => void;
   onResizeColumn: (columnIndex: number, nextWidth: number) => void;
   onAutoSizeColumn: (columnIndex: number) => void;
   onFreezeRows: (rowCount: number) => void;
@@ -36,22 +39,18 @@ type VirtualSheetTableProps = {
   onInsertRow: (afterRowIndex: number) => void;
   onInsertCopiedRowsAbove: (rowIndex: number) => void;
   onInsertCopiedRowsBelow: (rowIndex: number) => void;
-  canInsertCopiedRows: boolean;
   onDeleteRow: (rowIndex: number) => void;
   onInsertColumnBefore: (columnIndex: number) => void;
   onInsertColumn: (afterColumnIndex: number) => void;
   onInsertCopiedColumnsBefore: (columnIndex: number) => void;
   onInsertCopiedColumnsAfter: (columnIndex: number) => void;
-  canInsertCopiedColumns: boolean;
   onDeleteColumn: (columnIndex: number) => void;
-  onEditColumn: (columnIndex: number) => void;
+  onInsertCopiedCellsDown: (rowIndex: number, columnIndex: number) => void;
   onCopySelection: () => string;
   onCopySelectionToClipboard: () => void;
   onCutSelection: () => void;
   onClearSelection: () => void;
   onPasteSelection: (rowIndex: number, columnIndex: number, clipboardText: string) => void;
-  onInsertCopiedCellsDown: (rowIndex: number, columnIndex: number) => void;
-  canInsertCopiedCellsDown: boolean;
   onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
 };
 
@@ -74,13 +73,6 @@ type HeaderContextMenuState =
     }
   | {
       kind: "corner";
-      x: number;
-      y: number;
-    }
-  | {
-      kind: "cell";
-      rowIndex: number;
-      columnIndex: number;
       x: number;
       y: number;
     };
@@ -140,6 +132,9 @@ function buildGridTemplateColumns(widths: number[], includeRowNumber: boolean) {
 }
 
 export function VirtualSheetTable({
+  canInsertCopiedCellsDown,
+  canInsertCopiedColumns,
+  canInsertCopiedRows,
   columns,
   columnWidths,
   rows,
@@ -152,6 +147,7 @@ export function VirtualSheetTable({
   onSelectRow,
   onSelectColumn,
   onSelectAll,
+  onEditColumn,
   onResizeColumn,
   onAutoSizeColumn,
   onFreezeRows,
@@ -160,22 +156,18 @@ export function VirtualSheetTable({
   onInsertRow,
   onInsertCopiedRowsAbove,
   onInsertCopiedRowsBelow,
-  canInsertCopiedRows,
   onDeleteRow,
   onInsertColumnBefore,
   onInsertColumn,
   onInsertCopiedColumnsBefore,
   onInsertCopiedColumnsAfter,
-  canInsertCopiedColumns,
   onDeleteColumn,
-  onEditColumn,
+  onInsertCopiedCellsDown,
   onCopySelection,
   onCopySelectionToClipboard,
   onCutSelection,
   onClearSelection,
   onPasteSelection,
-  onInsertCopiedCellsDown,
-  canInsertCopiedCellsDown,
   onEditCell,
 }: VirtualSheetTableProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -691,11 +683,7 @@ export function VirtualSheetTable({
           }}
         >
           <div className="virtual-header-label">{column.displayName || column.fieldName}</div>
-          <div className="virtual-header-meta">
-            <small>{column.fieldName}</small>
-            <small>{column.type}</small>
-            <small>Scope: {getColumnExportScope(column)}</small>
-          </div>
+          <small>{column.type}</small>
           <button
             aria-label={`调整列宽 ${column.displayName || column.fieldName}`}
             className="virtual-column-resizer"
@@ -758,19 +746,6 @@ export function VirtualSheetTable({
             cellKey,
           });
           startEditingCell(rowEntry.rowIndex, columnIndex, "select-all", { immediateFocus: true });
-        }}
-        onContextMenu={(event) => {
-          if (!isSelected && !isInRange) {
-            onSelectCell(rowEntry.rowIndex, columnIndex, { extendSelection: false });
-          }
-
-          openContextMenu(event, {
-            kind: "cell",
-            rowIndex: rowEntry.rowIndex,
-            columnIndex,
-            x: event.clientX,
-            y: event.clientY,
-          });
         }}
         onMouseEnter={() => {
           if (!isPointerSelectingRef.current) {
@@ -1084,12 +1059,16 @@ export function VirtualSheetTable({
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertRow(contextMenuState.rowIndex))} type="button">
                 在下方插入行
               </button>
-              <button className="sheet-context-menu-item" disabled={!canInsertCopiedRows} onClick={() => runContextMenuAction(() => onInsertCopiedRowsAbove(contextMenuState.rowIndex))} type="button">
-                在上方插入复制的行
-              </button>
-              <button className="sheet-context-menu-item" disabled={!canInsertCopiedRows} onClick={() => runContextMenuAction(() => onInsertCopiedRowsBelow(contextMenuState.rowIndex))} type="button">
-                在下方插入复制的行
-              </button>
+              {canInsertCopiedRows ? (
+                <>
+                  <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertCopiedRowsAbove(contextMenuState.rowIndex))} type="button">
+                    在上方插入复制行
+                  </button>
+                  <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertCopiedRowsBelow(contextMenuState.rowIndex))} type="button">
+                    在下方插入复制行
+                  </button>
+                </>
+              ) : null}
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onDeleteRow(contextMenuState.rowIndex))} type="button">
                 删除当前行
               </button>
@@ -1117,23 +1096,27 @@ export function VirtualSheetTable({
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onSelectColumn(contextMenuState.columnIndex))} type="button">
                 选择整列
               </button>
-              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onEditColumn(contextMenuState.columnIndex))} type="button">
-                编辑列头
-              </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertColumnBefore(contextMenuState.columnIndex))} type="button">
                 在左侧插入列
               </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertColumn(contextMenuState.columnIndex))} type="button">
                 在右侧插入列
               </button>
-              <button className="sheet-context-menu-item" disabled={!canInsertCopiedColumns} onClick={() => runContextMenuAction(() => onInsertCopiedColumnsBefore(contextMenuState.columnIndex))} type="button">
-                在左侧插入复制的列
-              </button>
-              <button className="sheet-context-menu-item" disabled={!canInsertCopiedColumns} onClick={() => runContextMenuAction(() => onInsertCopiedColumnsAfter(contextMenuState.columnIndex))} type="button">
-                在右侧插入复制的列
-              </button>
+              {canInsertCopiedColumns ? (
+                <>
+                  <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertCopiedColumnsBefore(contextMenuState.columnIndex))} type="button">
+                    在左侧插入复制列
+                  </button>
+                  <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onInsertCopiedColumnsAfter(contextMenuState.columnIndex))} type="button">
+                    在右侧插入复制列
+                  </button>
+                </>
+              ) : null}
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onDeleteColumn(contextMenuState.columnIndex))} type="button">
                 删除当前列
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onEditColumn(contextMenuState.columnIndex))} type="button">
+                编辑表头
               </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onAutoSizeColumn(contextMenuState.columnIndex))} type="button">
                 自动适配列宽
@@ -1167,6 +1150,15 @@ export function VirtualSheetTable({
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onClearSelection)} type="button">
                 清空选区
               </button>
+              {canInsertCopiedCellsDown && selectedCell ? (
+                <button
+                  className="sheet-context-menu-item"
+                  onClick={() => runContextMenuAction(() => onInsertCopiedCellsDown(selectedCell.rowIndex, selectedCell.columnIndex))}
+                  type="button"
+                >
+                  从当前单元格向下插入复制内容
+                </button>
+              ) : null}
               <button
                 className="sheet-context-menu-item"
                 onClick={() => runContextMenuAction(() => {
@@ -1179,30 +1171,8 @@ export function VirtualSheetTable({
               </button>
             </>
           ) : null}
-
-          {contextMenuState.kind === "cell" ? (
-            <>
-              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onSelectCell(contextMenuState.rowIndex, contextMenuState.columnIndex))} type="button">
-                选择单元格
-              </button>
-              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCopySelectionToClipboard)} type="button">
-                复制选区
-              </button>
-              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCutSelection)} type="button">
-                剪切选区
-              </button>
-              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onClearSelection)} type="button">
-                清空选区
-              </button>
-              <button className="sheet-context-menu-item" disabled={!canInsertCopiedCellsDown} onClick={() => runContextMenuAction(() => onInsertCopiedCellsDown(contextMenuState.rowIndex, contextMenuState.columnIndex))} type="button">
-                插入复制的单元格并下移
-              </button>
-            </>
-          ) : null}
         </div>
       ) : null}
     </div>
   );
 }
-
-

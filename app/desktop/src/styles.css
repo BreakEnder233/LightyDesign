@@ -482,27 +482,8 @@ button {
   gap: 8px;
 }
 
-.tree-workbook-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.tree-workbook-action {
-  min-height: 28px;
-  padding: 5px 10px;
-}
-
 .tree-workbook-title {
   min-width: 0;
-}
-
-.tree-workbook-summary {
-  margin: 8px 0 0;
-  color: #9da0a6;
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 .tree-context-menu {
@@ -551,7 +532,7 @@ button {
 .editor-panel {
   min-height: 100%;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -819,6 +800,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin: 8px 8px 0;
   padding: 10px;
   border: 1px solid #3c3c3c;
   border-radius: 2px;

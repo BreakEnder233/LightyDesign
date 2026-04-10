@@ -202,7 +202,8 @@ export function VirtualSheetTable({
   const leftPaneWidth = rowNumberWidth + frozenColumnWidths.reduce((sum, width) => sum + width, 0);
   const rightPaneWidth = scrollColumnWidths.reduce((sum, width) => sum + width, 0);
   const selectedCellKey = selectedCell ? buildCellKey(selectedCell.rowIndex, selectedCell.columnIndex) : null;
-  const selectedEditorKind = selectedCell ? getColumnEditorKind(columns[selectedCell.columnIndex]) : null;
+  const selectedColumn = selectedCell ? (columns[selectedCell.columnIndex] ?? null) : null;
+  const selectedEditorKind = selectedColumn ? getColumnEditorKind(selectedColumn) : null;
   const selectionBounds = selectionRange ? getSelectionBounds(selectionRange) : null;
   const rowVirtualizer = useVirtualizer({
     count: scrollRows.length,

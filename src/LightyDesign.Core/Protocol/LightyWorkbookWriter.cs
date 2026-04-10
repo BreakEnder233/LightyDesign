@@ -2,7 +2,12 @@ namespace LightyDesign.Core;
 
 public static class LightyWorkbookWriter
 {
-    public static void Save(string workspacePath, WorkspaceHeaderLayout headerLayout, LightyWorkbook workbook)
+    public static void Save(
+        string workspacePath,
+        WorkspaceHeaderLayout headerLayout,
+        LightyWorkbook workbook,
+        LightyWorkbookCodegenOptions? workspaceCodegenOptions = null,
+        string? workspaceCodegenConfigFilePath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
         ArgumentNullException.ThrowIfNull(headerLayout);
@@ -13,10 +18,20 @@ public static class LightyWorkbookWriter
         var workbookDirectory = Path.Combine(workspacePath, workbook.Name);
         Directory.CreateDirectory(workbookDirectory);
 
-        var codegenConfigFilePath = string.IsNullOrWhiteSpace(workbook.CodegenConfigFilePath)
-            ? Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)
-            : workbook.CodegenConfigFilePath;
-        LightyWorkbookCodegenOptionsSerializer.SaveToFile(codegenConfigFilePath, workbook.CodegenOptions);
+        var codegenConfigFilePath = string.IsNullOrWhiteSpace(workspaceCodegenConfigFilePath)
+            ? Path.Combine(workspacePath, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)
+            : workspaceCodegenConfigFilePath;
+        LightyWorkbookCodegenOptionsSerializer.SaveToFile(codegenConfigFilePath, workspaceCodegenOptions ?? workbook.CodegenOptions);
+
+        var staleWorkbookCodegenConfigFilePath = Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName);
+        if (!string.Equals(
+                Path.GetFullPath(staleWorkbookCodegenConfigFilePath),
+                Path.GetFullPath(codegenConfigFilePath),
+                StringComparison.OrdinalIgnoreCase)
+            && File.Exists(staleWorkbookCodegenConfigFilePath))
+        {
+            File.Delete(staleWorkbookCodegenConfigFilePath);
+        }
 
         var expectedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

@@ -23,10 +23,10 @@ public class CodeGenerationTests
         Assert.Contains(package.Files, file => file.RelativePath == "LDD.cs");
 
         var consumableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/Consumable.cs");
-        Assert.Contains("namespace LightyDesignData;", consumableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("namespace LightyDesignData", consumableFile.Content, StringComparison.Ordinal);
         Assert.Contains("public sealed partial class ConsumableRow", consumableFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required int ID { get; set; }", consumableFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required string Name { get; set; }", consumableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public int ID { get; set; }", consumableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public string Name { get; set; }", consumableFile.Content, StringComparison.Ordinal);
         Assert.Contains("public ConsumableRow this[int id]", consumableFile.Content, StringComparison.Ordinal);
         Assert.Contains("Name = \"Potion\"", consumableFile.Content, StringComparison.Ordinal);
 
@@ -39,7 +39,7 @@ public class CodeGenerationTests
         Assert.Contains("public sealed partial class ItemWorkbook", workbookFile.Content, StringComparison.Ordinal);
 
         var entryFile = Assert.Single(package.Files, file => file.RelativePath == "LDD.cs");
-        Assert.Contains("namespace LightyDesignData;", entryFile.Content, StringComparison.Ordinal);
+        Assert.Contains("namespace LightyDesignData", entryFile.Content, StringComparison.Ordinal);
         Assert.Contains("public static partial class LDD", entryFile.Content, StringComparison.Ordinal);
         Assert.Contains("public static ItemWorkbook Item", entryFile.Content, StringComparison.Ordinal);
     }
@@ -81,14 +81,14 @@ public class CodeGenerationTests
         var sheetFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureFlag.cs");
         var normalizedContent = NormalizeNewlines(sheetFile.Content);
 
-        Assert.Contains("namespace LightyDesignData;", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required int ID { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required string SharedName { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("namespace LightyDesignData", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public int ID { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public string SharedName { get; set; }", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("#if LDD_Client", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("public required string ClientOnlyName { get; set; }", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("public string ClientOnlyName { get; set; }", normalizedContent, StringComparison.Ordinal);
         Assert.Contains("#if LDD_Server", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("public required string ServerOnlyNote { get; set; }", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("new()", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("public string ServerOnlyNote { get; set; }", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("new FeatureFlagRow()", normalizedContent, StringComparison.Ordinal);
         Assert.Contains("ID = 1,", normalizedContent, StringComparison.Ordinal);
         Assert.Contains("SharedName = \"Shared\",", normalizedContent, StringComparison.Ordinal);
         Assert.Contains("ClientOnlyName = \"Client\",", normalizedContent, StringComparison.Ordinal);
@@ -109,11 +109,15 @@ public class CodeGenerationTests
         Assert.Contains("public sealed partial class DesignDataReference<TTarget>", supportFile.Content, StringComparison.Ordinal);
         Assert.Contains("public TTarget GetValue() => _resolver(_identifiers);", supportFile.Content, StringComparison.Ordinal);
         Assert.Contains("internal static partial class DesignDataReferenceHelper", supportFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required DesignDataReference<ConsumableRow> PrimaryItem { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required DesignDataReference<StageRow> TargetStage { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public required IReadOnlyList<DesignDataReference<StageRow>> StageHistory { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("new DesignDataReference<ConsumableRow>(\"Item\", \"Consumable\", static identifiers => LDD.Item.Consumable[DesignDataReferenceHelper.ParseInt32(identifiers[0])], \"1001\")", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("new DesignDataReference<StageRow>(\"Item\", \"Stage\", static identifiers => LDD.Item.Stage[DesignDataReferenceHelper.ParseInt32(identifiers[0])][DesignDataReferenceHelper.ParseInt32(identifiers[1])], \"1\", \"10\")", sheetFile.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("ThrowIfNullOrWhiteSpace", supportFile.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("ThrowIfNull(", supportFile.Content, StringComparison.Ordinal);
+        Assert.Contains("if (string.IsNullOrWhiteSpace(workbookName))", supportFile.Content, StringComparison.Ordinal);
+        Assert.Contains("throw new ArgumentNullException(nameof(resolver));", supportFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public DesignDataReference<ConsumableRow> PrimaryItem { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public DesignDataReference<StageRow> TargetStage { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public IReadOnlyList<DesignDataReference<StageRow>> StageHistory { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new DesignDataReference<ConsumableRow>(\"Item\", \"Consumable\", identifiers => LDD.Item.Consumable[DesignDataReferenceHelper.ParseInt32(identifiers[0])], \"1001\")", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new DesignDataReference<StageRow>(\"Item\", \"Stage\", identifiers => LDD.Item.Stage[DesignDataReferenceHelper.ParseInt32(identifiers[0])][DesignDataReferenceHelper.ParseInt32(identifiers[1])], \"1\", \"10\")", sheetFile.Content, StringComparison.Ordinal);
         Assert.Contains("new List<DesignDataReference<StageRow>>", sheetFile.Content, StringComparison.Ordinal);
     }
 
@@ -138,7 +142,23 @@ public class CodeGenerationTests
         Assert.Contains("AppendData1(rows);", mainFile.Content, StringComparison.Ordinal);
         Assert.Contains("AppendData2(rows);", mainFile.Content, StringComparison.Ordinal);
         Assert.Contains("private static void AppendData1(List<LargeSheetRow> rows)", chunkFile.Content, StringComparison.Ordinal);
-        Assert.Contains("rows.Add(new()", chunkFile.Content, StringComparison.Ordinal);
+        Assert.Contains("rows.Add(new LargeSheetRow()", chunkFile.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WorkbookCodeGenerator_ShouldUseFirstExportedColumnAsKeyWhenIdColumnsAreMissing()
+    {
+        var workspace = CreateWorkspaceWithoutIdColumns(new LightyWorkbookCodegenOptions("Generated/Text"));
+        var workbook = Assert.Single(workspace.Workbooks);
+        var generator = new LightyWorkbookCodeGenerator();
+
+        var package = generator.Generate(workspace, workbook);
+        var sheetFile = Assert.Single(package.Files, file => file.RelativePath == "Text/Localization.cs");
+
+        Assert.Contains("public string Key { get; set; }", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("private readonly IReadOnlyDictionary<string, LocalizationRow> _byKey;", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("_byKey = rows.ToDictionary(row => row.Key);", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public LocalizationRow this[string key] => _byKey[key];", sheetFile.Content, StringComparison.Ordinal);
     }
 
     private static LightyWorkspace CreateWorkspace(LightyWorkbookCodegenOptions codegenOptions)
@@ -188,7 +208,9 @@ public class CodeGenerationTests
             @"D:\Workspace\config.json",
             @"D:\Workspace\headers.json",
             WorkspaceHeaderLayout.CreateDefault(),
-            new[] { workbook });
+            new[] { workbook },
+            codegenOptions,
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
     }
 
     private static LightyWorkspace CreateWorkspaceWithScopedColumns(LightyWorkbookCodegenOptions codegenOptions)
@@ -223,7 +245,9 @@ public class CodeGenerationTests
             @"D:\Workspace\config.json",
             @"D:\Workspace\headers.json",
             WorkspaceHeaderLayout.CreateDefault(),
-            new[] { workbook });
+            new[] { workbook },
+            codegenOptions,
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
     }
 
     private static LightyWorkspace CreateWorkspaceWithReferenceColumns(LightyWorkbookCodegenOptions codegenOptions)
@@ -297,7 +321,9 @@ public class CodeGenerationTests
             @"D:\Workspace\config.json",
             @"D:\Workspace\headers.json",
             WorkspaceHeaderLayout.CreateDefault(),
-            new[] { itemWorkbook, configWorkbook });
+            new[] { itemWorkbook, configWorkbook },
+            codegenOptions,
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
     }
 
     private static LightyWorkspace CreateWorkspaceWithLargeSheet(LightyWorkbookCodegenOptions codegenOptions)
@@ -331,7 +357,45 @@ public class CodeGenerationTests
             @"D:\Workspace\config.json",
             @"D:\Workspace\headers.json",
             WorkspaceHeaderLayout.CreateDefault(),
-            new[] { workbook });
+            new[] { workbook },
+            codegenOptions,
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+    }
+
+    private static LightyWorkspace CreateWorkspaceWithoutIdColumns(LightyWorkbookCodegenOptions codegenOptions)
+    {
+        var workbookDirectory = @"D:\Workspace\Text";
+        var workbook = new LightyWorkbook(
+            "Text",
+            workbookDirectory,
+            new[]
+            {
+                new LightySheet(
+                    "Localization",
+                    Path.Combine(workbookDirectory, "Localization.txt"),
+                    Path.Combine(workbookDirectory, "Localization_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("Key", "string", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Value", "string", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                    }),
+                    new[]
+                    {
+                        new LightySheetRow(0, new[] { "HELLO", "Hello" }),
+                        new LightySheetRow(1, new[] { "BYE", "Goodbye" }),
+                    }),
+            },
+            codegenOptions,
+            Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        return new LightyWorkspace(
+            @"D:\Workspace",
+            @"D:\Workspace\config.json",
+            @"D:\Workspace\headers.json",
+            WorkspaceHeaderLayout.CreateDefault(),
+            new[] { workbook },
+            codegenOptions,
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
     }
 
     private static IReadOnlyDictionary<string, JsonElement> CreateAttributes(string key, string value)

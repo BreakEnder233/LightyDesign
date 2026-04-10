@@ -38,7 +38,7 @@ public sealed class LightyWorkbookCodeGenerator
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(workbook);
 
-        if (string.IsNullOrWhiteSpace(workbook.CodegenOptions.OutputRelativePath))
+        if (string.IsNullOrWhiteSpace(workspace.CodegenOptions.OutputRelativePath))
         {
             throw new LightyCoreException($"Workbook '{workbook.Name}' does not define a code generation output path.");
         }
@@ -60,7 +60,7 @@ public sealed class LightyWorkbookCodeGenerator
         files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{workbook.Name}.cs", RenderWorkbookFile(workbook, generatedSheets)));
         files.Add(new LightyGeneratedCodeFile("LDD.cs", RenderEntryPointFile(new[] { workbook.Name })));
 
-        return new LightyGeneratedWorkbookPackage(workbook.CodegenOptions.OutputRelativePath!, files);
+        return new LightyGeneratedWorkbookPackage(workspace.CodegenOptions.OutputRelativePath!, files);
     }
 
     public string GenerateEntryPointFile(IEnumerable<string> workbookNames)
@@ -142,7 +142,7 @@ public sealed class LightyWorkbookCodeGenerator
             assignments.Add(new GeneratedFieldAssignment(field, BuildValueLiteral(workspace, field.TypeDescriptor, parseResult.Value)));
         }
 
-        return new GeneratedRowModel(assignments);
+        return new GeneratedRowModel($"{ToTypeIdentifier(sheet.Name)}Row", assignments);
     }
 
     private static IReadOnlyList<GeneratedFieldModel> ResolvePrimaryKeyFields(IReadOnlyList<GeneratedFieldModel> fields)
@@ -166,7 +166,12 @@ public sealed class LightyWorkbookCodeGenerator
             compositeFields.Add(field);
         }
 
-        return compositeFields;
+        if (compositeFields.Count > 0)
+        {
+            return compositeFields;
+        }
+
+        return fields.Count > 0 ? new[] { fields[0] } : Array.Empty<GeneratedFieldModel>();
     }
 
     private static void EnsureSupportedType(LightyColumnTypeDescriptor descriptor)
@@ -265,8 +270,7 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("using System.Collections.Generic;");
         writer.AppendLine("using System.Linq;");
         writer.AppendLine();
-        writer.AppendLine($"namespace {GeneratedNamespace};");
-        writer.AppendLine();
+        AppendNamespaceStart(writer);
         writer.AppendLine($"public sealed partial class {sheet.RowTypeName}");
         writer.AppendLine("{");
         writer.Indent();
@@ -277,13 +281,14 @@ public sealed class LightyWorkbookCodeGenerator
                 scopedWriter.AppendLine($"// {field.DisplayName}");
             }
 
-            scopedWriter.AppendLine($"public required {field.CSharpTypeName} {field.PropertyName} {{ get; set; }}");
+            scopedWriter.AppendLine($"public {field.CSharpTypeName} {field.PropertyName} {{ get; set; }}");
         });
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
 
         writer.Append(RenderTableClass(sheet));
+        AppendNamespaceEnd(writer);
 
         return writer.ToString();
     }
@@ -293,8 +298,7 @@ public sealed class LightyWorkbookCodeGenerator
         var writer = new CodeWriter();
         writer.AppendLine("using System.Collections.Generic;");
         writer.AppendLine();
-        writer.AppendLine($"namespace {GeneratedNamespace};");
-        writer.AppendLine();
+        AppendNamespaceStart(writer);
         writer.AppendLine($"public sealed partial class {sheet.TableTypeName}");
         writer.AppendLine("{");
         writer.Indent();
@@ -309,6 +313,7 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("}");
         writer.Outdent();
         writer.AppendLine("}");
+        AppendNamespaceEnd(writer);
         return writer.ToString();
     }
 
@@ -319,8 +324,7 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("using System.Collections.Generic;");
         writer.AppendLine("using System.Globalization;");
         writer.AppendLine();
-        writer.AppendLine($"namespace {GeneratedNamespace};");
-        writer.AppendLine();
+        AppendNamespaceStart(writer);
         writer.AppendLine("public sealed partial class DesignDataReference<TTarget>");
         writer.AppendLine("{");
         writer.Indent();
@@ -330,10 +334,33 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("public DesignDataReference(string workbookName, string sheetName, Func<IReadOnlyList<string>, TTarget> resolver, params string[] identifiers)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("ArgumentException.ThrowIfNullOrWhiteSpace(workbookName);");
-        writer.AppendLine("ArgumentException.ThrowIfNullOrWhiteSpace(sheetName);");
-        writer.AppendLine("ArgumentNullException.ThrowIfNull(resolver);");
-        writer.AppendLine("ArgumentNullException.ThrowIfNull(identifiers);");
+        writer.AppendLine("if (string.IsNullOrWhiteSpace(workbookName))");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentException(\"Value cannot be null or whitespace.\", nameof(workbookName));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("if (string.IsNullOrWhiteSpace(sheetName))");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentException(\"Value cannot be null or whitespace.\", nameof(sheetName));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("if (resolver is null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(resolver));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("if (identifiers is null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(identifiers));");
+        writer.Outdent();
+        writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine("WorkbookName = workbookName;");
         writer.AppendLine("SheetName = sheetName;");
@@ -360,18 +387,27 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("public static bool ParseBoolean(string value)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("return value.Trim() switch");
+        writer.AppendLine("var trimmed = value.Trim();");
+        writer.AppendLine("if (trimmed == \"1\")");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("\"1\" => true,");
-        writer.AppendLine("\"0\" => false,");
-        writer.AppendLine("_ => bool.Parse(value),");
+        writer.AppendLine("return true;");
         writer.Outdent();
-        writer.AppendLine("};");
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("if (trimmed == \"0\")");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return false;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("return bool.Parse(value);");
         writer.Outdent();
         writer.AppendLine("}");
         writer.Outdent();
         writer.AppendLine("}");
+        AppendNamespaceEnd(writer);
         return writer.ToString();
     }
 
@@ -476,8 +512,7 @@ public sealed class LightyWorkbookCodeGenerator
     private static string RenderWorkbookFile(LightyWorkbook workbook, IReadOnlyList<GeneratedSheetModel> sheets)
     {
         var writer = new CodeWriter();
-        writer.AppendLine($"namespace {GeneratedNamespace};");
-        writer.AppendLine();
+        AppendNamespaceStart(writer);
         writer.AppendLine($"public sealed partial class {ToTypeIdentifier(workbook.Name)}Workbook");
         writer.AppendLine("{");
         writer.Indent();
@@ -520,14 +555,14 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("}");
         writer.Outdent();
         writer.AppendLine("}");
+        AppendNamespaceEnd(writer);
         return writer.ToString();
     }
 
     private static string RenderEntryPointFile(IReadOnlyList<string> workbookNames)
     {
         var writer = new CodeWriter();
-        writer.AppendLine($"namespace {GeneratedNamespace};");
-        writer.AppendLine();
+        AppendNamespaceStart(writer);
         writer.AppendLine("public static partial class LDD");
         writer.AppendLine("{");
         writer.Indent();
@@ -551,6 +586,7 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("}");
         writer.Outdent();
         writer.AppendLine("}");
+        AppendNamespaceEnd(writer);
         return writer.ToString();
     }
 
@@ -575,7 +611,7 @@ public sealed class LightyWorkbookCodeGenerator
 
         if (primaryKeyFields.Count == 0)
         {
-            throw new LightyCoreException($"Reference target '{target.WorkbookName}.{target.SheetName}' does not define ID or ID1/ID2 primary keys.");
+            throw new LightyCoreException($"Reference target '{target.WorkbookName}.{target.SheetName}' does not define any exportable key column.");
         }
 
         if (primaryKeyFields.Count != referenceValue.Identifiers.Count)
@@ -586,7 +622,7 @@ public sealed class LightyWorkbookCodeGenerator
         var identifierLiterals = string.Join(", ", referenceValue.Identifiers.Select(ToStringLiteral));
         var targetRowTypeName = $"{ToTypeIdentifier(target.SheetName)}Row";
         var resolverExpression = BuildReferenceResolverExpression(target, primaryKeyFields);
-        return $"new DesignDataReference<{targetRowTypeName}>(\"{target.WorkbookName}\", \"{target.SheetName}\", static identifiers => {resolverExpression}, {identifierLiterals})";
+        return $"new DesignDataReference<{targetRowTypeName}>(\"{target.WorkbookName}\", \"{target.SheetName}\", identifiers => {resolverExpression}, {identifierLiterals})";
     }
 
     private static string BuildReferenceResolverExpression(LightyReferenceTarget target, IReadOnlyList<GeneratedFieldModel> primaryKeyFields)
@@ -779,7 +815,7 @@ public sealed class LightyWorkbookCodeGenerator
 
     private static void AppendRowAdd(CodeWriter writer, GeneratedRowModel row, string addCall)
     {
-        writer.AppendLine($"{addCall}(new()");
+        writer.AppendLine($"{addCall}(new {row.RowTypeName}()");
         writer.AppendLine("{");
         writer.Indent();
         AppendScopedItems(writer, row.Assignments, assignment => assignment.Field.ExportScope, (scopedWriter, assignment) =>
@@ -822,6 +858,19 @@ public sealed class LightyWorkbookCodeGenerator
             LightyExportScope.All => null,
             _ => null,
         };
+    }
+
+    private static void AppendNamespaceStart(CodeWriter writer)
+    {
+        writer.AppendLine($"namespace {GeneratedNamespace}");
+        writer.AppendLine("{");
+        writer.Indent();
+    }
+
+    private static void AppendNamespaceEnd(CodeWriter writer)
+    {
+        writer.Outdent();
+        writer.AppendLine("}");
     }
 
     private static string BuildIndexNodeTypeName(GeneratedSheetModel sheet, int level)
@@ -967,7 +1016,7 @@ public sealed class LightyWorkbookCodeGenerator
 
     private sealed record GeneratedFieldAssignment(GeneratedFieldModel Field, string ValueLiteral);
 
-    private sealed record GeneratedRowModel(IReadOnlyList<GeneratedFieldAssignment> Assignments);
+    private sealed record GeneratedRowModel(string RowTypeName, IReadOnlyList<GeneratedFieldAssignment> Assignments);
 
     private sealed class CodeWriter
     {

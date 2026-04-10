@@ -4,6 +4,7 @@ import { DialogBackdrop } from "./DialogBackdrop";
 
 import {
   applyHeaderPropertyInputValue,
+  getHeaderPropertyEditorKind,
   getHeaderPropertyInputValue,
   type HeaderPropertySchema,
   type SheetColumn,
@@ -157,6 +158,7 @@ export function ColumnEditorDialog({
           <div className="column-editor-grid">
             {propertySchemas.map((schema) => {
               const currentValue = draftValues[schema.headerType] ?? "";
+              const editorKind = getHeaderPropertyEditorKind(schema);
 
               return (
                 <label className="search-field column-editor-field" key={schema.headerType}>
@@ -165,7 +167,7 @@ export function ColumnEditorDialog({
                     {schema.required ? " *" : ""}
                   </span>
 
-                  {schema.editorKind === "enum" ? (
+                  {editorKind === "enum" ? (
                     <select
                       className="virtual-cell-input virtual-cell-select"
                       onChange={(event) => {
@@ -186,8 +188,9 @@ export function ColumnEditorDialog({
                     </select>
                   ) : null}
 
-                  {schema.editorKind === "text" ? (
+                  {editorKind === "text" ? (
                     <input
+                      className="virtual-cell-input"
                       onChange={(event) => {
                         setDraftValues((current) => ({
                           ...current,
@@ -201,9 +204,9 @@ export function ColumnEditorDialog({
                     />
                   ) : null}
 
-                  {schema.editorKind === "json" ? (
+                  {editorKind === "json" ? (
                     <textarea
-                      className="column-editor-textarea"
+                      className="virtual-cell-input column-editor-textarea"
                       onChange={(event) => {
                         setDraftValues((current) => ({
                           ...current,

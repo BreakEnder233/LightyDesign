@@ -352,7 +352,12 @@ app.MapPost("/api/workspace/workbooks/create", (CreateWorkbookRequest request) =
     try
     {
         var workspace = LightyWorkspaceLoader.Load(workspacePath);
-        LightyWorkbookScaffolder.CreateDefault(workspacePath, workspace.HeaderLayout, workbookName);
+        LightyWorkbookScaffolder.CreateDefault(
+            workspacePath,
+            workspace.HeaderLayout,
+            workbookName,
+            workspace.CodegenOptions,
+            workspace.CodegenConfigFilePath);
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
         return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
     }
@@ -528,7 +533,7 @@ app.MapPost("/api/workspace/workbooks/sheets/create", (CreateSheetRequest reques
             nextSheets,
             workbook.CodegenOptions,
             workbook.CodegenConfigFilePath);
-        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
+        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook, workspace.CodegenOptions, workspace.CodegenConfigFilePath);
 
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
         return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
@@ -631,7 +636,7 @@ app.MapPost("/api/workspace/workbooks/sheets/delete", (DeleteSheetRequest reques
             nextSheets,
             workbook.CodegenOptions,
             workbook.CodegenConfigFilePath);
-        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
+        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook, workspace.CodegenOptions, workspace.CodegenConfigFilePath);
 
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
         return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
@@ -776,7 +781,7 @@ app.MapPost("/api/workspace/workbooks/sheets/rename", (RenameSheetRequest reques
             nextSheets,
             workbook.CodegenOptions,
             workbook.CodegenConfigFilePath);
-        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
+        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook, workspace.CodegenOptions, workspace.CodegenConfigFilePath);
 
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
         return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
@@ -829,39 +834,14 @@ app.MapPost("/api/workspace/workbooks/codegen/config", (SaveWorkbookCodegenConfi
         });
     }
 
-    if (string.IsNullOrWhiteSpace(request.WorkbookName))
-    {
-        return Results.BadRequest(new
-        {
-            error = "workbookName is required.",
-        });
-    }
-
     var workspacePath = request.WorkspacePath.Trim();
-    var workbookName = request.WorkbookName.Trim();
 
     try
     {
         var workspace = LightyWorkspaceLoader.Load(workspacePath);
-        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
-        {
-            return Results.NotFound(new
-            {
-                error = $"Workbook '{workbookName}' was not found.",
-                workspacePath,
-            });
-        }
-
         var codegenOptions = new LightyWorkbookCodegenOptions(request.OutputRelativePath);
         GeneratedCodeOutputWriter.ValidateWorkbookCodegenOutputRelativePath(workspace.RootPath, codegenOptions.OutputRelativePath, allowEmpty: true);
-
-        var updatedWorkbook = new LightyWorkbook(
-            workbook.Name,
-            workbook.DirectoryPath,
-            workbook.Sheets,
-            codegenOptions,
-            workbook.CodegenConfigFilePath);
-        LightyWorkbookWriter.Save(workspacePath, workspace.HeaderLayout, updatedWorkbook);
+        LightyWorkbookCodegenOptionsSerializer.SaveToFile(workspace.CodegenConfigFilePath, codegenOptions);
 
         var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
         return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
@@ -1180,9 +1160,10 @@ app.MapPost("/api/workspace/workbooks/save", (SaveWorkbookRequest request) =>
 
     try
     {
+        var workspace = LightyWorkspaceLoader.Load(request.WorkspacePath);
         var headerLayout = WorkspaceHeaderLayoutSerializer.LoadFromFile(headersFilePath);
         var workbook = MapToWorkbook(request.Workbook, request.WorkspacePath);
-        LightyWorkbookWriter.Save(request.WorkspacePath, headerLayout, workbook);
+        LightyWorkbookWriter.Save(request.WorkspacePath, headerLayout, workbook, workspace.CodegenOptions, workspace.CodegenConfigFilePath);
 
         return Results.Ok(ToWorkbookResponse(workbook, previewOnly: false));
     }
@@ -1342,6 +1323,7 @@ static object ToWorkspaceNavigationResponse(LightyWorkspace workspace)
         workspace.RootPath,
         workspace.ConfigFilePath,
         workspace.HeadersFilePath,
+        codegen = ToWorkspaceCodegenResponse(workspace),
         headerLayout = new
         {
             count = workspace.HeaderLayout.Count,
@@ -1370,6 +1352,14 @@ static object ToWorkbookResponse(LightyWorkbook workbook, bool previewOnly)
         codegen = ToWorkbookCodegenResponse(workbook),
         previewOnly,
         sheets = workbook.Sheets.Select(ToSheetResponse),
+    };
+}
+
+static object ToWorkspaceCodegenResponse(LightyWorkspace workspace)
+{
+    return new
+    {
+        outputRelativePath = workspace.CodegenOptions.OutputRelativePath,
     };
 }
 
@@ -1604,8 +1594,6 @@ sealed class RenameSheetRequest
 sealed class SaveWorkbookCodegenConfigRequest
 {
     public string WorkspacePath { get; set; } = string.Empty;
-
-    public string WorkbookName { get; set; } = string.Empty;
 
     public string? OutputRelativePath { get; set; }
 }

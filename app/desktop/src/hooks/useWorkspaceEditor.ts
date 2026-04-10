@@ -70,6 +70,10 @@ function removeSheetTabs(openTabs: SheetTab[], workbookName: string, sheetName: 
   return openTabs.filter((tab) => !(tab.workbookName === workbookName && tab.sheetName === sheetName));
 }
 
+function getDirtyTabs(openTabs: SheetTab[], sheetStateMap: Record<string, SheetLoadState>) {
+  return openTabs.filter((tab) => sheetStateMap[tab.id]?.dirty);
+}
+
 function renameSheetTabs(openTabs: SheetTab[], workbookName: string, sheetName: string, newSheetName: string) {
   return openTabs.map((tab) => {
     if (tab.workbookName !== workbookName || tab.sheetName !== sheetName) {
@@ -496,7 +500,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         if (!search || workbook.name.toLocaleLowerCase().includes(search) || sheets.length > 0) {
           return {
             name: workbook.name,
-            outputRelativePath: workbook.codegen.outputRelativePath,
+            outputRelativePath: workspace.codegen.outputRelativePath,
             sheets,
           };
         }
@@ -585,6 +589,22 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
       return nextTabs;
     });
+  }
+
+  function closeAllTabs() {
+    const dirtyTabs = getDirtyTabs(openTabs, sheetStateMap);
+    if (dirtyTabs.length > 0) {
+      const shouldClose = window.confirm(`当前有 ${dirtyTabs.length} 个表格存在未保存修改，确认全部关闭吗？`);
+      if (!shouldClose) {
+        return false;
+      }
+    }
+
+    setOpenTabs([]);
+    setActiveTabId(null);
+    setSheetStateMap({});
+    setSheetFilter("");
+    return true;
   }
 
   async function chooseWorkspaceDirectory() {
@@ -1175,7 +1195,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     }
   }
 
-  async function saveWorkbookCodegenOptions(workbookName: string, outputRelativePath: string) {
+  async function saveWorkspaceCodegenOptions(outputRelativePath: string) {
     if (!hostInfo || !workspacePath) {
       emitToast({
         title: "无法保存代码生成配置",
@@ -1198,7 +1218,6 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
           },
           body: JSON.stringify({
             workspacePath,
-            workbookName,
             outputRelativePath,
           }),
         },
@@ -1208,7 +1227,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       setWorkspaceStatus("ready");
       setWorkspaceError(null);
       emitToast({
-        title: `代码生成配置已保存: ${workbookName}`,
+        title: "代码生成配置已保存",
         detail: outputRelativePath.trim() ? `输出相对路径: ${outputRelativePath.trim()}` : "已清空输出相对路径。",
         source: "workspace",
         variant: "success",
@@ -1289,6 +1308,101 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       const errorMessage = error instanceof Error ? error.message : "导出代码失败。";
       emitToast({
         title: "导出代码失败",
+        detail: errorMessage,
+        source: "save",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
+  async function exportAllWorkbookCode() {
+    if (!hostInfo || !workspacePath || !workspace) {
+      emitToast({
+        title: "无法导出代码",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    if (workspace.workbooks.length === 0) {
+      emitToast({
+        title: "无法导出代码",
+        detail: "当前工作区没有可导出的工作簿。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    if (!workspace.codegen.outputRelativePath?.trim()) {
+      emitToast({
+        title: "无法导出全部代码",
+        detail: "当前工作区尚未配置代码导出路径。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const dirtyWorkbookNames = Array.from(new Set(getDirtyTabs(openTabs, sheetStateMap).map((tab) => tab.workbookName)));
+    if (dirtyWorkbookNames.length > 0) {
+      emitToast({
+        title: "无法导出全部代码",
+        detail: `以下工作簿存在未保存修改：${dirtyWorkbookNames.join("、")}。请先保存后再导出。`,
+        source: "save",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    const results: WorkbookCodegenExportResponse[] = [];
+
+    try {
+      for (const workbook of workspace.workbooks) {
+        const result = await fetchJson<WorkbookCodegenExportResponse>(
+          `${hostInfo.desktopHostUrl}/api/workspace/workbooks/codegen/export`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              workspacePath,
+              workbookName: workbook.name,
+            }),
+          },
+        );
+
+        results.push(result);
+      }
+
+      const totalFileCount = results.reduce((count, result) => count + result.fileCount, 0);
+      emitToast({
+        title: "全部工作簿代码导出成功",
+        detail: `已导出 ${results.length} 个工作簿，共生成 ${totalFileCount} 个文件。`,
+        source: "save",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 5000,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "导出全部代码失败。";
+      emitToast({
+        title: "导出全部代码失败",
         detail: errorMessage,
         source: "save",
         variant: "error",
@@ -2120,6 +2234,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     hasDirtyChanges,
     openSheet,
     closeTab,
+    closeAllTabs,
     chooseParentDirectoryForWorkspaceCreation,
     createWorkspace,
     createWorkbook,
@@ -2127,8 +2242,9 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     createSheet,
     deleteSheet,
     renameSheet,
-    saveWorkbookCodegenOptions,
+    saveWorkspaceCodegenOptions,
     exportWorkbookCode,
+    exportAllWorkbookCode,
     chooseWorkspaceDirectory,
     closeWorkspace,
     retryWorkspaceLoad,

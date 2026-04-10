@@ -9,7 +9,9 @@ public sealed class LightyWorkspace
         string configFilePath,
         string headersFilePath,
         WorkspaceHeaderLayout headerLayout,
-        IEnumerable<LightyWorkbook> workbooks)
+        IEnumerable<LightyWorkbook> workbooks,
+        LightyWorkbookCodegenOptions? codegenOptions = null,
+        string? codegenConfigFilePath = null)
     {
         if (string.IsNullOrWhiteSpace(rootPath))
         {
@@ -29,11 +31,17 @@ public sealed class LightyWorkspace
         ArgumentNullException.ThrowIfNull(headerLayout);
         ArgumentNullException.ThrowIfNull(workbooks);
 
+        var resolvedWorkbooks = workbooks.ToList().AsReadOnly();
+
         RootPath = rootPath;
         ConfigFilePath = configFilePath;
         HeadersFilePath = headersFilePath;
         HeaderLayout = headerLayout;
-        _workbooks = workbooks.ToList().AsReadOnly();
+        _workbooks = resolvedWorkbooks;
+        CodegenOptions = codegenOptions ?? resolvedWorkbooks.FirstOrDefault()?.CodegenOptions ?? new LightyWorkbookCodegenOptions();
+        CodegenConfigFilePath = string.IsNullOrWhiteSpace(codegenConfigFilePath)
+            ? Path.Combine(rootPath, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)
+            : codegenConfigFilePath;
     }
 
     public string RootPath { get; }
@@ -43,6 +51,10 @@ public sealed class LightyWorkspace
     public string HeadersFilePath { get; }
 
     public WorkspaceHeaderLayout HeaderLayout { get; }
+
+    public string CodegenConfigFilePath { get; }
+
+    public LightyWorkbookCodegenOptions CodegenOptions { get; }
 
     public IReadOnlyList<LightyWorkbook> Workbooks => _workbooks;
 

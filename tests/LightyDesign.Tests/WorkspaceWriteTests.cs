@@ -124,7 +124,7 @@ public class WorkspaceWriteTests
             Assert.Equal(2, reloadedSheet.Header.Count);
             Assert.NotNull(reloadedWorkbook.CodegenOptions);
             Assert.Null(reloadedWorkbook.CodegenOptions.OutputRelativePath);
-            Assert.True(File.Exists(Path.Combine(workspaceRoot, "Item", LightyWorkbookCodegenOptionsSerializer.DefaultFileName)));
+            Assert.True(File.Exists(Path.Combine(workspaceRoot, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)));
         }
         finally
         {
@@ -232,7 +232,10 @@ public class WorkspaceWriteTests
             var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
             var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks);
 
+            Assert.True(File.Exists(Path.Combine(workspaceRoot, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)));
+            Assert.False(File.Exists(Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)));
             Assert.Equal("Generated/Config", reloadedWorkbook.CodegenOptions.OutputRelativePath);
+            Assert.Equal("Generated/Config", reloadedWorkspace.CodegenOptions.OutputRelativePath);
         }
         finally
         {

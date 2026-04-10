@@ -16,9 +16,11 @@ public static class LightyWorkspaceScaffolder
 
         var configFilePath = Path.Combine(workspaceRootPath, "config.json");
         var headersFilePath = Path.Combine(workspaceRootPath, "headers.json");
+        var codegenConfigFilePath = Path.Combine(workspaceRootPath, LightyWorkbookCodegenOptionsSerializer.DefaultFileName);
 
         File.WriteAllText(configFilePath, "{}\n");
         WorkspaceHeaderLayoutSerializer.SaveToFile(headersFilePath, resolvedHeaderLayout);
+        LightyWorkbookCodegenOptionsSerializer.SaveToFile(codegenConfigFilePath, new LightyWorkbookCodegenOptions());
 
         return LightyWorkspaceLoader.Load(workspaceRootPath);
     }

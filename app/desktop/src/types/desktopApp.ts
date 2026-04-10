@@ -19,6 +19,23 @@ export type HeaderPropertySchema = {
   options: string[];
 };
 
+export function getHeaderPropertyEditorKind(schema: HeaderPropertySchema): HeaderPropertyEditorKind {
+  if (schema.editorKind === "json") {
+    return "json";
+  }
+
+  if (
+    schema.editorKind === "enum" ||
+    schema.valueType === "enum" ||
+    schema.options.length > 0 ||
+    (schema.bindingSource === "attribute" && schema.bindingKey === "ExportScope")
+  ) {
+    return "enum";
+  }
+
+  return "text";
+}
+
 export type SheetColumn = {
   fieldName: string;
   type: string;
@@ -61,6 +78,9 @@ export type WorkspaceNavigationResponse = {
   rootPath: string;
   configFilePath: string;
   headersFilePath: string;
+  codegen: {
+    outputRelativePath?: string | null;
+  };
   headerLayout: {
     count: number;
     rows: HeaderLayoutRow[];
@@ -297,7 +317,7 @@ function getFieldValue(column: SheetColumn, bindingKey: string) {
 function parseHeaderPropertyInputValue(schema: HeaderPropertySchema, inputValue: string) {
   const trimmedValue = inputValue.trim();
 
-  if (schema.editorKind !== "json") {
+  if (getHeaderPropertyEditorKind(schema) !== "json") {
     return trimmedValue;
   }
 

@@ -93,6 +93,15 @@ public class GeneratedCodeOutputWriterTests
         }
     }
 
+    [Fact]
+    public void ValidateWorkbookCodegenOutputRelativePath_ShouldAllowRelativePathOutsideWorkspaceRoot()
+    {
+        var workspaceRoot = Path.Combine(Path.GetTempPath(), "LightyDesign.Tests.Workspace");
+        var outputPath = GeneratedCodeOutputWriter.ValidateWorkbookCodegenOutputRelativePath(workspaceRoot, "../Shared/Codegen", allowEmpty: false);
+
+        Assert.Equal(Path.GetFullPath(Path.Combine(workspaceRoot, "../Shared/Codegen")), outputPath);
+    }
+
     private static string CreateWorkspaceDirectory()
     {
         return Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");

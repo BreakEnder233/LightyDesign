@@ -13,6 +13,7 @@ public static class LightyWorkspaceLoader
 
         var configFilePath = Path.Combine(rootPath, "config.json");
         var headersFilePath = Path.Combine(rootPath, "headers.json");
+        var codegenConfigFilePath = Path.Combine(rootPath, LightyWorkbookCodegenOptionsSerializer.DefaultFileName);
 
         if (!File.Exists(headersFilePath))
         {
@@ -20,22 +21,24 @@ public static class LightyWorkspaceLoader
         }
 
         var headerLayout = WorkspaceHeaderLayoutSerializer.LoadFromFile(headersFilePath);
-        var workbooks = Directory
-            .EnumerateDirectories(rootPath)
-            .Select(LoadWorkbook)
-            .OrderBy(workbook => workbook.Name, StringComparer.Ordinal)
-            .ToList();
-
-        return new LightyWorkspace(rootPath, configFilePath, headersFilePath, headerLayout, workbooks);
-    }
-
-    private static LightyWorkbook LoadWorkbook(string workbookDirectory)
-    {
-        var workbookName = Path.GetFileName(workbookDirectory);
-        var codegenConfigFilePath = Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName);
         var codegenOptions = File.Exists(codegenConfigFilePath)
             ? LightyWorkbookCodegenOptionsSerializer.LoadFromFile(codegenConfigFilePath)
             : new LightyWorkbookCodegenOptions();
+        var workbooks = Directory
+            .EnumerateDirectories(rootPath)
+            .Select(workbookDirectory => LoadWorkbook(workbookDirectory, codegenOptions, codegenConfigFilePath))
+            .OrderBy(workbook => workbook.Name, StringComparer.Ordinal)
+            .ToList();
+
+        return new LightyWorkspace(rootPath, configFilePath, headersFilePath, headerLayout, workbooks, codegenOptions, codegenConfigFilePath);
+    }
+
+    private static LightyWorkbook LoadWorkbook(
+        string workbookDirectory,
+        LightyWorkbookCodegenOptions codegenOptions,
+        string codegenConfigFilePath)
+    {
+        var workbookName = Path.GetFileName(workbookDirectory);
         var sheets = Directory
             .EnumerateFiles(workbookDirectory, "*.txt", SearchOption.TopDirectoryOnly)
             .Select(dataFilePath => LoadSheet(workbookDirectory, dataFilePath))

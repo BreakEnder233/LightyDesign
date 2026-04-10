@@ -19,6 +19,7 @@ type CopiedSelectionSnapshot = {
 };
 
 type ToolbarMenuId = "file" | "edit" | "table";
+type CodegenDialogMode = "single" | "all";
 
 const defaultColumnWidth = 140;
 const minColumnWidth = 88;
@@ -175,6 +176,7 @@ function App() {
     hasDirtyChanges,
     openSheet,
     closeTab,
+    closeAllTabs,
     chooseParentDirectoryForWorkspaceCreation,
     createWorkspace,
     createWorkbook,
@@ -182,8 +184,9 @@ function App() {
     createSheet,
     deleteSheet,
     renameSheet,
-    saveWorkbookCodegenOptions,
+    saveWorkspaceCodegenOptions,
     exportWorkbookCode,
+    exportAllWorkbookCode,
     chooseWorkspaceDirectory,
     closeWorkspace,
     retryWorkspaceLoad,
@@ -284,6 +287,7 @@ function App() {
   const [sheetDialogWorkbookName, setSheetDialogWorkbookName] = useState<string | null>(null);
   const [renameSheetTarget, setRenameSheetTarget] = useState<{ workbookName: string; sheetName: string } | null>(null);
   const [codegenWorkbookName, setCodegenWorkbookName] = useState<string | null>(null);
+  const [codegenDialogMode, setCodegenDialogMode] = useState<CodegenDialogMode>("single");
   const renameSheetInputRef = useRef<HTMLInputElement | null>(null);
   const codegenOutputInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedCell, setSelectedCell] = useState<SheetSelection | null>(null);
@@ -296,6 +300,11 @@ function App() {
   const [editingColumnIndex, setEditingColumnIndex] = useState<number | null>(null);
   const [openToolbarMenu, setOpenToolbarMenu] = useState<ToolbarMenuId | null>(null);
   const [focusedWorkbookName, setFocusedWorkbookName] = useState<string | null>(null);
+  const [workbookContextMenu, setWorkbookContextMenu] = useState<{
+    workbookName: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [sheetContextMenu, setSheetContextMenu] = useState<{
     workbookName: string;
     sheetName: string;
@@ -312,6 +321,7 @@ function App() {
   const focusedWorkbookSheets = focusedWorkbook?.sheets ?? [];
   const canCreateSheet = workspaceStatus === "ready" && Boolean(focusedWorkbookName);
   const canCloseWorkspace = Boolean(workspacePath);
+  const workspaceCodegenOutputRelativePath = workspace?.codegen.outputRelativePath ?? "";
 
   function handleToolbarMenuHover(menuId: ToolbarMenuId) {
     if (!openToolbarMenu || openToolbarMenu === menuId) {
@@ -330,13 +340,24 @@ function App() {
   }
 
   function handleFocusWorkbook(workbookName: string) {
+    if (focusedWorkbookName && focusedWorkbookName !== workbookName) {
+      const closed = closeAllTabs();
+      if (!closed) {
+        return;
+      }
+    }
+
     setFocusedWorkbookName(workbookName);
+    setWorkbookContextMenu(null);
+    setSheetContextMenu(null);
   }
 
   function handleCloseWorkspace() {
     const closed = closeWorkspace();
     if (closed) {
       setFocusedWorkbookName(null);
+      setWorkbookContextMenu(null);
+      setSheetContextMenu(null);
     }
   }
 
@@ -481,7 +502,29 @@ function App() {
   }
 
   function handleDeleteColumn(columnIndex: number) {
+    if (activeSheetColumns.length <= 1) {
+      return;
+    }
+
     deleteColumn(columnIndex);
+
+    if (filteredRowEntries.length === 0) {
+      setSelectedCell(null);
+      setSelectionAnchor(null);
+      return;
+    }
+
+    const nextColumnIndex = Math.max(0, Math.min(columnIndex, activeSheetColumns.length - 2));
+    const fallbackRowIndex = selectedCell?.rowIndex ?? filteredRowEntries[0].rowIndex;
+    const nextRowIndex = filteredRowEntries.some((entry) => entry.rowIndex === fallbackRowIndex)
+      ? fallbackRowIndex
+      : filteredRowEntries[0].rowIndex;
+    const nextSelection = {
+      rowIndex: nextRowIndex,
+      columnIndex: nextColumnIndex,
+    };
+
+    applySelectionRange(nextSelection, nextSelection);
   }
 
   function handleInsertCopiedColumns(atColumnIndex: number) {
@@ -522,6 +565,7 @@ function App() {
     setSheetDialogWorkbookName(workbookName);
     setNewSheetName("NewSheet");
     setIsCreateSheetDialogOpen(true);
+    setWorkbookContextMenu(null);
     setSheetContextMenu(null);
   }
 
@@ -547,10 +591,25 @@ function App() {
     await deleteSheet(workbookName, sheetName);
   }
 
+  function handleOpenWorkbookContextMenu(event: React.MouseEvent<HTMLButtonElement>, workbookName: string) {
+    event.preventDefault();
+    setWorkbookContextMenu({
+      workbookName,
+      x: event.clientX,
+      y: event.clientY,
+    });
+    setSheetContextMenu(null);
+  }
+
+  function handleCloseWorkbookContextMenu() {
+    setWorkbookContextMenu(null);
+  }
+
   function handleOpenRenameSheetDialog(workbookName: string, sheetName: string) {
     setRenameSheetTarget({ workbookName, sheetName });
     setRenameSheetName(sheetName);
     setIsRenameSheetDialogOpen(true);
+    setWorkbookContextMenu(null);
     setSheetContextMenu(null);
   }
 
@@ -579,6 +638,7 @@ function App() {
       x: event.clientX,
       y: event.clientY,
     });
+    setWorkbookContextMenu(null);
   }
 
   function handleCloseSheetContextMenu() {
@@ -586,25 +646,23 @@ function App() {
   }
 
   function handleConvertWorkbookCode(workbookName: string) {
-    const targetWorkbook = workspace?.workbooks.find((workbook) => workbook.name === workbookName) ?? null;
     setFocusedWorkbookName(workbookName);
+    setCodegenDialogMode("single");
     setCodegenWorkbookName(workbookName);
-    setCodegenOutputRelativePath(targetWorkbook?.codegen.outputRelativePath ?? "");
+    setCodegenOutputRelativePath(workspaceCodegenOutputRelativePath);
     setIsCodegenDialogOpen(true);
+    setWorkbookContextMenu(null);
   }
 
   function handleCloseCodegenDialog() {
     setIsCodegenDialogOpen(false);
+    setCodegenDialogMode("single");
     setCodegenWorkbookName(null);
     setCodegenOutputRelativePath("");
   }
 
-  async function handleSaveWorkbookCodegenConfig() {
-    if (!codegenWorkbookName) {
-      return;
-    }
-
-    const saved = await saveWorkbookCodegenOptions(codegenWorkbookName, codegenOutputRelativePath);
+  async function handleSaveWorkspaceCodegenConfig() {
+    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath);
     if (saved) {
       handleCloseCodegenDialog();
     }
@@ -615,7 +673,7 @@ function App() {
       return;
     }
 
-    const saved = await saveWorkbookCodegenOptions(codegenWorkbookName, codegenOutputRelativePath);
+    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath);
     if (!saved) {
       return;
     }
@@ -624,6 +682,32 @@ function App() {
     if (exported) {
       handleCloseCodegenDialog();
     }
+  }
+
+  async function handleConfirmExportAllWorkbookCode() {
+    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath);
+    if (!saved) {
+      return;
+    }
+
+    const exported = await exportAllWorkbookCode();
+    if (exported) {
+      handleCloseCodegenDialog();
+    }
+  }
+
+  async function handleExportAllWorkbookCode() {
+    closeToolbarMenu();
+
+    if (!workspaceCodegenOutputRelativePath.trim()) {
+      setCodegenDialogMode("all");
+      setCodegenWorkbookName(null);
+      setCodegenOutputRelativePath("");
+      setIsCodegenDialogOpen(true);
+      return;
+    }
+
+    await exportAllWorkbookCode();
   }
 
   async function handleChooseCodegenOutputDirectory() {
@@ -1205,7 +1289,7 @@ function App() {
     return matrix.map((row) => row.join("\t")).join("\n");
   }
 
-  function handlePasteSelection(startRowIndex: number, startColumnIndex: number, clipboardText: string) {
+  async function handlePasteSelection(startRowIndex: number, startColumnIndex: number, clipboardText: string) {
     if (!activeSheetData) {
       return;
     }
@@ -1253,6 +1337,14 @@ function App() {
 
     setSelectionAnchor({ rowIndex: startRowIndex, columnIndex: startColumnIndex });
     setSelectedCell({ rowIndex: lastVisibleRow.rowIndex, columnIndex: lastColumnIndex });
+
+    setCopiedSelectionSnapshot(null);
+
+    try {
+      await navigator.clipboard.writeText("");
+    } catch {
+      // Ignore clipboard cleanup failures after paste.
+    }
   }
 
   function handleFormulaBarChange(nextValue: string) {
@@ -1521,7 +1613,7 @@ function App() {
   }, [isCodegenDialogOpen]);
 
   useEffect(() => {
-    if (!sheetContextMenu) {
+    if (!sheetContextMenu && !workbookContextMenu) {
       return;
     }
 
@@ -1531,11 +1623,13 @@ function App() {
         return;
       }
 
+      setWorkbookContextMenu(null);
       setSheetContextMenu(null);
     };
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        setWorkbookContextMenu(null);
         setSheetContextMenu(null);
       }
     };
@@ -1547,7 +1641,7 @@ function App() {
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [sheetContextMenu]);
+  }, [sheetContextMenu, workbookContextMenu]);
 
   function handleCloseFreezeDialog() {
     setIsFreezeDialogOpen(false);
@@ -1787,10 +1881,10 @@ function App() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      void handleExportWorkbookCode();
+                      void (codegenDialogMode === "all" ? handleConfirmExportAllWorkbookCode() : handleExportWorkbookCode());
                     }
                   }}
-                  placeholder="例如 Generated/Config"
+                  placeholder="例如 Generated/Config 或 ../Shared/Generated"
                   type="text"
                   value={codegenOutputRelativePath}
                 />
@@ -1801,7 +1895,7 @@ function App() {
                   className="secondary-button"
                   disabled={!canChooseWorkspaceDirectory || !workspacePath}
                   onClick={() => void handleChooseCodegenOutputDirectory()}
-                  title={canChooseWorkspaceDirectory ? "选择工作区中的输出目录" : bridgeError ?? "当前环境不支持原生目录选择"}
+                  title={canChooseWorkspaceDirectory ? "选择与工作区同盘符的输出目录" : bridgeError ?? "当前环境不支持原生目录选择"}
                   type="button"
                 >
                   选择文件夹
@@ -1809,7 +1903,7 @@ function App() {
               </div>
 
               <p className="workspace-create-path-label codegen-dialog-caption">
-                路径相对于工作区根目录；点击“导出代码”时会先保存配置，再执行导出。
+                路径相对于工作区根目录，可以使用 ../ 输出到工作区外；点击导出时会先保存工作区级配置，再执行导出。
               </p>
             </div>
 
@@ -1817,11 +1911,15 @@ function App() {
               <button className="secondary-button" onClick={handleCloseCodegenDialog} type="button">
                 取消
               </button>
-              <button className="secondary-button" onClick={() => void handleSaveWorkbookCodegenConfig()} type="button">
+              <button className="secondary-button" onClick={() => void handleSaveWorkspaceCodegenConfig()} type="button">
                 保存配置
               </button>
-              <button className="primary-button" onClick={() => void handleExportWorkbookCode()} type="button">
-                导出代码
+              <button
+                className="primary-button"
+                onClick={() => void (codegenDialogMode === "all" ? handleConfirmExportAllWorkbookCode() : handleExportWorkbookCode())}
+                type="button"
+              >
+                {codegenDialogMode === "all" ? "导出全部代码" : "导出代码"}
               </button>
             </div>
           </div>
@@ -1996,6 +2094,13 @@ function App() {
                       if (focusedWorkbookName) {
                         handleConvertWorkbookCode(focusedWorkbookName);
                       }
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "导出所有工作簿代码",
+                    disabled: workspaceStatus !== "ready" || (workspace?.workbooks.length ?? 0) === 0,
+                    onClick: () => {
+                      void handleExportAllWorkbookCode();
                     },
                   })}
                 </>)}
@@ -2293,53 +2398,14 @@ function App() {
                   className={`tree-workbook-card${focusedWorkbookName === workbook.name ? " is-selected" : ""}`}
                   key={workbook.name}
                   onClick={() => handleFocusWorkbook(workbook.name)}
+                  onContextMenu={(event) => handleOpenWorkbookContextMenu(event, workbook.name)}
                   type="button"
                 >
                   <div className="tree-workbook-header">
                     <div className="tree-workbook-title">
                       <strong>{workbook.name}</strong>
-                      <span>{workbook.sheets.length} 个表格</span>
-                    </div>
-                    <div className="tree-workbook-actions">
-                      <button
-                        className="secondary-button tree-workbook-action"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleOpenCreateSheetDialog(workbook.name);
-                        }}
-                        type="button"
-                      >
-                        新建表格
-                      </button>
-                      <button
-                        className="secondary-button tree-workbook-action"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleConvertWorkbookCode(workbook.name);
-                        }}
-                        type="button"
-                      >
-                        转换代码
-                      </button>
-                      <button
-                        aria-label={`删除工作簿 ${workbook.name}`}
-                        className="tree-workbook-delete"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void deleteWorkbook(workbook.name);
-                        }}
-                        type="button"
-                      >
-                        删除
-                      </button>
                     </div>
                   </div>
-
-                  <p className="tree-workbook-summary">
-                    {workbook.sheets.length > 0
-                      ? `包含 ${workbook.sheets.length} 个表格，当前可在主编辑区底部切换。`
-                      : "当前工作簿还没有表格。"}
-                  </p>
                 </button>
               ))}
             </div>
@@ -2349,6 +2415,45 @@ function App() {
 
       <main className="workspace-main">
         <section className="editor-panel">
+          {workspaceStatus === "ready" && focusedWorkbook ? (
+            <section className="sheet-selector-panel">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Tables</p>
+                  <h2>{focusedWorkbook.name}</h2>
+                </div>
+                <span className="badge">{focusedWorkbookSheets.length} 个表格</span>
+              </div>
+
+              {focusedWorkbookSheets.length === 0 ? (
+                <div className="table-empty-panel">
+                  <strong>当前工作簿还没有表格</strong>
+                  <p>可以从文件菜单或工作簿右键菜单新建表格。</p>
+                </div>
+              ) : (
+                <div className="sheet-selector-grid">
+                  {focusedWorkbookSheets.map((sheet) => {
+                    const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
+                    const isActive = activeTabId === tabId;
+
+                    return (
+                      <button
+                        className={`sheet-selector-button${isActive ? " is-active" : ""}`}
+                        key={tabId}
+                        onClick={() => openSheet(sheet.workbookName, sheet.sheetName)}
+                        onContextMenu={(event) => handleOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
+                        type="button"
+                      >
+                        <span className="sheet-selector-name">{sheet.sheetName}</span>
+                        <em>{sheet.columnCount} 列 × {sheet.rowCount} 行</em>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ) : null}
+
           <div className="tab-strip">
             {openTabs.length === 0 ? (
               <div className="tab-strip-empty">打开左侧任意 Sheet 开始编辑。</div>
@@ -2371,7 +2476,7 @@ function App() {
             {!activeTab ? (
               <div className="viewer-empty-state">
                 <strong>暂无已打开的表格</strong>
-                <p>从左侧选择工作簿，再从主编辑区底部按钮组打开表格。</p>
+                <p>从左侧选择工作簿，再从上方表格选单打开表格。</p>
               </div>
             ) : null}
 
@@ -2499,47 +2604,43 @@ function App() {
               </>
             ) : null}
 
-            {workspaceStatus === "ready" && focusedWorkbook ? (
-              <section className="sheet-selector-panel">
-                <div className="section-header">
-                  <div>
-                    <p className="eyebrow">Tables</p>
-                    <h2>{focusedWorkbook.name}</h2>
-                  </div>
-                  <span className="badge">{focusedWorkbookSheets.length} 个表格</span>
-                </div>
-
-                {focusedWorkbookSheets.length === 0 ? (
-                  <div className="table-empty-panel">
-                    <strong>当前工作簿还没有表格</strong>
-                    <p>可以从顶部“表格”菜单或左侧卡片按钮新建表格。</p>
-                  </div>
-                ) : (
-                  <div className="sheet-selector-grid">
-                    {focusedWorkbookSheets.map((sheet) => {
-                      const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
-                      const isActive = activeTabId === tabId;
-
-                      return (
-                        <button
-                          className={`sheet-selector-button${isActive ? " is-active" : ""}`}
-                          key={tabId}
-                          onClick={() => openSheet(sheet.workbookName, sheet.sheetName)}
-                          onContextMenu={(event) => handleOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
-                          type="button"
-                        >
-                          <span className="sheet-selector-name">{sheet.sheetName}</span>
-                          <em>{sheet.columnCount} 列 × {sheet.rowCount} 行</em>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            ) : null}
           </div>
         </section>
       </main>
+
+      {workbookContextMenu ? (
+        <div
+          className="tree-context-menu"
+          onClick={(event) => event.stopPropagation()}
+          role="menu"
+          style={{ left: workbookContextMenu.x, top: workbookContextMenu.y }}
+        >
+          <button
+            className="tree-context-menu-item"
+            onClick={() => handleOpenCreateSheetDialog(workbookContextMenu.workbookName)}
+            type="button"
+          >
+            新建表格
+          </button>
+          <button
+            className="tree-context-menu-item"
+            onClick={() => handleConvertWorkbookCode(workbookContextMenu.workbookName)}
+            type="button"
+          >
+            导出工作簿代码
+          </button>
+          <button
+            className="tree-context-menu-item is-danger"
+            onClick={() => {
+              handleCloseWorkbookContextMenu();
+              void deleteWorkbook(workbookContextMenu.workbookName);
+            }}
+            type="button"
+          >
+            删除工作簿
+          </button>
+        </div>
+      ) : null}
 
       {sheetContextMenu ? (
         <div

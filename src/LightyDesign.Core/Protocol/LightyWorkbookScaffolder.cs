@@ -6,7 +6,12 @@ public static class LightyWorkbookScaffolder
 {
     public const string DefaultSheetName = "Sheet1";
 
-    public static LightyWorkbook CreateDefault(string workspacePath, WorkspaceHeaderLayout headerLayout, string workbookName)
+    public static LightyWorkbook CreateDefault(
+        string workspacePath,
+        WorkspaceHeaderLayout headerLayout,
+        string workbookName,
+        LightyWorkbookCodegenOptions? workspaceCodegenOptions = null,
+        string? workspaceCodegenConfigFilePath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
         ArgumentNullException.ThrowIfNull(headerLayout);
@@ -27,9 +32,11 @@ public static class LightyWorkbookScaffolder
         var workbook = new LightyWorkbook(
             trimmedWorkbookName,
             workbookDirectoryPath,
-            new[] { CreateDefaultSheet(workbookDirectoryPath, sheetName) });
+            new[] { CreateDefaultSheet(workbookDirectoryPath, sheetName) },
+            workspaceCodegenOptions,
+            workspaceCodegenConfigFilePath);
 
-        LightyWorkbookWriter.Save(workspacePath, headerLayout, workbook);
+        LightyWorkbookWriter.Save(workspacePath, headerLayout, workbook, workspaceCodegenOptions, workspaceCodegenConfigFilePath);
         return workbook;
     }
 

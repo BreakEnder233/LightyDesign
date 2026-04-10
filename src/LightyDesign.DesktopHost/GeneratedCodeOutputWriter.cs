@@ -90,13 +90,6 @@ public static class GeneratedCodeOutputWriter
         }
 
         var workspaceRootFullPath = Path.GetFullPath(workspaceRootPath);
-        var combinedFullPath = Path.GetFullPath(Path.Combine(workspaceRootFullPath, trimmed));
-
-        if (!combinedFullPath.StartsWith(workspaceRootFullPath, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new LightyCoreException("Workbook code generation output path cannot escape the workspace root.");
-        }
-
-        return combinedFullPath;
+        return Path.GetFullPath(Path.Combine(workspaceRootFullPath, trimmed));
     }
 }

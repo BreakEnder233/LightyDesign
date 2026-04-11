@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ColumnEditorDialog } from "./components/ColumnEditorDialog";
 import { DialogBackdrop } from "./components/DialogBackdrop";
+import { EditorWorkspaceHeader } from "./components/EditorWorkspaceHeader";
 import { ToastCenter } from "./components/ToastCenter";
 import { VirtualSheetTable } from "./components/VirtualSheetTable";
+import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { useAppUpdates } from "./hooks/useAppUpdates";
 import { useDesktopHostConnection } from "./hooks/useDesktopHostConnection";
 import { isShortcutModifierPressed, useEditorShortcuts } from "./hooks/useEditorShortcuts";
@@ -318,7 +320,6 @@ function App() {
     () => workbookTree.find((workbook) => workbook.name === focusedWorkbookName) ?? null,
     [focusedWorkbookName, workbookTree],
   );
-  const focusedWorkbookSheets = focusedWorkbook?.sheets ?? [];
   const canCreateSheet = workspaceStatus === "ready" && Boolean(focusedWorkbookName);
   const canCloseWorkspace = Boolean(workspacePath);
   const workspaceCodegenOutputRelativePath = workspace?.codegen.outputRelativePath ?? "";
@@ -932,10 +933,6 @@ function App() {
             ? `${activeWorkbookDirtyTabs.length} 个标签未保存`
             : "无未保存更改";
 
-  const sheetStatusText = activeTab && activeSheetData
-    ? `${activeTab.workbookName} / ${activeTab.sheetName} · ${filteredRowEntries.length}/${activeSheetRows.length} 行 · ${activeSheetColumns.length} 列`
-    : "未打开表格";
-
   const selectionRange = useMemo<SheetSelectionRange | null>(() => {
     if (!selectedCell) {
       return null;
@@ -962,6 +959,7 @@ function App() {
   const freezeStatusText = appliedFreezeRowCount > 0 || appliedFreezeColumnCount > 0
     ? `冻结 ${appliedFreezeRowCount} 行 / ${appliedFreezeColumnCount} 列`
     : "未冻结";
+  const canEditActiveSheet = Boolean(activeSheetData);
 
   useEffect(() => {
     if (!activeSheetData || filteredRowEntries.length === 0) {
@@ -2288,161 +2286,57 @@ function App() {
         </div>
       </header>
 
-      <aside className="workspace-sidebar">
-        <div className="brand-block">
-          <p className="eyebrow eyebrow-brand">LightyDesign</p>
-          <p className="workspace-path compact-workspace-path">{workspacePath || "未打开工作区"}</p>
-        </div>
-
-        <section className="sidebar-section workspace-entry-card workspace-summary-card">
-          <div className="section-header">
-            <div>
-              <p className="eyebrow">工作区概览</p>
-            </div>
-            {workspaceStatus === "loading" ? <span className="badge">加载中</span> : null}
-          </div>
-
-          <div className="workspace-stats">
-            <div>
-              <span>工作簿</span>
-              <strong>{workbookTree.length}</strong>
-            </div>
-            <div>
-              <span>表格</span>
-              <strong>{totalSheetCount}</strong>
-            </div>
-            <div>
-              <span>表头</span>
-              <strong>{workspace?.headerLayout.count ?? 0}</strong>
-            </div>
-          </div>
-
-          <p className="workspace-summary-meta">
-            {hasDirtyChanges ? "当前工作区包含未保存修改。" : "当前工作区已同步到界面。"}
-          </p>
-        </section>
-
-        <section className="sidebar-section tree-card">
-          <div className="section-header">
-            <div>
-              <p className="eyebrow">工作簿</p>
-            </div>
-          </div>
-
-          <div className="action-grid compact-grid">
-            <button
-              className="secondary-button"
-              disabled={workspaceStatus !== "ready"}
-              onClick={handleOpenCreateWorkbookDialog}
-              type="button"
-            >
-              新建工作簿
-            </button>
-            <button
-              className="secondary-button"
-              disabled={workspaceStatus === "idle" || workspaceStatus === "loading"}
-              onClick={retryWorkspaceLoad}
-              type="button"
-            >
-              刷新列表
-            </button>
-          </div>
-
-          <label className="search-field compact-field">
-            <span>搜索工作簿或表格</span>
-            <input
-              onChange={(event) => setWorkspaceSearch(event.target.value)}
-              placeholder="例如 Item / Consumable"
-              type="text"
-              value={workspaceSearch}
-            />
-          </label>
-
-          {workspaceStatus === "idle" ? (
-            <div className="empty-panel">
-              <strong>等待工作区</strong>
-              <p>先从顶部“文件”菜单选择一个包含 headers.json 和工作簿目录的工作区。</p>
-            </div>
-          ) : null}
-
-          {workspaceStatus === "error" ? (
-            <div className="empty-panel is-error">
-              <strong>工作区加载失败</strong>
-              <p>{workspaceError ?? "未能读取当前工作区。"}</p>
-              <button className="secondary-button" onClick={retryWorkspaceLoad} type="button">
-                重试
-              </button>
-            </div>
-          ) : null}
-
-          {workspaceStatus === "ready" && workbookTree.length === 0 ? (
-            <div className="empty-panel">
-              <strong>工作区为空</strong>
-              <p>{workspaceSearch ? "当前搜索条件没有匹配结果。" : "已读取 headers.json，但暂未发现任何工作簿或表格。"}</p>
-            </div>
-          ) : null}
-
-          {workspaceStatus === "ready" && workbookTree.length > 0 ? (
-            <div className="tree-list">
-              {workbookTree.map((workbook) => (
-                <button
-                  className={`tree-workbook-card${focusedWorkbookName === workbook.name ? " is-selected" : ""}`}
-                  key={workbook.name}
-                  onClick={() => handleFocusWorkbook(workbook.name)}
-                  onContextMenu={(event) => handleOpenWorkbookContextMenu(event, workbook.name)}
-                  type="button"
-                >
-                  <div className="tree-workbook-header">
-                    <div className="tree-workbook-title">
-                      <strong>{workbook.name}</strong>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </section>
-      </aside>
+      <WorkspaceSidebar
+        focusedWorkbookName={focusedWorkbookName}
+        hasDirtyChanges={hasDirtyChanges}
+        headerCount={workspace?.headerLayout.count ?? 0}
+        onCreateWorkbook={handleOpenCreateWorkbookDialog}
+        onFocusWorkbook={handleFocusWorkbook}
+        onOpenWorkbookContextMenu={handleOpenWorkbookContextMenu}
+        onRetryWorkspaceLoad={retryWorkspaceLoad}
+        onWorkspaceSearchChange={setWorkspaceSearch}
+        totalSheetCount={totalSheetCount}
+        workbookTree={workbookTree}
+        workspaceError={workspaceError}
+        workspacePath={workspacePath}
+        workspaceSearch={workspaceSearch}
+        workspaceStatus={workspaceStatus}
+      />
 
       <main className="workspace-main">
         <section className="editor-panel">
-          {workspaceStatus === "ready" && focusedWorkbook ? (
-            <section className="sheet-selector-panel">
-              <div className="section-header">
-                <div>
-                  <p className="eyebrow">表格列表 / {focusedWorkbook.name}</p>
-                </div>
-                <span className="badge">{focusedWorkbookSheets.length} 个表格</span>
-              </div>
-
-              {focusedWorkbookSheets.length === 0 ? (
-                <div className="table-empty-panel">
-                  <strong>当前工作簿还没有表格</strong>
-                  <p>可以从文件菜单或工作簿右键菜单新建表格。</p>
-                </div>
-              ) : (
-                <div className="sheet-selector-grid">
-                  {focusedWorkbookSheets.map((sheet) => {
-                    const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
-                    const isActive = activeTabId === tabId;
-
-                    return (
-                      <button
-                        className={`sheet-selector-button${isActive ? " is-active" : ""}`}
-                        key={tabId}
-                        onClick={() => openSheet(sheet.workbookName, sheet.sheetName)}
-                        onContextMenu={(event) => handleOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
-                        type="button"
-                      >
-                        <span className="sheet-selector-name">{sheet.sheetName}</span>
-                        <em>{sheet.columnCount} 列 × {sheet.rowCount} 行</em>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          ) : null}
+          <EditorWorkspaceHeader
+            activeSheet={activeTab && activeSheetData ? {
+              sheetName: activeSheetData.metadata.name,
+              workbookName: activeTab.workbookName,
+              columnCount: activeSheetColumns.length,
+              rowCount: activeSheetRows.length,
+              saveStatusText,
+              freezeStatusText,
+              selectionStatusText,
+              dirtyTabCount: activeWorkbookDirtyTabs.length,
+            } : null}
+            activeTabId={activeTabId}
+            canCreateSheet={canCreateSheet}
+            canEditActiveSheet={canEditActiveSheet}
+            canRedoActiveSheet={canRedoActiveSheet}
+            canSaveActiveWorkbook={canSaveActiveWorkbook}
+            canUndoActiveSheet={canUndoActiveSheet}
+            focusedWorkbook={focusedWorkbook}
+            onAppendColumn={handleAppendColumn}
+            onAppendRow={handleAppendRow}
+            onCreateSheet={handleOpenCreateSheetDialog}
+            onOpenFreezeDialog={handleOpenFreezeDialog}
+            onOpenSheet={openSheet}
+            onOpenSheetContextMenu={handleOpenSheetContextMenu}
+            onRedoActiveSheetEdit={redoActiveSheetEdit}
+            onSaveActiveWorkbook={() => {
+              void saveActiveWorkbook();
+            }}
+            onSheetFilterChange={setSheetFilter}
+            onUndoActiveSheetEdit={undoActiveSheetEdit}
+            sheetFilter={sheetFilter}
+          />
 
           <div className="tab-strip">
             {openTabs.length === 0 ? (
@@ -2491,36 +2385,6 @@ function App() {
 
             {activeTab && activeSheetState?.status === "ready" && activeSheetData ? (
               <>
-                <div className="viewer-header">
-                  <div>
-                    <p className="eyebrow">表格 / {activeSheetData.metadata.name}</p>
-                  </div>
-                  <div className="viewer-metadata">
-                    <span>{activeTab.workbookName}</span>
-                    <span>{activeSheetColumns.length} 列</span>
-                    <span>{activeSheetRows.length} 行</span>
-                    <span>{activeWorkbookDirtyTabs.length} 个未保存标签</span>
-                  </div>
-                </div>
-
-                <div className="viewer-toolbar">
-                  <label className="search-field sheet-filter-field compact-field">
-                    <span>筛选当前表格</span>
-                    <input
-                      onChange={(event) => setSheetFilter(event.target.value)}
-                      placeholder="按任意单元格文本过滤"
-                      type="text"
-                      value={sheetFilter}
-                    />
-                  </label>
-
-                  <div className="viewer-toolbar-summary">
-                    <span>工作簿: {focusedWorkbook?.name ?? activeTab.workbookName}</span>
-                    <span>冻结: {freezeStatusText}</span>
-                    <span>保存: {saveStatusText}</span>
-                  </div>
-                </div>
-
                 <div className="sheet-table-topbar">
                   <div className={`sheet-name-box${selectedCell ? "" : " is-empty"}${selectedCellCount > 1 ? " is-range" : ""}`}>{selectedCellAddress}</div>
                   <div className="sheet-formula-shell">
@@ -2530,7 +2394,7 @@ function App() {
                       disabled={!selectedCell}
                       onChange={(event) => handleFormulaBarChange(event.target.value)}
                       placeholder="选择单元格后可直接编辑内容"
-                      rows={3}
+                      rows={2}
                       value={selectedCellValue}
                     />
                     <span className="sheet-formula-meta">{selectedCellDescription}</span>
@@ -2674,7 +2538,7 @@ function App() {
         </div>
         <div className="status-segment is-wide">
           <span className="status-label">表格</span>
-          <strong>{sheetStatusText}</strong>
+          <strong>{activeTab && activeSheetData ? `${activeTab.workbookName} / ${activeSheetData.metadata.name}` : "未打开表格"}</strong>
         </div>
         <div className="status-segment">
           <span className="status-label">选区</span>

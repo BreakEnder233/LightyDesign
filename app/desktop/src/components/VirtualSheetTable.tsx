@@ -54,7 +54,7 @@ type VirtualSheetTableProps = {
   onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
 };
 
-const rowHeight = 34;
+const rowHeight = 30;
 const overscanCount = 12;
 const rowNumberWidth = 56;
 

@@ -41,8 +41,8 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  grid-template-rows: 44px minmax(0, 1fr) auto;
+  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-rows: 40px minmax(0, 1fr) auto;
   height: 100vh;
   background: #1e1e1e;
 }
@@ -52,9 +52,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  padding: 0 10px;
+  padding: 0 8px;
   border-bottom: 1px solid #333333;
   background: #252526;
 }
@@ -76,8 +76,8 @@ button {
 }
 
 .toolbar-menu-trigger {
-  min-height: 30px;
-  padding: 0 12px;
+  min-height: 28px;
+  padding: 0 10px;
   border: 1px solid transparent;
   background: transparent;
   color: #dcdcdc;
@@ -194,8 +194,8 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   border-right: 1px solid #333333;
   background: #252526;
 }
@@ -204,7 +204,7 @@ button {
   grid-row: 2;
   min-width: 0;
   min-height: 0;
-  padding: 8px;
+  padding: 6px;
   background: #1e1e1e;
 }
 
@@ -254,7 +254,7 @@ button {
 
 .workspace-entry-card,
 .tree-card {
-  padding: 10px;
+  padding: 8px;
 }
 
 .workspace-summary-card {
@@ -289,7 +289,6 @@ button {
 }
 
 .section-header .eyebrow,
-.viewer-header .eyebrow,
 .workspace-create-header .eyebrow,
 .error-detail-header .eyebrow {
   margin-bottom: 0;
@@ -408,25 +407,23 @@ button {
   word-break: break-all;
 }
 
-.workspace-stats,
-.viewer-metadata {
+.workspace-stats {
   display: grid;
   gap: 6px;
 }
 
 .workspace-stats {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .workspace-stats div {
-  padding: 6px 8px;
+  padding: 5px 7px;
   border: 1px solid #333333;
   background: #1f1f1f;
 }
 
 .workspace-stats span,
-.viewer-metadata span,
 .tree-workbook-title span,
 .tree-sheet-button em,
 .badge {
@@ -455,14 +452,14 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 8px;
   overflow: auto;
 }
 
 .tree-workbook-card {
   width: 100%;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid #333333;
   background: #1f1f1f;
   color: inherit;
@@ -518,14 +515,6 @@ button {
   color: #f2b8b5;
 }
 
-.viewer-toolbar {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-  margin-top: 8px;
-}
-
 .codegen-dialog-caption {
   margin-top: 10px;
   text-transform: none;
@@ -543,8 +532,8 @@ button {
 .tab-strip {
   display: flex;
   gap: 1px;
-  min-height: 36px;
-  padding: 0 8px;
+  min-height: 32px;
+  padding: 0 6px;
   overflow-x: auto;
   background: #2d2d30;
   border-bottom: 1px solid #3c3c3c;
@@ -560,7 +549,7 @@ button {
 .sheet-tab {
   display: inline-flex;
   align-items: stretch;
-  min-width: 150px;
+  min-width: 136px;
   background: #2d2d30;
   border-left: 1px solid #2d2d30;
   border-right: 1px solid #2d2d30;
@@ -588,7 +577,7 @@ button {
   align-items: flex-start;
   justify-content: center;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 4px 8px;
   color: #cccccc;
   text-align: left;
 }
@@ -600,7 +589,7 @@ button {
 }
 
 .sheet-tab-close {
-  width: 28px;
+  width: 24px;
   color: #8b8b8b;
 }
 
@@ -613,8 +602,8 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
+  gap: 6px;
+  padding: 6px;
 }
 
 .viewer-empty-state,
@@ -635,53 +624,71 @@ button {
   border-color: #5a1d1d;
 }
 
-.viewer-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #333333;
+.editor-status-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, auto) auto minmax(220px, 320px) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 0 6px;
+  padding: 6px 8px;
+  border: 1px solid #3c3c3c;
+  border-radius: 2px;
+  background: #252526;
 }
 
-.viewer-metadata {
+.editor-status-primary,
+.editor-status-chips,
+.editor-status-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 6px;
+  min-width: 0;
 }
 
-.viewer-metadata span {
-  padding: 2px 6px;
+.editor-status-primary strong {
+  font-size: 13px;
+  color: #f3f3f3;
+}
+
+.editor-status-primary span,
+.editor-status-chips span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 6px;
   border: 1px solid #3c3c3c;
   background: #1f1f1f;
+  font-size: 11px;
+  color: #9da0a6;
+  white-space: nowrap;
+}
+
+.editor-status-filter {
+  margin-top: 0;
+}
+
+.editor-status-filter span {
+  font-size: 11px;
+}
+
+.editor-status-filter input {
+  min-height: 24px;
 }
 
 .sheet-filter-field {
   margin-top: 0;
 }
-
-.viewer-toolbar-summary {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.viewer-toolbar-summary span,
 .freeze-summary,
 .freeze-dialog-caption {
   font-size: 11px;
   color: #8b8b8b;
 }
 
-.viewer-toolbar-summary span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 8px;
-  border: 1px solid #3c3c3c;
-  background: #1f1f1f;
+.compact-action-button,
+.compact-sheet-selector-action {
+  min-height: 24px;
+  padding: 2px 8px;
 }
 
 .freeze-summary {
@@ -725,8 +732,8 @@ button {
 
 .sheet-name-box,
 .sheet-formula-shell {
-  min-height: 28px;
-  padding: 5px 8px;
+  min-height: 24px;
+  padding: 4px 6px;
   border: 1px solid #3c3c3c;
   background: #252526;
   color: #dcdcdc;
@@ -751,9 +758,9 @@ button {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   grid-template-rows: auto auto;
-  gap: 6px 8px;
+  gap: 4px 6px;
   align-items: start;
-  padding: 8px;
+  padding: 6px;
 }
 
 .sheet-formula-prefix,
@@ -775,7 +782,7 @@ button {
 
 .sheet-formula-input {
   min-width: 0;
-  min-height: 64px;
+  min-height: 42px;
   border: 0;
   padding: 0;
   color: #dcdcdc;
@@ -803,18 +810,18 @@ button {
 .sheet-selector-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 8px 8px 0;
-  padding: 10px;
+  gap: 6px;
+  margin: 6px 6px 0;
+  padding: 8px;
   border: 1px solid #3c3c3c;
   border-radius: 2px;
   background: #252526;
 }
 
 .sheet-selector-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
 }
 
 .sheet-selector-button {
@@ -822,13 +829,12 @@ button {
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  min-width: 140px;
-  max-width: 220px;
-  padding: 8px 10px;
+  min-height: 52px;
+  padding: 8px;
   border: 1px solid #333333;
   border-radius: 2px;
   background: #1f1f1f;
-  color: #dcdcdc;
+  color: inherit;
   text-align: left;
 }
 
@@ -842,6 +848,10 @@ button {
   background: #09395e;
 }
 
+.sheet-selector-button.is-active em {
+  color: #dcefff;
+}
+
 .sheet-selector-name {
   display: block;
   width: 100%;
@@ -853,6 +863,25 @@ button {
 .sheet-selector-button em {
   font-style: normal;
   font-size: 11px;
+  color: #8b8b8b;
+}
+
+.compact-sheet-selector-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.compact-sheet-selector-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.compact-sheet-selector-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
   color: #8b8b8b;
 }
 
@@ -986,14 +1015,14 @@ button {
 .virtual-header-cell,
 .virtual-row-number,
 .virtual-cell {
-  min-height: 34px;
+  min-height: 30px;
   border-right: 1px solid #3c3c3c;
   border-bottom: 1px solid #333333;
 }
 
 .virtual-header-cell {
   position: relative;
-  padding: 6px 8px;
+  padding: 4px 6px;
   background: #252526;
   color: #dcdcdc;
 }
@@ -1009,7 +1038,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 3px;
+  margin-top: 2px;
   padding-right: 10px;
 }
 
@@ -1066,8 +1095,8 @@ button {
 .virtual-column-resizer::after {
   content: "";
   position: absolute;
-  top: 5px;
-  bottom: 5px;
+  top: 4px;
+  bottom: 4px;
   left: 3px;
   width: 2px;
   background: transparent;
@@ -1101,7 +1130,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0 8px;
+  padding: 0 6px;
 }
 
 .virtual-row-number.is-selected-row {
@@ -1170,7 +1199,7 @@ button {
   width: 100%;
   min-width: 0;
   border: 0;
-  padding: 6px 8px;
+  padding: 4px 6px;
   color: #dcdcdc;
   background: transparent;
 }
@@ -1179,7 +1208,7 @@ button {
   display: block;
   width: 100%;
   overflow: hidden;
-  padding: 6px 8px;
+  padding: 4px 6px;
   color: #dcdcdc;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1576,6 +1605,15 @@ button {
     min-width: 0;
   }
 
+  .editor-status-bar {
+    grid-template-columns: minmax(220px, 1fr) auto;
+  }
+
+  .editor-status-filter,
+  .editor-status-chips {
+    grid-column: 1 / -1;
+  }
+
   .app-shell {
     grid-template-columns: 260px minmax(0, 1fr);
   }
@@ -1592,7 +1630,6 @@ button {
     justify-content: flex-start;
   }
 
-  .viewer-toolbar,
   .sheet-table-topbar,
   .status-bar {
     grid-template-columns: 1fr;
@@ -1600,6 +1637,18 @@ button {
 
   .action-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 980px) {
+  .editor-status-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-status-actions,
+  .editor-status-filter,
+  .editor-status-chips {
+    grid-column: auto;
   }
 }
 

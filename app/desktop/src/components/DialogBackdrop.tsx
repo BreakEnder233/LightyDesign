@@ -3,17 +3,18 @@ import { useRef } from "react";
 interface DialogBackdropProps {
   className: string;
   onClose: () => void;
+  closeOnBackdropClick?: boolean;
   children: React.ReactNode;
 }
 
-export function DialogBackdrop({ className, onClose, children }: DialogBackdropProps) {
+export function DialogBackdrop({ className, onClose, closeOnBackdropClick = false, children }: DialogBackdropProps) {
   const mouseDownOnSelfRef = useRef(false);
 
   return (
     <div
       className={className}
       onMouseDown={(event) => {
-        mouseDownOnSelfRef.current = event.target === event.currentTarget;
+        mouseDownOnSelfRef.current = closeOnBackdropClick && event.target === event.currentTarget;
       }}
       onClick={() => {
         if (mouseDownOnSelfRef.current) {

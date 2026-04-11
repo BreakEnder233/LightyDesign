@@ -49,16 +49,21 @@ public sealed class LightyWorkbookCodeGenerator
 
         foreach (var sheet in generatedSheets)
         {
-            files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{sheet.FileName}.cs", RenderSheetFile(workbook, sheet)));
+            files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{sheet.RowTypeName}.cs", RenderRowFile(sheet)));
+            files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{sheet.TableTypeName}.cs", RenderTableFile(sheet)));
+
+            foreach (var indexNode in BuildIndexNodes(sheet))
+            {
+                files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{indexNode.TypeName}.cs", RenderIndexNodeFile(sheet, indexNode)));
+            }
 
             foreach (var chunk in sheet.DataChunks)
             {
-                files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{chunk.FileName}.cs", RenderSheetDataChunkFile(sheet, chunk)));
+                files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{chunk.TypeName}.cs", RenderSheetDataChunkFile(sheet, chunk)));
             }
         }
 
-        files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{workbook.Name}.cs", RenderWorkbookFile(workbook, generatedSheets)));
-        files.Add(new LightyGeneratedCodeFile("LDD.cs", RenderEntryPointFile(new[] { workbook.Name })));
+        files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{ToTypeIdentifier(workbook.Name)}Workbook.cs", RenderWorkbookFile(workbook, generatedSheets)));
 
         return new LightyGeneratedWorkbookPackage(workspace.CodegenOptions.OutputRelativePath!, files);
     }
@@ -95,7 +100,7 @@ public sealed class LightyWorkbookCodeGenerator
         var rows = sheet.Rows
             .Select((row, rowIndex) => AnalyzeRow(workspace, sheet, row, rowIndex, exportedColumns))
             .ToList();
-        var dataChunks = BuildDataChunks(typeName, rows);
+        var dataChunks = BuildDataChunks($"{typeName}Table", rows);
 
         return new GeneratedSheetModel(
             sheet.Name,
@@ -264,11 +269,10 @@ public sealed class LightyWorkbookCodeGenerator
         };
     }
 
-    private static string RenderSheetFile(LightyWorkbook workbook, GeneratedSheetModel sheet)
+    private static string RenderRowFile(GeneratedSheetModel sheet)
     {
         var writer = new CodeWriter();
         writer.AppendLine("using System.Collections.Generic;");
-        writer.AppendLine("using System.Linq;");
         writer.AppendLine();
         AppendNamespaceStart(writer);
         writer.AppendLine($"public sealed partial class {sheet.RowTypeName}");
@@ -286,8 +290,65 @@ public sealed class LightyWorkbookCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
+        AppendNamespaceEnd(writer);
 
-        writer.Append(RenderTableClass(sheet));
+        return writer.ToString();
+    }
+
+    private static string RenderTableFile(GeneratedSheetModel sheet)
+    {
+        var writer = new CodeWriter();
+        var indexAvailabilityScope = ResolveIndexAvailabilityScope(sheet.PrimaryKeyFields);
+        writer.AppendLine("using System.Collections.Generic;");
+        writer.AppendLine("using System.Linq;");
+        writer.AppendLine();
+        AppendNamespaceStart(writer);
+        writer.AppendLine($"public sealed partial class {sheet.TableTypeName}");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine($"private readonly IReadOnlyList<{sheet.RowTypeName}> _rows;");
+
+        AppendIndexMembers(writer, sheet, indexAvailabilityScope);
+
+        writer.AppendLine();
+        writer.AppendLine($"private {sheet.TableTypeName}(IReadOnlyList<{sheet.RowTypeName}> rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("_rows = rows;");
+
+        AppendIndexConstructorBody(writer, sheet, indexAvailabilityScope);
+
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"public IReadOnlyList<{sheet.RowTypeName}> Rows => _rows;");
+
+        AppendIndexAccessor(writer, sheet, indexAvailabilityScope);
+
+        writer.AppendLine();
+        writer.AppendLine($"internal static {sheet.TableTypeName} Create()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine($"var rows = new List<{sheet.RowTypeName}>();");
+        if (sheet.UsesChunkedDataInitialization)
+        {
+            foreach (var chunk in sheet.DataChunks)
+            {
+                writer.AppendLine($"{chunk.TypeName}.Append(rows);");
+            }
+        }
+        else
+        {
+            foreach (var row in sheet.Rows)
+            {
+                AppendRowAdd(writer, row, "rows.Add");
+            }
+        }
+        writer.AppendLine($"return new {sheet.TableTypeName}(rows);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
         AppendNamespaceEnd(writer);
 
         return writer.ToString();
@@ -299,10 +360,10 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("using System.Collections.Generic;");
         writer.AppendLine();
         AppendNamespaceStart(writer);
-        writer.AppendLine($"public sealed partial class {sheet.TableTypeName}");
+        writer.AppendLine($"internal static class {chunk.TypeName}");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine($"private static void {chunk.MethodName}(List<{sheet.RowTypeName}> rows)");
+        writer.AppendLine($"internal static void Append(List<{sheet.RowTypeName}> rows)");
         writer.AppendLine("{");
         writer.Indent();
         foreach (var row in chunk.Rows)
@@ -313,6 +374,21 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("}");
         writer.Outdent();
         writer.AppendLine("}");
+        AppendNamespaceEnd(writer);
+        return writer.ToString();
+    }
+
+    private static string RenderIndexNodeFile(GeneratedSheetModel sheet, GeneratedIndexNodeModel indexNode)
+    {
+        var writer = new CodeWriter();
+        writer.AppendLine("using System.Collections.Generic;");
+        writer.AppendLine("using System.Linq;");
+        writer.AppendLine();
+        AppendNamespaceStart(writer);
+        AppendScopeBlock(writer, indexNode.AvailabilityScope, () =>
+        {
+            writer.Append(RenderIndexNodeClass(sheet, indexNode.Level));
+        });
         AppendNamespaceEnd(writer);
         return writer.ToString();
     }
@@ -408,69 +484,6 @@ public sealed class LightyWorkbookCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         AppendNamespaceEnd(writer);
-        return writer.ToString();
-    }
-
-    private static string RenderTableClass(GeneratedSheetModel sheet)
-    {
-        var writer = new CodeWriter();
-        var indexAvailabilityScope = ResolveIndexAvailabilityScope(sheet.PrimaryKeyFields);
-        writer.AppendLine($"public sealed partial class {sheet.TableTypeName}");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine($"private readonly IReadOnlyList<{sheet.RowTypeName}> _rows;");
-
-        AppendIndexMembers(writer, sheet, indexAvailabilityScope);
-
-        writer.AppendLine();
-        writer.AppendLine($"private {sheet.TableTypeName}(IReadOnlyList<{sheet.RowTypeName}> rows)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("_rows = rows;");
-
-        AppendIndexConstructorBody(writer, sheet, indexAvailabilityScope);
-
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
-        writer.AppendLine($"public IReadOnlyList<{sheet.RowTypeName}> Rows => _rows;");
-
-        AppendIndexAccessor(writer, sheet, indexAvailabilityScope);
-
-        writer.AppendLine();
-        writer.AppendLine($"internal static {sheet.TableTypeName} Create()");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine($"var rows = new List<{sheet.RowTypeName}>();");
-        if (sheet.UsesChunkedDataInitialization)
-        {
-            foreach (var chunk in sheet.DataChunks)
-            {
-                writer.AppendLine($"{chunk.MethodName}(rows);");
-            }
-        }
-        else
-        {
-            foreach (var row in sheet.Rows)
-            {
-                AppendRowAdd(writer, row, "rows.Add");
-            }
-        }
-        writer.AppendLine($"return new {sheet.TableTypeName}(rows);");
-        writer.Outdent();
-        writer.AppendLine("}");
-
-        for (var level = 1; level < sheet.PrimaryKeyFields.Count && indexAvailabilityScope.HasValue; level += 1)
-        {
-            writer.AppendLine();
-            AppendScopeBlock(writer, indexAvailabilityScope.Value, () =>
-            {
-                writer.Append(RenderIndexNodeClass(sheet, level));
-            });
-        }
-
-        writer.Outdent();
-        writer.AppendLine("}");
         return writer.ToString();
     }
 
@@ -840,13 +853,29 @@ public sealed class LightyWorkbookCodeGenerator
             var chunkRows = rows.Skip(startIndex).Take(DataChunkRowThreshold).ToList();
             chunks.Add(new GeneratedSheetChunkModel(
                 chunkNumber,
-                $"AppendData{chunkNumber}",
-                $"{typeName}_Data{chunkNumber}",
+                $"{typeName}Data{chunkNumber}",
                 chunkRows));
             chunkNumber += 1;
         }
 
         return chunks;
+    }
+
+    private static IReadOnlyList<GeneratedIndexNodeModel> BuildIndexNodes(GeneratedSheetModel sheet)
+    {
+        var availabilityScope = ResolveIndexAvailabilityScope(sheet.PrimaryKeyFields);
+        if (!availabilityScope.HasValue || sheet.PrimaryKeyFields.Count <= 1)
+        {
+            return Array.Empty<GeneratedIndexNodeModel>();
+        }
+
+        var nodes = new List<GeneratedIndexNodeModel>(sheet.PrimaryKeyFields.Count - 1);
+        for (var level = 1; level < sheet.PrimaryKeyFields.Count; level += 1)
+        {
+            nodes.Add(new GeneratedIndexNodeModel(level, BuildIndexNodeTypeName(sheet, level), availabilityScope.Value));
+        }
+
+        return nodes;
     }
 
     private static string? GetPreprocessorSymbol(LightyExportScope scope)
@@ -1001,9 +1030,13 @@ public sealed class LightyWorkbookCodeGenerator
 
     private sealed record GeneratedSheetChunkModel(
         int ChunkNumber,
-        string MethodName,
-        string FileName,
+        string TypeName,
         IReadOnlyList<GeneratedRowModel> Rows);
+
+    private sealed record GeneratedIndexNodeModel(
+        int Level,
+        string TypeName,
+        LightyExportScope AvailabilityScope);
 
     private sealed record GeneratedFieldModel(
         string FieldName,

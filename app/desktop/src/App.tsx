@@ -1660,15 +1660,14 @@ function App() {
       {isCreateWorkspaceDialogOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateWorkspaceDialog}>
           <div
-            aria-labelledby="workspace-create-title"
+            aria-label="新建工作区"
             aria-modal="true"
             className="workspace-create-dialog"
             role="dialog"
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">Workspace</p>
-                <h2 id="workspace-create-title">新建工作区</h2>
+                <p className="eyebrow">新建工作区</p>
               </div>
             </div>
 
@@ -1709,15 +1708,14 @@ function App() {
       {isCreateWorkbookDialogOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateWorkbookDialog}>
           <div
-            aria-labelledby="workbook-create-title"
+            aria-label="新建工作簿"
             aria-modal="true"
             className="workspace-create-dialog"
             role="dialog"
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">工作簿</p>
-                <h2 id="workbook-create-title">新建工作簿</h2>
+                <p className="eyebrow">新建工作簿</p>
               </div>
             </div>
 
@@ -1758,15 +1756,14 @@ function App() {
       {isCreateSheetDialogOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateSheetDialog}>
           <div
-            aria-labelledby="sheet-create-title"
+            aria-label="新建表格"
             aria-modal="true"
             className="workspace-create-dialog"
             role="dialog"
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">表格</p>
-                <h2 id="sheet-create-title">新建表格</h2>
+                <p className="eyebrow">新建表格</p>
               </div>
             </div>
 
@@ -1807,15 +1804,14 @@ function App() {
       {isRenameSheetDialogOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseRenameSheetDialog}>
           <div
-            aria-labelledby="sheet-rename-title"
+            aria-label="重命名表格"
             aria-modal="true"
             className="workspace-create-dialog"
             role="dialog"
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">表格</p>
-                <h2 id="sheet-rename-title">重命名表格</h2>
+                <p className="eyebrow">重命名表格</p>
               </div>
             </div>
 
@@ -1860,15 +1856,14 @@ function App() {
       {isCodegenDialogOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCodegenDialog}>
           <div
-            aria-labelledby="codegen-dialog-title"
+            aria-label={codegenDialogMode === "all" ? "导出全部工作簿代码" : "导出工作簿代码"}
             aria-modal="true"
             className="workspace-create-dialog"
             role="dialog"
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">Codegen</p>
-                <h2 id="codegen-dialog-title">导出工作簿 C# 代码</h2>
+                <p className="eyebrow">{codegenDialogMode === "all" ? "导出全部工作簿代码" : "导出工作簿代码"}</p>
               </div>
             </div>
 
@@ -1929,15 +1924,14 @@ function App() {
       {isFreezeDialogOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseFreezeDialog}>
           <div
-            aria-labelledby="freeze-dialog-title"
+            aria-label="设置冻结行列"
             aria-modal="true"
             className="workspace-create-dialog freeze-dialog"
             role="dialog"
           >
             <div className="workspace-create-header">
               <div>
-                <p className="eyebrow">Freeze</p>
-                <h2 id="freeze-dialog-title">设置冻结行列</h2>
+                <p className="eyebrow">设置冻结行列</p>
               </div>
             </div>
 
@@ -2296,16 +2290,14 @@ function App() {
 
       <aside className="workspace-sidebar">
         <div className="brand-block">
-          <p className="eyebrow">Workspace</p>
-          <h1>LightyDesign</h1>
+          <p className="eyebrow eyebrow-brand">LightyDesign</p>
           <p className="workspace-path compact-workspace-path">{workspacePath || "未打开工作区"}</p>
         </div>
 
         <section className="sidebar-section workspace-entry-card workspace-summary-card">
           <div className="section-header">
             <div>
-              <p className="eyebrow">Workspace</p>
-              <h2>工作区概览</h2>
+              <p className="eyebrow">工作区概览</p>
             </div>
             {workspaceStatus === "loading" ? <span className="badge">加载中</span> : null}
           </div>
@@ -2333,8 +2325,7 @@ function App() {
         <section className="sidebar-section tree-card">
           <div className="section-header">
             <div>
-              <p className="eyebrow">Navigator</p>
-              <h2>工作簿</h2>
+              <p className="eyebrow">工作簿</p>
             </div>
           </div>
 
@@ -2419,8 +2410,7 @@ function App() {
             <section className="sheet-selector-panel">
               <div className="section-header">
                 <div>
-                  <p className="eyebrow">Tables</p>
-                  <h2>{focusedWorkbook.name}</h2>
+                  <p className="eyebrow">表格列表 / {focusedWorkbook.name}</p>
                 </div>
                 <span className="badge">{focusedWorkbookSheets.length} 个表格</span>
               </div>
@@ -2503,8 +2493,7 @@ function App() {
               <>
                 <div className="viewer-header">
                   <div>
-                    <p className="eyebrow">Table</p>
-                    <h3>{activeSheetData.metadata.name}</h3>
+                    <p className="eyebrow">表格 / {activeSheetData.metadata.name}</p>
                   </div>
                   <div className="viewer-metadata">
                     <span>{activeTab.workbookName}</span>

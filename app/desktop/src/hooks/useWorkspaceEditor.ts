@@ -1368,35 +1368,33 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       return false;
     }
 
-    const results: WorkbookCodegenExportResponse[] = [];
-
     try {
-      for (const workbook of workspace.workbooks) {
-        const result = await fetchJson<WorkbookCodegenExportResponse>(
-          `${hostInfo.desktopHostUrl}/api/workspace/workbooks/codegen/export`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              workspacePath,
-              workbookName: workbook.name,
-            }),
+      const result = await fetchJson<WorkbookCodegenExportResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/codegen/export-all`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        );
+          body: JSON.stringify({
+            workspacePath,
+          }),
+        },
+      );
 
-        results.push(result);
-      }
-
-      const totalFileCount = results.reduce((count, result) => count + result.fileCount, 0);
+      const exportedWorkbookCount = result.workbookCount ?? workspace.workbooks.length;
       emitToast({
         title: "全部工作簿代码导出成功",
-        detail: `已导出 ${results.length} 个工作簿，共生成 ${totalFileCount} 个文件。`,
+        detail: `已导出 ${exportedWorkbookCount} 个工作簿，共生成 ${result.fileCount} 个文件到 ${result.outputDirectoryPath}。`,
         source: "save",
         variant: "success",
         canOpenDetail: false,
         durationMs: 5000,
+        action: {
+          label: "打开输出目录",
+          kind: "open-directory",
+          directoryPath: result.outputDirectoryPath,
+        },
       });
       return true;
     } catch (error) {

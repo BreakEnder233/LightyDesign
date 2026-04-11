@@ -6,6 +6,7 @@ namespace LightyDesign.DesktopHost;
 public static class GeneratedCodeOutputWriter
 {
     public const string GeneratedDirectoryName = "Generated";
+    public const string ExtendedDirectoryName = "Extended";
 
     public static string WriteGeneratedWorkbookPackage(string workspaceRootPath, string workbookName, LightyGeneratedWorkbookPackage package)
     {
@@ -13,27 +14,9 @@ public static class GeneratedCodeOutputWriter
         ArgumentException.ThrowIfNullOrWhiteSpace(workbookName);
         ArgumentNullException.ThrowIfNull(package);
 
-        var outputRootPath = ValidateWorkbookCodegenOutputRelativePath(workspaceRootPath, package.OutputRelativePath, allowEmpty: false);
-        var generatedOutputRootPath = Path.Combine(outputRootPath, GeneratedDirectoryName);
-
-        if (Directory.Exists(generatedOutputRootPath))
-        {
-            Directory.Delete(generatedOutputRootPath, recursive: true);
-        }
-
-        Directory.CreateDirectory(generatedOutputRootPath);
-
-        foreach (var file in package.Files)
-        {
-            var absolutePath = Path.Combine(generatedOutputRootPath, file.RelativePath.Replace('/', Path.DirectorySeparatorChar));
-            var directoryPath = Path.GetDirectoryName(absolutePath);
-            if (!string.IsNullOrWhiteSpace(directoryPath))
-            {
-                Directory.CreateDirectory(directoryPath);
-            }
-
-            File.WriteAllText(absolutePath, file.Content);
-        }
+        var generatedOutputRootPath = InitializeOutputDirectories(workspaceRootPath, package.OutputRelativePath, resetGeneratedRoot: false);
+        DeleteWorkbookDirectory(generatedOutputRootPath, workbookName);
+        WriteGeneratedFiles(generatedOutputRootPath, package.Files);
 
         var generatedWorkbookNames = GetGeneratedWorkbookNames(generatedOutputRootPath);
         if (!generatedWorkbookNames.Contains(workbookName, StringComparer.OrdinalIgnoreCase))
@@ -41,11 +24,67 @@ public static class GeneratedCodeOutputWriter
             generatedWorkbookNames.Add(workbookName);
         }
 
-        var generator = new LightyWorkbookCodeGenerator();
-        var entryPointContent = generator.GenerateEntryPointFile(generatedWorkbookNames);
-        File.WriteAllText(Path.Combine(generatedOutputRootPath, "LDD.cs"), entryPointContent);
+        WriteEntryPointFile(generatedOutputRootPath, generatedWorkbookNames);
 
         return generatedOutputRootPath;
+    }
+
+    public static string WriteGeneratedWorkspacePackages(
+        string workspaceRootPath,
+        IReadOnlyList<(string WorkbookName, LightyGeneratedWorkbookPackage Package)> workbookPackages)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);
+        ArgumentNullException.ThrowIfNull(workbookPackages);
+
+        if (workbookPackages.Count == 0)
+        {
+            throw new ArgumentException("At least one workbook package is required.", nameof(workbookPackages));
+        }
+
+        var outputRelativePath = workbookPackages[0].Package.OutputRelativePath;
+        if (workbookPackages.Any(entry => !string.Equals(entry.Package.OutputRelativePath, outputRelativePath, StringComparison.Ordinal)))
+        {
+            throw new LightyCoreException("All workbook packages must target the same output relative path.");
+        }
+
+        var generatedOutputRootPath = InitializeOutputDirectories(workspaceRootPath, outputRelativePath, resetGeneratedRoot: true);
+
+        foreach (var (workbookName, package) in workbookPackages)
+        {
+            DeleteWorkbookDirectory(generatedOutputRootPath, workbookName);
+            WriteGeneratedFiles(generatedOutputRootPath, package.Files);
+        }
+
+        var generatedWorkbookNames = workbookPackages
+            .Select(entry => entry.WorkbookName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        WriteEntryPointFile(generatedOutputRootPath, generatedWorkbookNames);
+
+        return generatedOutputRootPath;
+    }
+
+    public static IReadOnlyList<string> GetMaterializedRelativePaths(IEnumerable<LightyGeneratedCodeFile> files)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+
+        var materializedPaths = files
+            .Where(file => !IsEntryPointFile(file.RelativePath))
+            .Select(file => NormalizeRelativePath(file.RelativePath))
+            .Append("LDD.cs")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return materializedPaths;
+    }
+
+    public static int CountMaterializedFiles(IEnumerable<LightyGeneratedCodeFile> files)
+    {
+        return GetMaterializedRelativePaths(files).Count;
     }
 
     public static List<string> GetGeneratedWorkbookNames(string outputRootPath)
@@ -62,7 +101,7 @@ public static class GeneratedCodeOutputWriter
                 WorkbookName = Path.GetFileName(directoryPath),
             })
             .Where(entry => !string.IsNullOrWhiteSpace(entry.WorkbookName))
-            .Where(entry => File.Exists(Path.Combine(entry.DirectoryPath, $"{entry.WorkbookName}.cs")))
+            .Where(entry => HasWorkbookDefinitionFile(entry.DirectoryPath, entry.WorkbookName))
             .Select(entry => entry.WorkbookName)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
@@ -91,5 +130,68 @@ public static class GeneratedCodeOutputWriter
 
         var workspaceRootFullPath = Path.GetFullPath(workspaceRootPath);
         return Path.GetFullPath(Path.Combine(workspaceRootFullPath, trimmed));
+    }
+
+    private static string InitializeOutputDirectories(string workspaceRootPath, string outputRelativePath, bool resetGeneratedRoot)
+    {
+        var outputRootPath = ValidateWorkbookCodegenOutputRelativePath(workspaceRootPath, outputRelativePath, allowEmpty: false);
+        Directory.CreateDirectory(outputRootPath);
+        Directory.CreateDirectory(Path.Combine(outputRootPath, ExtendedDirectoryName));
+
+        var generatedOutputRootPath = Path.Combine(outputRootPath, GeneratedDirectoryName);
+        if (resetGeneratedRoot && Directory.Exists(generatedOutputRootPath))
+        {
+            Directory.Delete(generatedOutputRootPath, recursive: true);
+        }
+
+        Directory.CreateDirectory(generatedOutputRootPath);
+        return generatedOutputRootPath;
+    }
+
+    private static void DeleteWorkbookDirectory(string generatedOutputRootPath, string workbookName)
+    {
+        var workbookOutputPath = Path.Combine(generatedOutputRootPath, workbookName);
+        if (Directory.Exists(workbookOutputPath))
+        {
+            Directory.Delete(workbookOutputPath, recursive: true);
+        }
+    }
+
+    private static void WriteGeneratedFiles(string generatedOutputRootPath, IEnumerable<LightyGeneratedCodeFile> files)
+    {
+        foreach (var file in files.Where(file => !IsEntryPointFile(file.RelativePath)))
+        {
+            var absolutePath = Path.Combine(generatedOutputRootPath, file.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+            var directoryPath = Path.GetDirectoryName(absolutePath);
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            File.WriteAllText(absolutePath, file.Content);
+        }
+    }
+
+    private static void WriteEntryPointFile(string generatedOutputRootPath, IEnumerable<string> workbookNames)
+    {
+        var generator = new LightyWorkbookCodeGenerator();
+        var entryPointContent = generator.GenerateEntryPointFile(workbookNames);
+        File.WriteAllText(Path.Combine(generatedOutputRootPath, "LDD.cs"), entryPointContent);
+    }
+
+    private static bool HasWorkbookDefinitionFile(string directoryPath, string workbookName)
+    {
+        return File.Exists(Path.Combine(directoryPath, $"{workbookName}.cs"))
+            || File.Exists(Path.Combine(directoryPath, $"{workbookName}Workbook.cs"));
+    }
+
+    private static bool IsEntryPointFile(string relativePath)
+    {
+        return string.Equals(NormalizeRelativePath(relativePath), "LDD.cs", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeRelativePath(string relativePath)
+    {
+        return relativePath.Replace('\\', '/');
     }
 }

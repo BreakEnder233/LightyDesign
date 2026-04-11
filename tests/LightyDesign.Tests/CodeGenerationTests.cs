@@ -7,7 +7,7 @@ namespace LightyDesign.Tests;
 public class CodeGenerationTests
 {
     [Fact]
-    public void WorkbookCodeGenerator_ShouldGenerateSheetWorkbookAndEntryFiles()
+    public void WorkbookCodeGenerator_ShouldGenerateSheetWorkbookAndSupportFiles()
     {
         var workspace = CreateWorkspace(new LightyWorkbookCodegenOptions("Generated/Config"));
         var workbook = Assert.Single(workspace.Workbooks);
@@ -17,31 +17,56 @@ public class CodeGenerationTests
 
         Assert.Equal("Generated/Config", package.OutputRelativePath);
         Assert.Contains(package.Files, file => file.RelativePath == "DesignDataReference.cs");
-        Assert.Contains(package.Files, file => file.RelativePath == "Item/Consumable.cs");
-        Assert.Contains(package.Files, file => file.RelativePath == "Item/Stage.cs");
-        Assert.Contains(package.Files, file => file.RelativePath == "Item/Item.cs");
-        Assert.Contains(package.Files, file => file.RelativePath == "LDD.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Item/ConsumableRow.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Item/ConsumableTable.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Item/StageRow.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Item/StageTable.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Item/StageByID1Index.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Item/ItemWorkbook.cs");
+        Assert.DoesNotContain(package.Files, file => file.RelativePath == "LDD.cs");
 
-        var consumableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/Consumable.cs");
-        Assert.Contains("namespace LightyDesignData", consumableFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public sealed partial class ConsumableRow", consumableFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public int ID { get; set; }", consumableFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public string Name { get; set; }", consumableFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public ConsumableRow this[int id]", consumableFile.Content, StringComparison.Ordinal);
-        Assert.Contains("Name = \"Potion\"", consumableFile.Content, StringComparison.Ordinal);
+        var consumableRowFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ConsumableRow.cs");
+        Assert.Contains("namespace LightyDesignData", consumableRowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public sealed partial class ConsumableRow", consumableRowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public int ID { get; set; }", consumableRowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public string Name { get; set; }", consumableRowFile.Content, StringComparison.Ordinal);
 
-        var stageFile = Assert.Single(package.Files, file => file.RelativePath == "Item/Stage.cs");
-        Assert.Contains("public sealed partial class StageByID1Index", stageFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public StageByID1Index this[int id1]", stageFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public StageRow this[int id2]", stageFile.Content, StringComparison.Ordinal);
+        var consumableTableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ConsumableTable.cs");
+        Assert.Contains("public sealed partial class ConsumableTable", consumableTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public ConsumableRow this[int id]", consumableTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("Name = \"Potion\"", consumableTableFile.Content, StringComparison.Ordinal);
 
-        var workbookFile = Assert.Single(package.Files, file => file.RelativePath == "Item/Item.cs");
+        var stageTableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/StageTable.cs");
+        Assert.Contains("public StageByID1Index this[int id1]", stageTableFile.Content, StringComparison.Ordinal);
+
+        var stageIndexFile = Assert.Single(package.Files, file => file.RelativePath == "Item/StageByID1Index.cs");
+        Assert.Contains("public sealed partial class StageByID1Index", stageIndexFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public StageRow this[int id2]", stageIndexFile.Content, StringComparison.Ordinal);
+
+        var workbookFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ItemWorkbook.cs");
         Assert.Contains("public sealed partial class ItemWorkbook", workbookFile.Content, StringComparison.Ordinal);
+    }
 
-        var entryFile = Assert.Single(package.Files, file => file.RelativePath == "LDD.cs");
-        Assert.Contains("namespace LightyDesignData", entryFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public static partial class LDD", entryFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public static ItemWorkbook Item", entryFile.Content, StringComparison.Ordinal);
+    [Fact]
+    public void WorkbookCodeGenerator_ShouldPlaceWorkbookAndSameNamedSheetTypesInDistinctFiles()
+    {
+        var workspace = CreateWorkspaceWithSameNamedSheet(new LightyWorkbookCodegenOptions("Generated/Config"));
+        var workbook = Assert.Single(workspace.Workbooks);
+        var generator = new LightyWorkbookCodeGenerator();
+
+        var package = generator.Generate(workspace, workbook);
+        var relativePaths = package.Files.Select(file => file.RelativePath).ToList();
+
+        Assert.Contains("Item/ItemRow.cs", relativePaths);
+        Assert.Contains("Item/ItemTable.cs", relativePaths);
+        Assert.Contains("Item/ItemWorkbook.cs", relativePaths);
+        Assert.Equal(relativePaths.Count, relativePaths.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+        var tableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ItemTable.cs");
+        var workbookFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ItemWorkbook.cs");
+
+        Assert.Contains("public sealed partial class ItemTable", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public ItemTable Item { get; }", workbookFile.Content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -78,21 +103,23 @@ public class CodeGenerationTests
         var generator = new LightyWorkbookCodeGenerator();
 
         var package = generator.Generate(workspace, workbook);
-        var sheetFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureFlag.cs");
-        var normalizedContent = NormalizeNewlines(sheetFile.Content);
+        var rowFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureFlagRow.cs");
+        var tableFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureFlagTable.cs");
+        var normalizedRowContent = NormalizeNewlines(rowFile.Content);
+        var normalizedTableContent = NormalizeNewlines(tableFile.Content);
 
-        Assert.Contains("namespace LightyDesignData", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public int ID { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public string SharedName { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("#if LDD_Client", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("public string ClientOnlyName { get; set; }", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("#if LDD_Server", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("public string ServerOnlyNote { get; set; }", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("new FeatureFlagRow()", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("ID = 1,", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("SharedName = \"Shared\",", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("ClientOnlyName = \"Client\",", normalizedContent, StringComparison.Ordinal);
-        Assert.Contains("ServerOnlyNote = \"Server\",", normalizedContent, StringComparison.Ordinal);
+        Assert.Contains("namespace LightyDesignData", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public int ID { get; set; }", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public string SharedName { get; set; }", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("#if LDD_Client", normalizedRowContent, StringComparison.Ordinal);
+        Assert.Contains("public string ClientOnlyName { get; set; }", normalizedRowContent, StringComparison.Ordinal);
+        Assert.Contains("#if LDD_Server", normalizedRowContent, StringComparison.Ordinal);
+        Assert.Contains("public string ServerOnlyNote { get; set; }", normalizedRowContent, StringComparison.Ordinal);
+        Assert.Contains("new FeatureFlagRow()", normalizedTableContent, StringComparison.Ordinal);
+        Assert.Contains("ID = 1,", normalizedTableContent, StringComparison.Ordinal);
+        Assert.Contains("SharedName = \"Shared\",", normalizedTableContent, StringComparison.Ordinal);
+        Assert.Contains("ClientOnlyName = \"Client\",", normalizedTableContent, StringComparison.Ordinal);
+        Assert.Contains("ServerOnlyNote = \"Server\",", normalizedTableContent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -104,7 +131,8 @@ public class CodeGenerationTests
 
         var package = generator.Generate(workspace, workbook);
         var supportFile = Assert.Single(package.Files, file => file.RelativePath == "DesignDataReference.cs");
-        var sheetFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureLink.cs");
+        var rowFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureLinkRow.cs");
+        var tableFile = Assert.Single(package.Files, file => file.RelativePath == "Config/FeatureLinkTable.cs");
 
         Assert.Contains("public sealed partial class DesignDataReference<TTarget>", supportFile.Content, StringComparison.Ordinal);
         Assert.Contains("public TTarget GetValue() => _resolver(_identifiers);", supportFile.Content, StringComparison.Ordinal);
@@ -113,12 +141,12 @@ public class CodeGenerationTests
         Assert.DoesNotContain("ThrowIfNull(", supportFile.Content, StringComparison.Ordinal);
         Assert.Contains("if (string.IsNullOrWhiteSpace(workbookName))", supportFile.Content, StringComparison.Ordinal);
         Assert.Contains("throw new ArgumentNullException(nameof(resolver));", supportFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public DesignDataReference<ConsumableRow> PrimaryItem { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public DesignDataReference<StageRow> TargetStage { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public IReadOnlyList<DesignDataReference<StageRow>> StageHistory { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("new DesignDataReference<ConsumableRow>(\"Item\", \"Consumable\", identifiers => LDD.Item.Consumable[DesignDataReferenceHelper.ParseInt32(identifiers[0])], \"1001\")", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("new DesignDataReference<StageRow>(\"Item\", \"Stage\", identifiers => LDD.Item.Stage[DesignDataReferenceHelper.ParseInt32(identifiers[0])][DesignDataReferenceHelper.ParseInt32(identifiers[1])], \"1\", \"10\")", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("new List<DesignDataReference<StageRow>>", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public DesignDataReference<ConsumableRow> PrimaryItem { get; set; }", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public DesignDataReference<StageRow> TargetStage { get; set; }", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public IReadOnlyList<DesignDataReference<StageRow>> StageHistory { get; set; }", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new DesignDataReference<ConsumableRow>(\"Item\", \"Consumable\", identifiers => LDD.Item.Consumable[DesignDataReferenceHelper.ParseInt32(identifiers[0])], \"1001\")", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new DesignDataReference<StageRow>(\"Item\", \"Stage\", identifiers => LDD.Item.Stage[DesignDataReferenceHelper.ParseInt32(identifiers[0])][DesignDataReferenceHelper.ParseInt32(identifiers[1])], \"1\", \"10\")", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new List<DesignDataReference<StageRow>>", tableFile.Content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -130,18 +158,19 @@ public class CodeGenerationTests
 
         var package = generator.Generate(workspace, workbook);
 
-        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheet.cs");
-        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheet_Data1.cs");
-        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheet_Data2.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheetRow.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheetTable.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheetTableData1.cs");
+        Assert.Contains(package.Files, file => file.RelativePath == "Massive/LargeSheetTableData2.cs");
 
-        var mainFile = Assert.Single(package.Files, file => file.RelativePath == "Massive/LargeSheet.cs");
-        var chunkFile = Assert.Single(package.Files, file => file.RelativePath == "Massive/LargeSheet_Data1.cs");
+        var mainFile = Assert.Single(package.Files, file => file.RelativePath == "Massive/LargeSheetTable.cs");
+        var chunkFile = Assert.Single(package.Files, file => file.RelativePath == "Massive/LargeSheetTableData1.cs");
 
-        Assert.Contains("public sealed partial class LargeSheetRow", mainFile.Content, StringComparison.Ordinal);
         Assert.Contains("public sealed partial class LargeSheetTable", mainFile.Content, StringComparison.Ordinal);
-        Assert.Contains("AppendData1(rows);", mainFile.Content, StringComparison.Ordinal);
-        Assert.Contains("AppendData2(rows);", mainFile.Content, StringComparison.Ordinal);
-        Assert.Contains("private static void AppendData1(List<LargeSheetRow> rows)", chunkFile.Content, StringComparison.Ordinal);
+        Assert.Contains("LargeSheetTableData1.Append(rows);", mainFile.Content, StringComparison.Ordinal);
+        Assert.Contains("LargeSheetTableData2.Append(rows);", mainFile.Content, StringComparison.Ordinal);
+        Assert.Contains("internal static class LargeSheetTableData1", chunkFile.Content, StringComparison.Ordinal);
+        Assert.Contains("internal static void Append(List<LargeSheetRow> rows)", chunkFile.Content, StringComparison.Ordinal);
         Assert.Contains("rows.Add(new LargeSheetRow()", chunkFile.Content, StringComparison.Ordinal);
     }
 
@@ -153,12 +182,13 @@ public class CodeGenerationTests
         var generator = new LightyWorkbookCodeGenerator();
 
         var package = generator.Generate(workspace, workbook);
-        var sheetFile = Assert.Single(package.Files, file => file.RelativePath == "Text/Localization.cs");
+        var rowFile = Assert.Single(package.Files, file => file.RelativePath == "Text/LocalizationRow.cs");
+        var tableFile = Assert.Single(package.Files, file => file.RelativePath == "Text/LocalizationTable.cs");
 
-        Assert.Contains("public string Key { get; set; }", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("private readonly IReadOnlyDictionary<string, LocalizationRow> _byKey;", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("_byKey = rows.ToDictionary(row => row.Key);", sheetFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public LocalizationRow this[string key] => _byKey[key];", sheetFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public string Key { get; set; }", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("private readonly IReadOnlyDictionary<string, LocalizationRow> _byKey;", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("_byKey = rows.ToDictionary(row => row.Key);", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public LocalizationRow this[string key] => _byKey[key];", tableFile.Content, StringComparison.Ordinal);
     }
 
     private static LightyWorkspace CreateWorkspace(LightyWorkbookCodegenOptions codegenOptions)
@@ -235,6 +265,41 @@ public class CodeGenerationTests
                     new[]
                     {
                         new LightySheetRow(0, new[] { "1", "Shared", "Client", "Server" }),
+                    }),
+            },
+            codegenOptions,
+            Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        return new LightyWorkspace(
+            @"D:\Workspace",
+            @"D:\Workspace\config.json",
+            @"D:\Workspace\headers.json",
+            WorkspaceHeaderLayout.CreateDefault(),
+            new[] { workbook },
+            codegenOptions,
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+    }
+
+    private static LightyWorkspace CreateWorkspaceWithSameNamedSheet(LightyWorkbookCodegenOptions codegenOptions)
+    {
+        var workbookDirectory = @"D:\Workspace\Item";
+        var workbook = new LightyWorkbook(
+            "Item",
+            workbookDirectory,
+            new[]
+            {
+                new LightySheet(
+                    "Item",
+                    Path.Combine(workbookDirectory, "Item.txt"),
+                    Path.Combine(workbookDirectory, "Item_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("ID", "int", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Name", "string", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                    }),
+                    new[]
+                    {
+                        new LightySheetRow(0, new[] { "1", "Potion" }),
                     }),
             },
             codegenOptions,

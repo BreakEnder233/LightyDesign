@@ -920,13 +920,93 @@ app.MapPost("/api/workspace/workbooks/codegen/export", (ExportWorkbookCodegenReq
         var generator = new LightyWorkbookCodeGenerator();
         var package = generator.Generate(workspace, workbook);
         var outputDirectoryPath = GeneratedCodeOutputWriter.WriteGeneratedWorkbookPackage(workspace.RootPath, workbook.Name, package);
+        var materializedFiles = GeneratedCodeOutputWriter.GetMaterializedRelativePaths(package.Files);
 
         return Results.Ok(new
         {
             workbookName,
             outputDirectoryPath,
-            fileCount = package.Files.Count,
-            files = package.Files.Select(file => file.RelativePath).ToArray(),
+            fileCount = materializedFiles.Count,
+            files = materializedFiles,
+            workbookCount = 1,
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/workbooks/codegen/export-all", (ExportAllWorkbookCodegenRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (workspace.Workbooks.Count == 0)
+        {
+            return Results.BadRequest(new
+            {
+                error = "The workspace does not contain any workbooks to export.",
+                workspacePath,
+            });
+        }
+
+        var generator = new LightyWorkbookCodeGenerator();
+        var workbookPackages = workspace.Workbooks
+            .Select(workbook => (workbook.Name, Package: generator.Generate(workspace, workbook)))
+            .ToList();
+        var outputDirectoryPath = GeneratedCodeOutputWriter.WriteGeneratedWorkspacePackages(workspace.RootPath, workbookPackages);
+        var materializedFiles = GeneratedCodeOutputWriter.GetMaterializedRelativePaths(workbookPackages.SelectMany(entry => entry.Package.Files));
+
+        return Results.Ok(new
+        {
+            workbookName = string.Empty,
+            outputDirectoryPath,
+            fileCount = materializedFiles.Count,
+            files = materializedFiles,
+            workbookCount = workbookPackages.Count,
         });
     }
     catch (FileNotFoundException exception)
@@ -1603,6 +1683,11 @@ sealed class ExportWorkbookCodegenRequest
     public string WorkspacePath { get; set; } = string.Empty;
 
     public string WorkbookName { get; set; } = string.Empty;
+}
+
+sealed class ExportAllWorkbookCodegenRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
 }
 
 sealed class WorkbookPayload

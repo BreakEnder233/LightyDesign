@@ -68,14 +68,13 @@ export function ToastCenter({
       {selectedToast ? (
         <DialogBackdrop className="error-detail-backdrop" onClose={onCloseSelectedToast}>
           <section
-            aria-labelledby="error-detail-title"
+            aria-label={`错误详情: ${selectedToast.title}`}
             className="error-detail-dialog"
             role="dialog"
           >
             <div className="error-detail-header">
               <div>
-                <p className="eyebrow">Error Detail</p>
-                <h2 id="error-detail-title">{selectedToast.title}</h2>
+                <p className="eyebrow">错误详情 / {selectedToast.title}</p>
               </div>
               <div className="error-detail-actions">
                 <button className="secondary-button" onClick={onCopySelectedDetail} type="button">

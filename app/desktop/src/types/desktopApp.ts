@@ -121,6 +121,7 @@ export type WorkbookCodegenExportResponse = {
   outputDirectoryPath: string;
   fileCount: number;
   files: string[];
+  workbookCount?: number;
 };
 
 export type SheetTab = {

@@ -6,7 +6,7 @@ namespace LightyDesign.Tests;
 public class GeneratedCodeOutputWriterTests
 {
     [Fact]
-    public void WriteGeneratedWorkbookPackage_ShouldUseGeneratedSubfolderAndPreserveSiblingFiles()
+    public void WriteGeneratedWorkbookPackage_ShouldCreateExtendedSubfolderAndPreserveSiblingFiles()
     {
         var workspaceRoot = CreateWorkspaceDirectory();
 
@@ -14,31 +14,27 @@ public class GeneratedCodeOutputWriterTests
         {
             var outputRootPath = Path.Combine(workspaceRoot, "Codegen");
             var preservedFilePath = Path.Combine(outputRootPath, "keep.txt");
-            var staleGeneratedFilePath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName, "stale.txt");
 
             Directory.CreateDirectory(outputRootPath);
             File.WriteAllText(preservedFilePath, "keep");
-            Directory.CreateDirectory(Path.GetDirectoryName(staleGeneratedFilePath)!);
-            File.WriteAllText(staleGeneratedFilePath, "stale");
 
             var package = new LightyGeneratedWorkbookPackage(
                 "Codegen",
                 new[]
                 {
                     new LightyGeneratedCodeFile("DesignDataReference.cs", "support"),
-                    new LightyGeneratedCodeFile("Item/Item.cs", "workbook"),
-                    new LightyGeneratedCodeFile("Item/Consumable.cs", "sheet"),
-                    new LightyGeneratedCodeFile("LDD.cs", "entry"),
+                    new LightyGeneratedCodeFile("Item/ItemWorkbook.cs", "workbook"),
+                    new LightyGeneratedCodeFile("Item/ConsumableTable.cs", "sheet"),
                 });
 
             var generatedOutputPath = GeneratedCodeOutputWriter.WriteGeneratedWorkbookPackage(workspaceRoot, "Item", package);
 
             Assert.Equal(Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName), generatedOutputPath);
             Assert.True(File.Exists(preservedFilePath));
-            Assert.False(File.Exists(staleGeneratedFilePath));
+            Assert.True(Directory.Exists(Path.Combine(outputRootPath, GeneratedCodeOutputWriter.ExtendedDirectoryName)));
             Assert.True(File.Exists(Path.Combine(generatedOutputPath, "DesignDataReference.cs")));
-            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "Item.cs")));
-            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "Consumable.cs")));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "ItemWorkbook.cs")));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "ConsumableTable.cs")));
             Assert.True(File.Exists(Path.Combine(generatedOutputPath, "LDD.cs")));
             Assert.False(File.Exists(Path.Combine(outputRootPath, "LDD.cs")));
         }
@@ -52,7 +48,7 @@ public class GeneratedCodeOutputWriterTests
     }
 
     [Fact]
-    public void WriteGeneratedWorkbookPackage_ShouldClearExistingGeneratedSubfolderBeforeWriting()
+    public void WriteGeneratedWorkbookPackage_ShouldReplaceOnlyTargetWorkbookAndKeepOtherGeneratedWorkbooks()
     {
         var workspaceRoot = CreateWorkspaceDirectory();
 
@@ -61,18 +57,19 @@ public class GeneratedCodeOutputWriterTests
             var outputRootPath = Path.Combine(workspaceRoot, "Codegen");
             var generatedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName);
             var existingWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Monster");
+            var targetWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Item");
 
             Directory.CreateDirectory(existingWorkbookDirectoryPath);
+            Directory.CreateDirectory(targetWorkbookDirectoryPath);
             File.WriteAllText(Path.Combine(existingWorkbookDirectoryPath, "Monster.cs"), "existing");
-            File.WriteAllText(Path.Combine(generatedOutputPath, "keep-me.txt"), "stale");
+            File.WriteAllText(Path.Combine(targetWorkbookDirectoryPath, "Old.cs"), "stale");
 
             var package = new LightyGeneratedWorkbookPackage(
                 "Codegen",
                 new[]
                 {
                     new LightyGeneratedCodeFile("DesignDataReference.cs", "support"),
-                    new LightyGeneratedCodeFile("Item/Item.cs", "workbook"),
-                    new LightyGeneratedCodeFile("LDD.cs", "entry"),
+                    new LightyGeneratedCodeFile("Item/ItemWorkbook.cs", "workbook"),
                 });
 
             GeneratedCodeOutputWriter.WriteGeneratedWorkbookPackage(workspaceRoot, "Item", package);
@@ -81,8 +78,70 @@ public class GeneratedCodeOutputWriterTests
             var entryPointContent = File.ReadAllText(entryPointPath);
 
             Assert.Contains("public static ItemWorkbook Item", entryPointContent, StringComparison.Ordinal);
-            Assert.DoesNotContain("public static MonsterWorkbook Monster", entryPointContent, StringComparison.Ordinal);
-            Assert.False(File.Exists(Path.Combine(generatedOutputPath, "keep-me.txt")));
+            Assert.Contains("public static MonsterWorkbook Monster", entryPointContent, StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Combine(existingWorkbookDirectoryPath, "Monster.cs")));
+            Assert.False(File.Exists(Path.Combine(targetWorkbookDirectoryPath, "Old.cs")));
+            Assert.True(File.Exists(Path.Combine(targetWorkbookDirectoryPath, "ItemWorkbook.cs")));
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void WriteGeneratedWorkspacePackages_ShouldRebuildGeneratedOutputAndPreserveExtendedFolder()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            var outputRootPath = Path.Combine(workspaceRoot, "Codegen");
+            var generatedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName);
+            var extendedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.ExtendedDirectoryName);
+            var legacyWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Legacy");
+            var extendedUserFilePath = Path.Combine(extendedOutputPath, "ItemExtensions.cs");
+
+            Directory.CreateDirectory(legacyWorkbookDirectoryPath);
+            Directory.CreateDirectory(extendedOutputPath);
+            File.WriteAllText(Path.Combine(legacyWorkbookDirectoryPath, "Legacy.cs"), "legacy");
+            File.WriteAllText(extendedUserFilePath, "partial class");
+
+            var workbookPackages = new (string WorkbookName, LightyGeneratedWorkbookPackage Package)[]
+            {
+                (
+                    "Item",
+                    new LightyGeneratedWorkbookPackage(
+                        "Codegen",
+                        new[]
+                        {
+                            new LightyGeneratedCodeFile("DesignDataReference.cs", "support"),
+                            new LightyGeneratedCodeFile("Item/ItemWorkbook.cs", "item"),
+                        })),
+                (
+                    "Monster",
+                    new LightyGeneratedWorkbookPackage(
+                        "Codegen",
+                        new[]
+                        {
+                            new LightyGeneratedCodeFile("DesignDataReference.cs", "support"),
+                            new LightyGeneratedCodeFile("Monster/MonsterWorkbook.cs", "monster"),
+                        })),
+            };
+
+            var writtenOutputPath = GeneratedCodeOutputWriter.WriteGeneratedWorkspacePackages(workspaceRoot, workbookPackages);
+            var entryPointContent = File.ReadAllText(Path.Combine(writtenOutputPath, "LDD.cs"));
+
+            Assert.Equal(generatedOutputPath, writtenOutputPath);
+            Assert.False(Directory.Exists(legacyWorkbookDirectoryPath));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "ItemWorkbook.cs")));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Monster", "MonsterWorkbook.cs")));
+            Assert.True(File.Exists(extendedUserFilePath));
+            Assert.Contains("public static ItemWorkbook Item", entryPointContent, StringComparison.Ordinal);
+            Assert.Contains("public static MonsterWorkbook Monster", entryPointContent, StringComparison.Ordinal);
         }
         finally
         {

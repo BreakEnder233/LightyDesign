@@ -212,17 +212,6 @@ button {
   padding: 10px;
 }
 
-.brand-block h1,
-.viewer-header h3,
-.section-header h2,
-.workspace-create-header h2,
-.error-detail-header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #f3f3f3;
-}
-
 .workspace-path,
 .empty-panel p,
 .viewer-empty-state p,
@@ -241,6 +230,14 @@ button {
   letter-spacing: 0.12em;
   font-size: 11px;
   color: #4fc1ff;
+}
+
+.eyebrow-brand {
+  margin-bottom: 0;
+  text-transform: none;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  color: #f3f3f3;
 }
 
 .sidebar-section,
@@ -289,6 +286,13 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+}
+
+.section-header .eyebrow,
+.viewer-header .eyebrow,
+.workspace-create-header .eyebrow,
+.error-detail-header .eyebrow {
+  margin-bottom: 0;
 }
 
 .action-grid {
@@ -1191,11 +1195,16 @@ button {
 
 .virtual-cell-select {
   appearance: none;
+  padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, #9da0a6 50%), linear-gradient(135deg, #9da0a6 50%, transparent 50%);
+  background-position: calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px);
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
 }
 
 .virtual-cell-input:focus,
 .virtual-cell-select:focus {
-  background: #094771;
+  background-color: #094771;
   color: #ffffff;
 }
 
@@ -1399,9 +1408,17 @@ button {
 }
 
 .column-editor-textarea {
+  display: block;
   min-height: 108px;
   resize: vertical;
+  border: 1px solid #3c3c3c;
+  background-color: #1f1f1f;
   font-family: "Cascadia Mono", "Consolas", monospace;
+}
+
+.column-editor-field .virtual-cell-select {
+  border: 1px solid #3c3c3c;
+  background-color: #1f1f1f;
 }
 
 .column-editor-error {

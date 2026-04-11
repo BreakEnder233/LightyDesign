@@ -33,6 +33,7 @@ export function ColumnEditorDialog({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [typeValidationState, setTypeValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
   const [typeValidationMessage, setTypeValidationMessage] = useState<string | null>(null);
+  const [typeValidationTarget, setTypeValidationTarget] = useState<string | null>(null);
 
   const dialogTitle = useMemo(() => {
     if (!column) {
@@ -55,20 +56,20 @@ export function ColumnEditorDialog({
     setErrorMessage(null);
     setTypeValidationState("idle");
     setTypeValidationMessage(null);
+    setTypeValidationTarget(null);
   }, [column, isOpen, propertySchemas]);
 
   const typeSchema = useMemo(
     () => propertySchemas.find((schema) => schema.bindingSource === "field" && schema.bindingKey === "type") ?? null,
     [propertySchemas],
   );
-  const typeDraftValue = typeSchema ? (draftValues[typeSchema.headerType] ?? "") : "";
 
   useEffect(() => {
-    if (!isOpen || !typeSchema) {
+    if (!isOpen || !typeSchema || typeValidationTarget === null) {
       return;
     }
 
-    const candidateType = typeDraftValue.trim();
+    const candidateType = typeValidationTarget.trim();
     if (!candidateType) {
       setTypeValidationState("invalid");
       setTypeValidationMessage("Type 不能为空。");
@@ -104,7 +105,21 @@ export function ColumnEditorDialog({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [isOpen, onValidateType, typeDraftValue, typeSchema]);
+  }, [isOpen, onValidateType, typeSchema, typeValidationTarget]);
+
+  function updateDraftValue(headerType: string, nextValue: string) {
+    setDraftValues((current) => ({
+      ...current,
+      [headerType]: nextValue,
+    }));
+    setErrorMessage(null);
+
+    if (typeSchema?.headerType !== headerType) {
+      return;
+    }
+
+    setTypeValidationTarget(nextValue);
+  }
 
   if (!isOpen || !column || columnIndex === null) {
     return null;
@@ -112,8 +127,8 @@ export function ColumnEditorDialog({
 
   function handleSubmit() {
     try {
-      if (typeSchema && typeValidationState !== "valid") {
-        setErrorMessage(typeValidationMessage ?? "请先修正 Type。" );
+      if (typeSchema && typeValidationTarget !== null && typeValidationState !== "valid") {
+        setErrorMessage(typeValidationMessage ?? "请先修正 Type。");
         return;
       }
 
@@ -136,15 +151,14 @@ export function ColumnEditorDialog({
   return (
     <DialogBackdrop className="workspace-create-backdrop" onClose={onClose}>
       <div
-        aria-labelledby="column-editor-dialog-title"
+        aria-label={dialogTitle}
         aria-modal="true"
         className="workspace-create-dialog column-editor-dialog"
         role="dialog"
       >
         <div className="workspace-create-header">
           <div>
-            <p className="eyebrow">表头</p>
-            <h2 id="column-editor-dialog-title">{dialogTitle}</h2>
+            <p className="eyebrow">编辑表头 / {column.displayName || column.fieldName}</p>
           </div>
           <span className="badge">{propertySchemas.length} 个字段</span>
         </div>
@@ -171,11 +185,7 @@ export function ColumnEditorDialog({
                     <select
                       className="virtual-cell-input virtual-cell-select"
                       onChange={(event) => {
-                        setDraftValues((current) => ({
-                          ...current,
-                          [schema.headerType]: event.target.value,
-                        }));
-                        setErrorMessage(null);
+                        updateDraftValue(schema.headerType, event.target.value);
                       }}
                       value={currentValue}
                     >
@@ -192,11 +202,7 @@ export function ColumnEditorDialog({
                     <input
                       className="virtual-cell-input"
                       onChange={(event) => {
-                        setDraftValues((current) => ({
-                          ...current,
-                          [schema.headerType]: event.target.value,
-                        }));
-                        setErrorMessage(null);
+                        updateDraftValue(schema.headerType, event.target.value);
                       }}
                       placeholder={schema.placeholder ?? undefined}
                       type="text"
@@ -208,11 +214,7 @@ export function ColumnEditorDialog({
                     <textarea
                       className="virtual-cell-input column-editor-textarea"
                       onChange={(event) => {
-                        setDraftValues((current) => ({
-                          ...current,
-                          [schema.headerType]: event.target.value,
-                        }));
-                        setErrorMessage(null);
+                        updateDraftValue(schema.headerType, event.target.value);
                       }}
                       placeholder={schema.placeholder ?? undefined}
                       rows={5}
@@ -224,9 +226,9 @@ export function ColumnEditorDialog({
             })}
           </div>
 
-          {typeSchema ? (
+            {typeSchema && typeValidationTarget !== null ? (
             <p className={`column-editor-validation column-editor-validation--${typeValidationState}`}>
-              {typeValidationMessage ?? "Type 尚未校验。"}
+                {typeValidationMessage ?? "Type 尚未校验。"}
             </p>
           ) : null}
 

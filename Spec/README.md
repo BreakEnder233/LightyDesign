@@ -13,7 +13,8 @@
 2. [FileProcess/README.md](FileProcess/README.md)
 3. [DesktopHost/README.md](DesktopHost/README.md)
 4. [DesktopApp/README.md](DesktopApp/README.md)
-5. [Tooling/README.md](Tooling/README.md)
+5. [MCP/README.md](MCP/README.md)
+6. [Tooling/README.md](Tooling/README.md)
 
 ## 试运行方法
 

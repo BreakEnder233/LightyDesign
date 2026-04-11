@@ -20,14 +20,62 @@ type CopiedSelectionSnapshot = {
   canInsertColumns: boolean;
 };
 
-type ToolbarMenuId = "file" | "edit" | "table" | "help";
+type ToolbarMenuId = "file" | "edit" | "table" | "ai" | "help";
 type CodegenDialogMode = "single" | "all";
+type McpConfigTargetClient = "vscode";
+
+function normalizeMcpConfigPath(pathValue: string) {
+  const trimmedValue = pathValue.trim();
+  if (!trimmedValue) {
+    return "/mcp";
+  }
+
+  return trimmedValue.startsWith("/") ? trimmedValue : `/${trimmedValue}`;
+}
+
+function buildVsCodeMcpConfigJson(serverUrl: string) {
+  return JSON.stringify(
+    {
+      servers: {
+        lightydesign: {
+          type: "http",
+          url: serverUrl,
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
+function getMcpRuntimeStatusLabel(mcpPreferences: McpPreferences | null) {
+  if (!mcpPreferences) {
+    return "状态未知";
+  }
+
+  if (!mcpPreferences.enabled) {
+    return "已关闭";
+  }
+
+  switch (mcpPreferences.runtimeStatus) {
+    case "running":
+      return "运行中";
+    case "starting":
+      return "启动中";
+    case "error":
+      return "启动失败";
+    default:
+      return "已关闭";
+  }
+}
 
 const defaultColumnWidth = 140;
 const minColumnWidth = 88;
 const maxColumnWidth = 520;
 const columnWidthSampleLimit = 200;
 const contextMenuViewportMargin = 8;
+const selectionContextRowPreviewLimit = 50;
+const selectionContextColumnPreviewLimit = 20;
 
 let textMeasureCanvas: HTMLCanvasElement | null = null;
 
@@ -295,16 +343,24 @@ function App() {
   const [isRenameSheetDialogOpen, setIsRenameSheetDialogOpen] = useState(false);
   const [isCodegenDialogOpen, setIsCodegenDialogOpen] = useState(false);
   const [isFreezeDialogOpen, setIsFreezeDialogOpen] = useState(false);
+  const [isMcpConfigDialogOpen, setIsMcpConfigDialogOpen] = useState(false);
   const [newWorkbookName, setNewWorkbookName] = useState("NewWorkbook");
   const [newSheetName, setNewSheetName] = useState("NewSheet");
   const [renameSheetName, setRenameSheetName] = useState("");
   const [codegenOutputRelativePath, setCodegenOutputRelativePath] = useState("");
+  const [mcpConfigTargetClient, setMcpConfigTargetClient] = useState<McpConfigTargetClient | null>(null);
+  const [mcpConfigPortInput, setMcpConfigPortInput] = useState("");
+  const [mcpConfigPathInput, setMcpConfigPathInput] = useState("/mcp");
+  const [mcpConfigErrorMessage, setMcpConfigErrorMessage] = useState<string | null>(null);
+  const [isSavingMcpConfiguration, setIsSavingMcpConfiguration] = useState(false);
+  const [isStartingMcpFromDialog, setIsStartingMcpFromDialog] = useState(false);
   const [sheetDialogWorkbookName, setSheetDialogWorkbookName] = useState<string | null>(null);
   const [renameSheetTarget, setRenameSheetTarget] = useState<{ workbookName: string; sheetName: string } | null>(null);
   const [codegenWorkbookName, setCodegenWorkbookName] = useState<string | null>(null);
   const [codegenDialogMode, setCodegenDialogMode] = useState<CodegenDialogMode>("single");
   const renameSheetInputRef = useRef<HTMLInputElement | null>(null);
   const codegenOutputInputRef = useRef<HTMLInputElement | null>(null);
+  const mcpConfigTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [selectedCell, setSelectedCell] = useState<SheetSelection | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<SheetSelection | null>(null);
   const [freezeRowCount, setFreezeRowCount] = useState(0);
@@ -327,6 +383,7 @@ function App() {
     y: number;
   } | null>(null);
   const [copiedSelectionSnapshot, setCopiedSelectionSnapshot] = useState<CopiedSelectionSnapshot | null>(null);
+  const [mcpPreferences, setMcpPreferences] = useState<McpPreferences | null>(null);
 
   const editingColumn = editingColumnIndex !== null ? (activeSheetColumns[editingColumnIndex] ?? null) : null;
   const focusedWorkbook = useMemo(
@@ -336,6 +393,16 @@ function App() {
   const canCreateSheet = workspaceStatus === "ready" && Boolean(focusedWorkbookName);
   const canCloseWorkspace = Boolean(workspacePath);
   const workspaceCodegenOutputRelativePath = workspace?.codegen.outputRelativePath ?? "";
+  const mcpStatusLabel = getMcpRuntimeStatusLabel(mcpPreferences);
+  const parsedMcpConfigPort = Number.parseInt(mcpConfigPortInput.trim(), 10);
+  const hasValidMcpConfigPort = Number.isInteger(parsedMcpConfigPort) && parsedMcpConfigPort >= 1024 && parsedMcpConfigPort <= 65535;
+  const normalizedMcpConfigPath = normalizeMcpConfigPath(mcpConfigPathInput);
+  const mcpConfigPreviewUrl = hasValidMcpConfigPort
+    ? `http://${mcpPreferences?.serverHost ?? "127.0.0.1"}:${parsedMcpConfigPort}${normalizedMcpConfigPath}`
+    : "";
+  const mcpConfigPreviewJson = mcpConfigTargetClient === "vscode" && mcpConfigPreviewUrl
+    ? buildVsCodeMcpConfigJson(mcpConfigPreviewUrl)
+    : "";
 
   function handleToolbarMenuHover(menuId: ToolbarMenuId) {
     if (!openToolbarMenu || openToolbarMenu === menuId) {
@@ -351,6 +418,222 @@ function App() {
 
   function closeToolbarMenu() {
     setOpenToolbarMenu(null);
+  }
+
+  async function handleToggleMcpEnabled() {
+    if (!window.lightyDesign?.setMcpEnabled) {
+      pushToastNotification({
+        title: "MCP 功能不可用",
+        detail: "当前运行环境未注入桌面端 MCP 桥接。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return;
+    }
+
+    try {
+      const shouldEnable = !(mcpPreferences?.enabled ?? false);
+      const nextPreferences = await window.lightyDesign.setMcpEnabled(shouldEnable);
+      setMcpPreferences(nextPreferences);
+      pushToastNotification({
+        title: nextPreferences.enabled ? "MCP 服务已开启" : "MCP 服务已关闭",
+        detail: nextPreferences.enabled
+          ? "新的开启状态已经写入用户偏好，下次启动桌面端时会继续沿用。"
+          : "新的关闭状态已经写入用户偏好，下次启动桌面端时会继续沿用。",
+        source: "system",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 3600,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "无法写入 MCP 偏好。";
+      if (window.lightyDesign?.getMcpPreferences) {
+        try {
+          const latestPreferences = await window.lightyDesign.getMcpPreferences();
+          setMcpPreferences(latestPreferences);
+        } catch {
+          // Ignore refresh failure and fall back to the toast below.
+        }
+      }
+
+      pushToastNotification({
+        title: "更新 MCP 偏好失败",
+        detail,
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+
+      handleOpenMcpConfigDialog({
+        errorMessage: detail,
+      });
+    }
+  }
+
+  function syncMcpConfigDialogForm(preferences: McpPreferences | null) {
+    setMcpConfigPortInput(String(preferences?.serverPort ?? 39231));
+    setMcpConfigPathInput(preferences?.serverPath ?? "/mcp");
+  }
+
+  function handleCloseMcpConfigDialog() {
+    setIsMcpConfigDialogOpen(false);
+    setMcpConfigTargetClient(null);
+    setMcpConfigErrorMessage(null);
+    setIsSavingMcpConfiguration(false);
+    setIsStartingMcpFromDialog(false);
+  }
+
+  function handleOpenMcpConfigDialog(options?: { targetClient?: McpConfigTargetClient | null; errorMessage?: string | null }) {
+    if (!window.lightyDesign?.getMcpPreferences) {
+      pushToastNotification({
+        title: "无法打开 MCP 配置",
+        detail: "当前环境没有可用的 MCP 配置桥接。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return;
+    }
+
+    setIsMcpConfigDialogOpen(true);
+    setMcpConfigTargetClient(options?.targetClient ?? null);
+    setMcpConfigErrorMessage(options?.errorMessage ?? null);
+    syncMcpConfigDialogForm(mcpPreferences);
+  }
+
+  async function handleAutoFindAvailableMcpPort() {
+    if (!window.lightyDesign?.findAvailableMcpPort) {
+      pushToastNotification({
+        title: "无法查找 MCP 端口",
+        detail: "当前环境没有可用的 MCP 配置桥接。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return;
+    }
+
+    try {
+      const result = await window.lightyDesign.findAvailableMcpPort();
+      setMcpConfigPortInput(String(result.port));
+      setMcpConfigErrorMessage(null);
+    } catch (error) {
+      pushToastNotification({
+        title: "查找 MCP 端口失败",
+        detail: error instanceof Error ? error.message : "无法自动找到可用的本地端口。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+    }
+  }
+
+  async function handleSaveMcpConfiguration() {
+    if (!window.lightyDesign?.saveMcpConfiguration) {
+      return;
+    }
+
+    if (!hasValidMcpConfigPort) {
+      setMcpConfigErrorMessage("端口必须是 1024 到 65535 之间的整数。\n");
+      return;
+    }
+
+    setIsSavingMcpConfiguration(true);
+    setMcpConfigErrorMessage(null);
+
+    try {
+      const nextPreferences = await window.lightyDesign.saveMcpConfiguration({
+        port: parsedMcpConfigPort,
+        path: normalizedMcpConfigPath,
+      });
+      setMcpPreferences(nextPreferences);
+      syncMcpConfigDialogForm(nextPreferences);
+      pushToastNotification({
+        title: "MCP 配置已保存",
+        detail: `当前 HTTP 端点将使用 ${nextPreferences.serverUrl}`,
+        source: "system",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 3600,
+      });
+    } catch (error) {
+      setMcpConfigErrorMessage(error instanceof Error ? error.message : "保存 MCP 配置失败。\n");
+    } finally {
+      setIsSavingMcpConfiguration(false);
+    }
+  }
+
+  async function handleStartMcpFromConfigurationDialog() {
+    if (!window.lightyDesign?.saveMcpConfiguration || !window.lightyDesign?.setMcpEnabled) {
+      return;
+    }
+
+    if (!hasValidMcpConfigPort) {
+      setMcpConfigErrorMessage("端口必须是 1024 到 65535 之间的整数。\n");
+      return;
+    }
+
+    setIsStartingMcpFromDialog(true);
+    setMcpConfigErrorMessage(null);
+
+    try {
+      const savedPreferences = await window.lightyDesign.saveMcpConfiguration({
+        port: parsedMcpConfigPort,
+        path: normalizedMcpConfigPath,
+      });
+      const nextPreferences = await window.lightyDesign.setMcpEnabled(true);
+      setMcpPreferences(nextPreferences);
+      syncMcpConfigDialogForm(nextPreferences);
+      pushToastNotification({
+        title: "MCP 服务已开启",
+        detail: `当前 HTTP 端点 ${nextPreferences.serverUrl} 已可用。`,
+        source: "system",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 3600,
+      });
+      handleCloseMcpConfigDialog();
+      void savedPreferences;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "MCP 服务启动失败。\n";
+      setMcpConfigErrorMessage(detail);
+      try {
+        const latestPreferences = await window.lightyDesign.getMcpPreferences?.();
+        if (latestPreferences) {
+          setMcpPreferences(latestPreferences);
+        }
+      } catch {
+        // Ignore refresh failure and keep the dialog open with the current message.
+      }
+    } finally {
+      setIsStartingMcpFromDialog(false);
+    }
+  }
+
+  function handleSelectMcpConfigTargetClient(targetClient: McpConfigTargetClient) {
+    setMcpConfigTargetClient(targetClient);
+  }
+
+  async function handleCopyMcpConfigJson() {
+    const written = await writeClipboardText(mcpConfigPreviewJson);
+    if (!written) {
+      return;
+    }
+
+    pushToastNotification({
+      title: "MCP 配置已复制",
+      detail: "可直接粘贴到 VS Code 的 mcp.json 中。",
+      source: "system",
+      variant: "success",
+      canOpenDetail: false,
+      durationMs: 3600,
+    });
   }
 
   function getContextMenuContainerRect() {
@@ -1233,6 +1516,121 @@ function App() {
     : selectedColumn
       ? `${selectedCellAddress} · ${selectedColumn.fieldName}`
       : "未选择单元格";
+  const currentSheetContext = useMemo(() => {
+    if (!activeTab || !activeSheetData) {
+      return null;
+    }
+
+    return {
+      workbookName: activeTab.workbookName,
+      sheetName: activeTab.sheetName,
+      rowCount: activeSheetData.metadata.rowCount,
+      columnCount: activeSheetData.metadata.columnCount,
+      sheetFilter,
+      dataFilePath: activeSheetData.metadata.dataFilePath,
+      headerFilePath: activeSheetData.metadata.headerFilePath,
+      columns: activeSheetColumns.map((column) => ({
+        fieldName: column.fieldName,
+        displayName: column.displayName ?? null,
+        type: column.type,
+        exportScope: column.attributes.ExportScope ?? null,
+        isListType: column.isListType,
+        isReferenceType: column.isReferenceType,
+      })),
+      selectionAddress: selectedCellAddress,
+      selectionStatusText,
+    };
+  }, [activeSheetColumns, activeSheetData, activeTab, selectedCellAddress, selectionStatusText, sheetFilter]);
+  const currentSelectionContext = useMemo(() => {
+    if (!selectedRangeBounds || !activeTab || !activeSheetData || selectedRangeRowEntries.length === 0) {
+      return null;
+    }
+
+    const columnStart = selectedRangeBounds.startColumnIndex;
+    const visibleColumns = activeSheetColumns.slice(
+      columnStart,
+      Math.min(activeSheetColumns.length, columnStart + selectionContextColumnPreviewLimit),
+    );
+    const previewRows = selectedRangeRowEntries.slice(0, selectionContextRowPreviewLimit).map((entry) => ({
+      rowIndex: entry.rowIndex,
+      cells: visibleColumns.map((column, offset) => ({
+        fieldName: column.fieldName,
+        displayName: column.displayName ?? null,
+        value: entry.row[columnStart + offset] ?? "",
+      })),
+    }));
+
+    return {
+      workbookName: activeTab.workbookName,
+      sheetName: activeTab.sheetName,
+      address: selectedCellAddress,
+      statusText: selectionStatusText,
+      rowCount: selectedRowCount,
+      columnCount: selectedRangeColumnCount,
+      cellCount: selectedCellCount,
+      bounds: {
+        startRowIndex: selectedRangeBounds.startRowIndex,
+        endRowIndex: selectedRangeBounds.endRowIndex,
+        startColumnIndex: selectedRangeBounds.startColumnIndex,
+        endColumnIndex: selectedRangeBounds.endColumnIndex,
+      },
+      columns: visibleColumns.map((column) => ({
+        fieldName: column.fieldName,
+        displayName: column.displayName ?? null,
+        type: column.type,
+      })),
+      previewRows,
+      isRowPreviewTruncated: selectedRangeRowEntries.length > selectionContextRowPreviewLimit,
+      isColumnPreviewTruncated: selectedRangeColumnCount > selectionContextColumnPreviewLimit,
+    };
+  }, [activeSheetColumns, activeSheetData, activeTab, selectedCellAddress, selectedCellCount, selectedRangeBounds, selectedRangeColumnCount, selectedRangeRowEntries, selectedRowCount, selectionStatusText]);
+  const activeEditorContext = useMemo(() => ({
+    appActive: true,
+    workspacePath: workspacePath || null,
+    focusedWorkbookName,
+    currentSheet: currentSheetContext,
+    selection: currentSelectionContext,
+  }), [currentSelectionContext, currentSheetContext, focusedWorkbookName, workspacePath]);
+
+  async function handleCopyCurrentSheetContextJson() {
+    if (!currentSheetContext) {
+      return;
+    }
+
+    const written = await writeClipboardText(JSON.stringify(currentSheetContext, null, 2));
+    if (!written) {
+      return;
+    }
+
+    pushToastNotification({
+      title: "当前 Sheet 上下文已复制",
+      detail: `${currentSheetContext.workbookName} / ${currentSheetContext.sheetName}`,
+      source: "system",
+      variant: "success",
+      canOpenDetail: false,
+      durationMs: 3200,
+    });
+  }
+
+  async function handleCopyCurrentSelectionContextJson() {
+    if (!currentSelectionContext) {
+      return;
+    }
+
+    const written = await writeClipboardText(JSON.stringify(currentSelectionContext, null, 2));
+    if (!written) {
+      return;
+    }
+
+    pushToastNotification({
+      title: "当前选区上下文已复制",
+      detail: currentSelectionContext.address,
+      source: "system",
+      variant: "success",
+      canOpenDetail: false,
+      durationMs: 3200,
+    });
+  }
 
   function handleResizeColumn(columnIndex: number, nextWidth: number) {
     if (!activeTab || !activeSheetData) {
@@ -1659,6 +2057,69 @@ function App() {
   }, [openToolbarMenu]);
 
   useEffect(() => {
+    if (!window.lightyDesign?.getMcpPreferences) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadMcpPreferences() {
+      try {
+        const preferences = await window.lightyDesign?.getMcpPreferences();
+        if (!cancelled && preferences) {
+          setMcpPreferences(preferences);
+        }
+      } catch {
+        if (!cancelled) {
+          setMcpPreferences(null);
+        }
+      }
+    }
+
+    void loadMcpPreferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!window.lightyDesign?.setMcpEditorContext) {
+      return;
+    }
+
+    void window.lightyDesign.setMcpEditorContext({
+      ...activeEditorContext,
+      updatedAt: new Date().toISOString(),
+      mcpEnabled: mcpPreferences?.enabled ?? false,
+    });
+  }, [activeEditorContext, mcpPreferences?.enabled]);
+
+  useEffect(() => {
+    if (!isMcpConfigDialogOpen || !mcpConfigPreviewJson) {
+      return;
+    }
+
+    const textarea = mcpConfigTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.select();
+    });
+  }, [isMcpConfigDialogOpen, mcpConfigPreviewJson]);
+
+  useEffect(() => {
+    if (!isMcpConfigDialogOpen) {
+      return;
+    }
+
+    syncMcpConfigDialogForm(mcpPreferences);
+  }, [isMcpConfigDialogOpen, mcpPreferences?.serverPort, mcpPreferences?.serverPath]);
+
+  useEffect(() => {
     if (!isRenameSheetDialogOpen) {
       return;
     }
@@ -2019,9 +2480,8 @@ function App() {
 
               <div className="freeze-dialog-grid">
                 <label className="search-field freeze-dialog-field">
-                  <span>冻结行</span>
+                  <span>冻结行数</span>
                   <input
-                    autoFocus
                     max={filteredRowEntries.length}
                     min={0}
                     onChange={(event) => setFreezeDialogRowCount(Math.max(0, Number.parseInt(event.target.value || "0", 10) || 0))}
@@ -2037,7 +2497,7 @@ function App() {
                 </label>
 
                 <label className="search-field freeze-dialog-field">
-                  <span>冻结列</span>
+                  <span>冻结列数</span>
                   <input
                     max={activeSheetColumns.length}
                     min={0}
@@ -2054,7 +2514,9 @@ function App() {
                 </label>
               </div>
 
-              <p className="freeze-dialog-caption">最多可冻结 {filteredRowEntries.length} 行、{activeSheetColumns.length} 列。</p>
+              <p className="workspace-create-path-label codegen-dialog-caption">
+                当前可见数据共有 {filteredRowEntries.length} 行、{activeSheetColumns.length} 列。输入 0 表示不冻结对应方向。
+              </p>
             </div>
 
             <div className="workspace-create-actions">
@@ -2073,6 +2535,128 @@ function App() {
               </button>
               <button className="primary-button" onClick={handleConfirmFreezeDialog} type="button">
                 应用冻结
+              </button>
+            </div>
+          </div>
+        </DialogBackdrop>
+      ) : null}
+
+      {isMcpConfigDialogOpen ? (
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseMcpConfigDialog}>
+          <div
+            aria-label="MCP 服务配置"
+            aria-modal="true"
+            className="workspace-create-dialog mcp-config-dialog"
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">MCP 服务配置</p>
+              </div>
+            </div>
+
+            <div className="workspace-create-body mcp-config-body">
+              <p className="workspace-create-path-label">当前状态</p>
+              <p className="workspace-create-path-value">{mcpStatusLabel}</p>
+
+              <p className="workspace-create-path-label">服务地址</p>
+              <p className="workspace-create-path-value">{mcpConfigPreviewUrl || "请输入有效端口"}</p>
+
+              <div className="mcp-config-settings-grid">
+                <label className="search-field mcp-config-field">
+                  <span>监听主机</span>
+                  <input readOnly type="text" value={mcpPreferences?.serverHost ?? "127.0.0.1"} />
+                </label>
+
+                <label className="search-field mcp-config-field">
+                  <span>监听端口</span>
+                  <input
+                    inputMode="numeric"
+                    onChange={(event) => setMcpConfigPortInput(event.target.value)}
+                    placeholder="39231"
+                    type="text"
+                    value={mcpConfigPortInput}
+                  />
+                </label>
+              </div>
+
+              <label className="search-field mcp-config-field">
+                <span>HTTP 路径</span>
+                <input
+                  onChange={(event) => setMcpConfigPathInput(event.target.value)}
+                  placeholder="/mcp"
+                  type="text"
+                  value={mcpConfigPathInput}
+                />
+              </label>
+
+              <div className="action-grid compact-grid mcp-config-action-grid">
+                <button className="secondary-button" onClick={() => void handleAutoFindAvailableMcpPort()} type="button">
+                  自动查找可用端口
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={isSavingMcpConfiguration || isStartingMcpFromDialog}
+                  onClick={() => void handleSaveMcpConfiguration()}
+                  type="button"
+                >
+                  保存配置
+                </button>
+              </div>
+
+              {mcpConfigErrorMessage || mcpPreferences?.lastStartError ? (
+                <p className="column-editor-error">
+                  {mcpConfigErrorMessage ?? mcpPreferences?.lastStartError}
+                </p>
+              ) : null}
+
+              <p className="workspace-create-path-label">目标客户端</p>
+              <div className="action-grid compact-grid mcp-config-client-grid">
+                <button
+                  className={`secondary-button mcp-config-client-button${mcpConfigTargetClient === "vscode" ? " is-active" : ""}`}
+                  onClick={() => handleSelectMcpConfigTargetClient("vscode")}
+                  type="button"
+                >
+                  VS Code
+                </button>
+              </div>
+
+              <p className="workspace-create-path-label codegen-dialog-caption">
+                当前仅支持 VS Code。配置保存后会写入用户偏好；正常关闭 Electron 时，LightyDesign 会一并关闭本地 MCP HTTP 服务。
+              </p>
+
+              {mcpConfigTargetClient ? (
+                <label className="search-field mcp-config-field">
+                  <span>配置 JSON</span>
+                  <textarea
+                    className="column-editor-textarea mcp-config-textarea"
+                    readOnly
+                    ref={mcpConfigTextareaRef}
+                    value={mcpConfigPreviewJson}
+                  />
+                </label>
+              ) : null}
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseMcpConfigDialog} type="button">
+                关闭
+              </button>
+              <button
+                className="secondary-button"
+                disabled={isSavingMcpConfiguration || isStartingMcpFromDialog || !hasValidMcpConfigPort}
+                onClick={() => void handleStartMcpFromConfigurationDialog()}
+                type="button"
+              >
+                {mcpPreferences?.enabled ? "按当前配置重启" : "保存并尝试启动"}
+              </button>
+              <button
+                className="primary-button"
+                disabled={!mcpConfigPreviewJson}
+                onClick={() => void handleCopyMcpConfigJson()}
+                type="button"
+              >
+                复制 JSON
               </button>
             </div>
           </div>
@@ -2341,6 +2925,78 @@ function App() {
                       closeToolbarMenu();
                       setFreezeRowCount(0);
                       setFreezeColumnCount(0);
+                    },
+                  })}
+                </>)}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="app-toolbar-menu-group">
+            <button
+              aria-expanded={openToolbarMenu === "ai"}
+              className={`toolbar-menu-trigger${openToolbarMenu === "ai" ? " is-open" : ""}`}
+              onMouseEnter={() => handleToolbarMenuHover("ai")}
+              onClick={() => toggleToolbarMenu("ai")}
+              type="button"
+            >
+              AI工具
+            </button>
+            {openToolbarMenu === "ai" ? (
+              <div className="toolbar-menu-dropdown toolbar-menu-dropdown-wide" role="menu">
+                {renderToolbarMenuSection("MCP 服务", <>
+                  {renderToolbarMenuItem({
+                    label: `当前状态 ${mcpStatusLabel}`,
+                    checked: mcpPreferences?.runtimeStatus === "running",
+                    disabled: true,
+                    onClick: () => {},
+                  })}
+                  {renderToolbarMenuItem({
+                    label: mcpPreferences?.enabled ? "关闭 MCP 服务" : "开启 MCP 服务",
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleToggleMcpEnabled();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "配置 MCP 服务",
+                    onClick: () => {
+                      closeToolbarMenu();
+                      handleOpenMcpConfigDialog();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "复制配置 JSON",
+                    onClick: () => {
+                      closeToolbarMenu();
+                      handleOpenMcpConfigDialog({ targetClient: "vscode" });
+                    },
+                  })}
+                </>)}
+                <div className="toolbar-menu-separator" />
+                {renderToolbarMenuSection("编辑器上下文", <>
+                  {renderToolbarMenuItem({
+                    label: currentSheetContext
+                      ? `当前 Sheet ${currentSheetContext.workbookName} / ${currentSheetContext.sheetName}`
+                      : "当前没有活动 Sheet",
+                    checked: Boolean(currentSheetContext),
+                    disabled: true,
+                    onClick: () => {},
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "复制当前 Sheet 上下文 JSON",
+                    disabled: !currentSheetContext,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleCopyCurrentSheetContextJson();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "复制当前选区上下文 JSON",
+                    disabled: !currentSelectionContext,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleCopyCurrentSelectionContextJson();
                     },
                   })}
                 </>)}

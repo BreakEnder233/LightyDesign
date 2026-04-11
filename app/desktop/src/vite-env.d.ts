@@ -57,6 +57,19 @@ interface WindowControlResult {
   error?: string;
 }
 
+interface McpPreferences {
+  enabled: boolean;
+  preferencesFilePath: string;
+  contextFilePath: string;
+  desktopHostUrl: string;
+  serverHost: string;
+  serverPort: number;
+  serverPath: string;
+  serverUrl: string;
+  runtimeStatus: "stopped" | "starting" | "running" | "error";
+  lastStartError: string | null;
+}
+
 interface Window {
   lightyDesign?: {
     getDesktopHostInfo: () => Promise<DesktopHostInfo>;
@@ -65,6 +78,12 @@ interface Window {
     checkForAppUpdates: () => Promise<AppUpdateCheckResult>;
     getAppUpdateDownloadState: () => Promise<AppUpdateDownloadState>;
     downloadAndInstallAppUpdate: () => Promise<AppUpdateDownloadState>;
+    getMcpPreferences: () => Promise<McpPreferences>;
+    setMcpEnabled: (enabled: boolean) => Promise<McpPreferences>;
+    saveMcpConfiguration: (configuration: { port: number; path?: string | null }) => Promise<McpPreferences>;
+    findAvailableMcpPort: () => Promise<{ port: number }>;
+    getMcpConfigJson: () => Promise<string>;
+    setMcpEditorContext: (context: unknown) => Promise<{ ok: boolean; error?: string }>;
     chooseWorkspaceDirectory: () => Promise<string | null>;
     openDirectory: (directoryPath: string) => Promise<{ ok: boolean; error?: string }>;
     openExternal: (targetUrl: string) => Promise<{ ok: boolean; error?: string }>;

@@ -113,6 +113,10 @@ button {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
 }
 
+.toolbar-menu-dropdown-wide {
+  min-width: 320px;
+}
+
 .toolbar-menu-section {
   display: flex;
   flex-direction: column;
@@ -1317,6 +1321,44 @@ button {
 
 .column-editor-dialog {
   width: min(640px, 100%);
+}
+
+.mcp-config-dialog {
+  width: min(760px, 100%);
+}
+
+.mcp-config-body {
+  gap: 12px;
+}
+
+.mcp-config-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mcp-config-action-grid {
+  margin-top: 0;
+}
+
+.mcp-config-client-grid {
+  grid-template-columns: minmax(0, 180px);
+}
+
+.mcp-config-client-button.is-active {
+  color: #ffffff;
+  border-color: #1177bb;
+  background: #0e639c;
+}
+
+.mcp-config-field {
+  margin-top: 0;
+}
+
+.mcp-config-textarea {
+  min-height: 220px;
+  resize: vertical;
+  white-space: pre;
 }
 
 .column-editor-body {

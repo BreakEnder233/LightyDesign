@@ -1,12 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const desktopHostUrl = process.env.LDD_DESKTOP_HOST_URL ?? "http://127.0.0.1:5000";
+const mcpServerHost = process.env.LDD_MCP_HTTP_HOST ?? "127.0.0.1";
+const defaultMcpServerPort = Number.parseInt(process.env.LDD_MCP_HTTP_PORT ?? "39231", 10);
+const defaultMcpServerPath = process.env.LDD_MCP_HTTP_PATH ?? "/mcp";
 const desktopRoot = path.resolve(__dirname, "..", "..");
 const defaultRepositoryRoot = path.resolve(desktopRoot, "..", "..");
 const repositoryRoot = process.env.LDD_REPOSITORY_ROOT ?? defaultRepositoryRoot;
@@ -96,7 +100,39 @@ type AppUpdateDownloadState = {
   detail?: string;
 };
 
+type AppPreferences = {
+  mcp?: {
+    enabled?: boolean;
+    port?: number;
+    path?: string;
+  };
+};
+
+type McpServerStatus = "stopped" | "starting" | "running" | "error";
+
+type McpServerSettings = {
+  host: string;
+  port: number;
+  path: string;
+};
+
+type McpPreferences = {
+  enabled: boolean;
+  preferencesFilePath: string;
+  contextFilePath: string;
+  desktopHostUrl: string;
+  serverHost: string;
+  serverPort: number;
+  serverPath: string;
+  serverUrl: string;
+  runtimeStatus: McpServerStatus;
+  lastStartError: string | null;
+};
+
 let desktopHostProcess: ChildProcessWithoutNullStreams | null = null;
+let mcpServerProcess: ChildProcessWithoutNullStreams | null = null;
+let mcpServerStatus: McpServerStatus = "stopped";
+let mcpServerLastError: string | null = null;
 let hasDirtyChanges = false;
 let allowWindowClose = false;
 let appUpdateDownloadState: AppUpdateDownloadState = {
@@ -112,6 +148,168 @@ let appUpdateDownloadState: AppUpdateDownloadState = {
   progressPercent: null,
 };
 let appUpdateInstallPromise: Promise<AppUpdateDownloadState> | null = null;
+
+function getPreferencesFilePath() {
+  return path.join(app.getPath("userData"), "preferences.json");
+}
+
+function getMcpEditorContextFilePath() {
+  return path.join(app.getPath("userData"), "mcp-editor-context.json");
+}
+
+function readAppPreferences(): AppPreferences {
+  const preferencesFilePath = getPreferencesFilePath();
+  if (!fs.existsSync(preferencesFilePath)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(preferencesFilePath, "utf8")) as AppPreferences;
+  } catch (error) {
+    console.warn(`[LightyDesign] Failed to read preferences from ${preferencesFilePath}.`, error);
+    return {};
+  }
+}
+
+function writeAppPreferences(preferences: AppPreferences) {
+  const preferencesFilePath = getPreferencesFilePath();
+  fs.mkdirSync(path.dirname(preferencesFilePath), { recursive: true });
+  fs.writeFileSync(preferencesFilePath, JSON.stringify(preferences, null, 2));
+}
+
+function normalizeMcpPath(value: string | null | undefined) {
+  const normalizedValue = (value ?? "").trim();
+  if (!normalizedValue) {
+    return defaultMcpServerPath;
+  }
+
+  return normalizedValue.startsWith("/") ? normalizedValue : `/${normalizedValue}`;
+}
+
+function normalizeMcpPort(value: unknown) {
+  const parsedPort = typeof value === "number"
+    ? value
+    : typeof value === "string"
+      ? Number.parseInt(value, 10)
+      : Number.NaN;
+
+  if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
+    return Number.isInteger(defaultMcpServerPort) ? defaultMcpServerPort : 39231;
+  }
+
+  return parsedPort;
+}
+
+function getMcpServerSettings(preferences: AppPreferences = readAppPreferences()): McpServerSettings {
+  return {
+    host: mcpServerHost,
+    port: normalizeMcpPort(preferences.mcp?.port),
+    path: normalizeMcpPath(preferences.mcp?.path),
+  };
+}
+
+function getMcpServerUrl(settings: McpServerSettings = getMcpServerSettings()) {
+  return `http://${settings.host}:${settings.port}${settings.path}`;
+}
+
+function getMcpPreferences(): McpPreferences {
+  const preferences = readAppPreferences();
+  const settings = getMcpServerSettings(preferences);
+  return {
+    enabled: preferences.mcp?.enabled === true,
+    preferencesFilePath: getPreferencesFilePath(),
+    contextFilePath: getMcpEditorContextFilePath(),
+    desktopHostUrl,
+    serverHost: settings.host,
+    serverPort: settings.port,
+    serverPath: settings.path,
+    serverUrl: getMcpServerUrl(settings),
+    runtimeStatus: mcpServerStatus,
+    lastStartError: mcpServerLastError,
+  };
+}
+
+async function setMcpEnabled(enabled: boolean) {
+  const preferences = readAppPreferences();
+
+  if (!enabled) {
+    stopMcpServer();
+    writeAppPreferences({
+      ...preferences,
+      mcp: {
+        ...preferences.mcp,
+        enabled: false,
+      },
+    });
+
+    return getMcpPreferences();
+  }
+
+  try {
+    await startMcpServer();
+    writeAppPreferences({
+      ...preferences,
+      mcp: {
+        ...preferences.mcp,
+        enabled: true,
+      },
+    });
+    return getMcpPreferences();
+  } catch (error) {
+    writeAppPreferences({
+      ...preferences,
+      mcp: {
+        ...preferences.mcp,
+        enabled: false,
+      },
+    });
+    throw error;
+  }
+}
+
+function saveMcpConfiguration(configuration: { port: number; path?: string | null }) {
+  const preferences = readAppPreferences();
+  writeAppPreferences({
+    ...preferences,
+    mcp: {
+      ...preferences.mcp,
+      port: normalizeMcpPort(configuration.port),
+      path: normalizeMcpPath(configuration.path),
+    },
+  });
+
+  mcpServerLastError = null;
+  return getMcpPreferences();
+}
+
+function writeMcpEditorContextSnapshot(snapshot: unknown) {
+  const contextFilePath = getMcpEditorContextFilePath();
+  fs.mkdirSync(path.dirname(contextFilePath), { recursive: true });
+  fs.writeFileSync(contextFilePath, JSON.stringify(snapshot ?? null, null, 2));
+}
+
+function resolveMcpServerScriptPath() {
+  return path.join(__dirname, "mcpServer.js");
+}
+
+function resolveMcpServerWorkingDirectory() {
+  return app.isPackaged ? process.resourcesPath : __dirname;
+}
+
+function buildMcpConfigJson() {
+  return JSON.stringify(
+    {
+      servers: {
+        lightydesign: {
+          type: "http",
+          url: getMcpServerUrl(),
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
 
 function getPrimaryWindow() {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
@@ -848,6 +1046,170 @@ function stopDesktopHost() {
   desktopHostProcess = null;
 }
 
+function isPortAvailable(host: string, port: number) {
+  return new Promise<boolean>((resolve) => {
+    const server = net.createServer();
+
+    server.once("error", () => {
+      resolve(false);
+    });
+
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+
+    server.listen(port, host);
+  });
+}
+
+async function findAvailableMcpPort(startPort = normalizeMcpPort(defaultMcpServerPort)) {
+  for (let candidatePort = startPort; candidatePort < startPort + 200; candidatePort += 1) {
+    if (await isPortAvailable(mcpServerHost, candidatePort)) {
+      return candidatePort;
+    }
+  }
+
+  for (let candidatePort = 10240; candidatePort < 65535; candidatePort += 1) {
+    if (await isPortAvailable(mcpServerHost, candidatePort)) {
+      return candidatePort;
+    }
+  }
+
+  throw new Error("未找到可用的本地 MCP 端口。请手动输入一个未占用端口。\n");
+}
+
+async function fetchMcpServerHealth(settings: McpServerSettings) {
+  try {
+    const response = await fetch(`${getMcpServerUrl(settings)}/health`);
+    if (!response.ok) {
+      return false;
+    }
+
+    const payload = await response.json() as { ok?: boolean };
+    return payload.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForMcpServerReady(settings: McpServerSettings, timeoutMs: number) {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (await fetchMcpServerHealth(settings)) {
+      return true;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  return false;
+}
+
+async function startMcpServer() {
+  const settings = getMcpServerSettings();
+  if (mcpServerProcess && mcpServerStatus === "running") {
+    const isHealthy = await fetchMcpServerHealth(settings);
+    if (isHealthy) {
+      return;
+    }
+
+    stopMcpServer();
+  }
+
+  if (!await isPortAvailable(settings.host, settings.port)) {
+    mcpServerStatus = "error";
+    mcpServerLastError = `端口 ${settings.port} 已被占用。请修改 MCP 配置后重试。`;
+    throw new Error(mcpServerLastError);
+  }
+
+  const scriptPath = resolveMcpServerScriptPath();
+  if (!fs.existsSync(scriptPath)) {
+    mcpServerStatus = "error";
+    mcpServerLastError = `MCP server script was not found at ${scriptPath}.`;
+    throw new Error(mcpServerLastError);
+  }
+
+  mcpServerStatus = "starting";
+  mcpServerLastError = null;
+
+  mcpServerProcess = spawn(process.execPath, [scriptPath], {
+    // In packaged Electron builds, __dirname points inside app.asar and cannot be used as a subprocess cwd.
+    cwd: resolveMcpServerWorkingDirectory(),
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      LDD_DESKTOP_HOST_URL: desktopHostUrl,
+      LDD_EDITOR_CONTEXT_FILE: getMcpEditorContextFilePath(),
+      LDD_MCP_PREFERENCES_FILE: getPreferencesFilePath(),
+      LDD_REPOSITORY_ROOT: repositoryRoot,
+      LDD_MCP_TRANSPORT: "http",
+      LDD_MCP_HTTP_HOST: settings.host,
+      LDD_MCP_HTTP_PORT: String(settings.port),
+      LDD_MCP_HTTP_PATH: settings.path,
+    },
+    stdio: "pipe",
+  });
+
+  const startedProcess = mcpServerProcess;
+
+  mcpServerProcess.stdout.on("data", (chunk) => {
+    process.stdout.write(`[McpServer] ${chunk}`);
+  });
+
+  mcpServerProcess.stderr.on("data", (chunk) => {
+    process.stderr.write(`[McpServer] ${chunk}`);
+  });
+
+  mcpServerProcess.on("exit", (code, signal) => {
+    console.log(`[LightyDesign] MCP server exited with code ${code ?? "null"}, signal ${signal ?? "none"}.`);
+    if (mcpServerStatus !== "stopped") {
+      mcpServerStatus = "error";
+      mcpServerLastError = `MCP 服务已退出，退出码 ${code ?? "null"}，信号 ${signal ?? "none"}。`;
+    }
+    mcpServerProcess = null;
+  });
+
+  const ready = await Promise.race([
+    waitForMcpServerReady(settings, 3000),
+    new Promise<boolean>((resolve) => {
+      startedProcess.once("exit", () => resolve(false));
+    }),
+  ]);
+
+  if (!ready) {
+    stopMcpServer();
+    mcpServerStatus = "error";
+    mcpServerLastError = `MCP 服务未能在端口 ${settings.port} 上成功启动。请检查端口是否可用，或改用其他端口。`;
+    throw new Error(mcpServerLastError);
+  }
+
+  mcpServerStatus = "running";
+  mcpServerLastError = null;
+}
+
+function stopMcpServer() {
+  if (!mcpServerProcess) {
+    mcpServerStatus = "stopped";
+    mcpServerLastError = null;
+    return;
+  }
+
+  mcpServerStatus = "stopped";
+  mcpServerLastError = null;
+  mcpServerProcess.kill();
+  mcpServerProcess = null;
+}
+
+async function syncMcpServerState() {
+  if (getMcpPreferences().enabled) {
+    await startMcpServer();
+    return;
+  }
+
+  stopMcpServer();
+}
+
 async function fetchDesktopHostHealth(): Promise<DesktopHostHealth> {
   try {
     const response = await fetch(`${desktopHostUrl}/api/health`);
@@ -994,6 +1356,32 @@ ipcMain.handle("app:get-update-download-state", async () => appUpdateDownloadSta
 
 ipcMain.handle("app:download-and-install-update", async () => downloadAndInstallAppUpdate());
 
+ipcMain.handle("app:get-mcp-preferences", async () => getMcpPreferences());
+
+ipcMain.handle("app:set-mcp-enabled", async (_event, enabled: boolean) => setMcpEnabled(Boolean(enabled)));
+
+ipcMain.handle("app:save-mcp-configuration", async (_event, configuration: { port: number; path?: string | null }) => {
+  return saveMcpConfiguration(configuration ?? { port: normalizeMcpPort(defaultMcpServerPort) });
+});
+
+ipcMain.handle("app:find-available-mcp-port", async () => ({
+  port: await findAvailableMcpPort(getMcpPreferences().serverPort),
+}));
+
+ipcMain.handle("app:get-mcp-config-json", async () => buildMcpConfigJson());
+
+ipcMain.handle("app:set-mcp-editor-context", async (_event, snapshot: unknown) => {
+  try {
+    writeMcpEditorContextSnapshot(snapshot);
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "写入 MCP 编辑器上下文失败。",
+    };
+  }
+});
+
 ipcMain.handle("desktop-host:health", async () => fetchDesktopHostHealth());
 
 ipcMain.handle("workspace:choose-directory", async () => {
@@ -1080,6 +1468,11 @@ ipcMain.on("app:set-dirty-state", (_event, nextHasDirtyChanges: boolean) => {
 
 app.whenReady().then(async () => {
   startDesktopHost();
+  try {
+    await syncMcpServerState();
+  } catch (error) {
+    console.warn("[LightyDesign] MCP server was not ready during startup.", error);
+  }
   createMainWindow();
   void waitForDesktopHostReady(12000).then((health) => {
     if (health?.ok) {
@@ -1099,6 +1492,7 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
+    stopMcpServer();
     stopDesktopHost();
     app.quit();
   }
@@ -1106,5 +1500,36 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   allowWindowClose = true;
+  writeMcpEditorContextSnapshot({
+    updatedAt: new Date().toISOString(),
+    appActive: false,
+    workspacePath: null,
+    currentSheet: null,
+    selection: null,
+  });
+  stopMcpServer();
   stopDesktopHost();
 });
+
+const singleInstanceLock = app.requestSingleInstanceLock();
+
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const mainWindow = getPrimaryWindow();
+    if (!mainWindow) {
+      return;
+    }
+
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+
+    mainWindow.focus();
+  });
+}

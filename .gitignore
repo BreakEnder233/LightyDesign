@@ -16,14 +16,19 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
 # IDE
 .vscode/
 *.code-workspace
+.idea/
+*.user
+*.suo
 
 # OS
 .DS_Store
 Thumbs.db
+
 # .NET
 bin/
 obj/
@@ -35,6 +40,7 @@ node_modules/
 app/desktop/node_modules/
 app/desktop/dist/
 app/desktop/dist-electron/
+app/desktop/dist-electron/**
 app/desktop/.vite/
 
 # Logs
@@ -44,14 +50,35 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# IDE
-.idea/
-*.user
-*.suo
+# Ignore compiled binaries, packages and installers
+*.exe
+*.dll
+*.pdb
+*.so
+*.dylib
+*.lib
+*.a
+*.o
+*.nupkg
+*.msi
+*.AppImage
+*.deb
+*.rpm
+*.zip
+*.7z
+*.blockmap
 
-# OS
-.DS_Store
-Thumbs.db
+# NuGet / packages
+/packages/
+**/packages/
+.nuget/
+
+# Build / publish folders
+/publish/
+**/publish/
+/build/
+**/build/
 
 # Artifacts
-/[Aa]rtifacts
+/[Aa]rtifacts/
+/artifacts/**

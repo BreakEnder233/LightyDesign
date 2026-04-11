@@ -129,12 +129,23 @@ type McpPreferences = {
   lastStartError: string | null;
 };
 
+type WorkspaceFilesChangedEvent = {
+  workspacePath: string;
+  changedPath: string | null;
+  eventType: string;
+  timestamp: string;
+};
+
 let desktopHostProcess: ChildProcessWithoutNullStreams | null = null;
 let mcpServerProcess: ChildProcessWithoutNullStreams | null = null;
 let mcpServerStatus: McpServerStatus = "stopped";
 let mcpServerLastError: string | null = null;
 let hasDirtyChanges = false;
 let allowWindowClose = false;
+let watchedWorkspacePath: string | null = null;
+let workspaceWatcher: fs.FSWatcher | null = null;
+let pendingWorkspaceFilesChangedEvent: WorkspaceFilesChangedEvent | null = null;
+let workspaceFilesChangedTimer: NodeJS.Timeout | null = null;
 let appUpdateDownloadState: AppUpdateDownloadState = {
   status: "idle",
   currentVersion: app.getVersion(),
@@ -309,6 +320,118 @@ function buildMcpConfigJson() {
     null,
     2,
   );
+}
+
+function normalizeWorkspaceWatchPath(workspacePath: string | null | undefined) {
+  if (typeof workspacePath !== "string" || workspacePath.trim().length === 0) {
+    return null;
+  }
+
+  return path.resolve(workspacePath);
+}
+
+function isEditorWorkspaceFilePath(filePath: string | null) {
+  if (!filePath) {
+    return true;
+  }
+
+  const normalizedFilePath = filePath.replace(/\\/g, "/").toLowerCase();
+  return normalizedFilePath.endsWith("/headers.json")
+    || normalizedFilePath.endsWith("/config.json")
+    || normalizedFilePath.endsWith("/codegen.json")
+    || normalizedFilePath.endsWith(".txt")
+    || normalizedFilePath.endsWith("_header.json");
+}
+
+function clearWorkspaceWatchTimer() {
+  if (!workspaceFilesChangedTimer) {
+    return;
+  }
+
+  clearTimeout(workspaceFilesChangedTimer);
+  workspaceFilesChangedTimer = null;
+}
+
+function broadcastWorkspaceFilesChanged(event: WorkspaceFilesChangedEvent) {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) {
+      window.webContents.send("workspace:files-changed", event);
+    }
+  });
+}
+
+function queueWorkspaceFilesChanged(event: WorkspaceFilesChangedEvent) {
+  pendingWorkspaceFilesChangedEvent = event;
+  clearWorkspaceWatchTimer();
+  workspaceFilesChangedTimer = setTimeout(() => {
+    if (pendingWorkspaceFilesChangedEvent) {
+      broadcastWorkspaceFilesChanged(pendingWorkspaceFilesChangedEvent);
+      pendingWorkspaceFilesChangedEvent = null;
+    }
+
+    workspaceFilesChangedTimer = null;
+  }, 250);
+}
+
+function stopWorkspaceWatcher() {
+  clearWorkspaceWatchTimer();
+  pendingWorkspaceFilesChangedEvent = null;
+  watchedWorkspacePath = null;
+  workspaceWatcher?.close();
+  workspaceWatcher = null;
+}
+
+function startWorkspaceWatcher(workspacePath: string) {
+  const normalizedWorkspacePath = normalizeWorkspaceWatchPath(workspacePath);
+  if (!normalizedWorkspacePath) {
+    stopWorkspaceWatcher();
+    return;
+  }
+
+  if (watchedWorkspacePath === normalizedWorkspacePath && workspaceWatcher) {
+    return;
+  }
+
+  stopWorkspaceWatcher();
+
+  if (!fs.existsSync(normalizedWorkspacePath)) {
+    watchedWorkspacePath = normalizedWorkspacePath;
+    return;
+  }
+
+  const recursive = process.platform === "win32" || process.platform === "darwin";
+  const handleWorkspaceChange = (eventType: string, fileName: string | Buffer | null) => {
+    const nextWatchedWorkspacePath = watchedWorkspacePath;
+    if (!nextWatchedWorkspacePath) {
+      return;
+    }
+
+    const relativePath = typeof fileName === "string"
+      ? fileName
+      : Buffer.isBuffer(fileName)
+        ? fileName.toString("utf8")
+        : "";
+    const changedPath = relativePath ? path.resolve(nextWatchedWorkspacePath, relativePath) : null;
+    if (!isEditorWorkspaceFilePath(changedPath)) {
+      return;
+    }
+
+    queueWorkspaceFilesChanged({
+      workspacePath: nextWatchedWorkspacePath,
+      changedPath,
+      eventType,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  try {
+    workspaceWatcher = fs.watch(normalizedWorkspacePath, { recursive }, handleWorkspaceChange);
+    watchedWorkspacePath = normalizedWorkspacePath;
+  } catch (error) {
+    workspaceWatcher = null;
+    watchedWorkspacePath = null;
+    console.warn(`[LightyDesign] Failed to watch workspace '${normalizedWorkspacePath}'.`, error);
+  }
 }
 
 function getPrimaryWindow() {
@@ -1398,6 +1521,17 @@ ipcMain.handle("workspace:choose-directory", async () => {
   return result.filePaths[0];
 });
 
+ipcMain.handle("workspace:set-watch-path", async (_event, workspacePath: string | null) => {
+  const normalizedWorkspacePath = normalizeWorkspaceWatchPath(workspacePath);
+  if (!normalizedWorkspacePath) {
+    stopWorkspaceWatcher();
+    return { ok: true };
+  }
+
+  startWorkspaceWatcher(normalizedWorkspacePath);
+  return { ok: true };
+});
+
 ipcMain.handle("window:minimize", async () => {
   const browserWindow = getPrimaryWindow();
   if (!browserWindow) {
@@ -1491,6 +1625,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  stopWorkspaceWatcher();
   if (process.platform !== "darwin") {
     stopMcpServer();
     stopDesktopHost();

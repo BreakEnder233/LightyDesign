@@ -132,6 +132,66 @@ const selectionRowPreviewLimit = 50;
 const defaultSheetRowPageSize = 50;
 const maxSheetRowPageSize = 200;
 
+const jsonScalarSchema = {
+  anyOf: [
+    { type: "string" },
+    { type: "number" },
+    { type: "integer" },
+    { type: "boolean" },
+    { type: "null" },
+  ],
+} as const;
+
+const rowPatchOperationSchema = {
+  type: "object",
+  properties: {
+    kind: {
+      type: "string",
+      enum: ["insert", "update", "delete"],
+    },
+    rowIndex: { type: "integer", minimum: 0 },
+    cells: {
+      type: "array",
+      items: jsonScalarSchema,
+    },
+    fieldValues: {
+      type: "object",
+      additionalProperties: jsonScalarSchema,
+    },
+  },
+  required: ["kind"],
+  additionalProperties: false,
+} as const;
+
+const columnPatchOperationSchema = {
+  type: "object",
+  properties: {
+    kind: {
+      type: "string",
+      enum: ["insert", "update", "delete", "move"],
+    },
+    index: { type: "integer", minimum: 0 },
+    fieldName: { type: "string" },
+    targetFieldName: { type: "string" },
+    toIndex: { type: "integer", minimum: 0 },
+    defaultValue: jsonScalarSchema,
+    attributes: {
+      type: "object",
+      additionalProperties: jsonScalarSchema,
+    },
+    displayName: {
+      anyOf: [{ type: "string" }, { type: "null" }],
+    },
+    type: { type: "string" },
+    column: {
+      type: "object",
+      additionalProperties: true,
+    },
+  },
+  required: ["kind"],
+  additionalProperties: false,
+} as const;
+
 const tools: ToolDefinition[] = [
   {
     name: "get_workspace_navigation",
@@ -261,7 +321,11 @@ const tools: ToolDefinition[] = [
         workbookName: { type: "string" },
         sheetName: { type: "string" },
         dryRun: { type: "boolean" },
-        operations: { type: "array" },
+        operations: {
+          type: "array",
+          minItems: 1,
+          items: rowPatchOperationSchema,
+        },
       },
       required: ["operations"],
       additionalProperties: false,
@@ -277,7 +341,11 @@ const tools: ToolDefinition[] = [
         workbookName: { type: "string" },
         sheetName: { type: "string" },
         dryRun: { type: "boolean" },
-        operations: { type: "array" },
+        operations: {
+          type: "array",
+          minItems: 1,
+          items: columnPatchOperationSchema,
+        },
       },
       required: ["operations"],
       additionalProperties: false,

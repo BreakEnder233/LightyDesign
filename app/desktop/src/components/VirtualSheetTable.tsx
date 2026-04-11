@@ -12,6 +12,11 @@ import {
 } from "../types/desktopApp";
 
 type VirtualSheetTableProps = {
+  restoreScrollRequest?: {
+    key: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null;
   canInsertCopiedCellsDown: boolean;
   canInsertCopiedColumns: boolean;
   canInsertCopiedRows: boolean;
@@ -52,6 +57,7 @@ type VirtualSheetTableProps = {
   onClearSelection: () => void;
   onPasteSelection: (rowIndex: number, columnIndex: number, clipboardText: string) => void;
   onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
+  onScrollSnapshotChange?: (snapshot: { scrollLeft: number; scrollTop: number }) => void;
 };
 
 const rowHeight = 30;
@@ -133,6 +139,7 @@ function buildGridTemplateColumns(widths: number[], includeRowNumber: boolean) {
 }
 
 export function VirtualSheetTable({
+  restoreScrollRequest,
   canInsertCopiedCellsDown,
   canInsertCopiedColumns,
   canInsertCopiedRows,
@@ -170,6 +177,7 @@ export function VirtualSheetTable({
   onClearSelection,
   onPasteSelection,
   onEditCell,
+  onScrollSnapshotChange,
 }: VirtualSheetTableProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const leftBodyRef = useRef<HTMLDivElement | null>(null);
@@ -290,10 +298,29 @@ export function VirtualSheetTable({
     }
   }
 
-  function syncVertical(scrollTop: number) {
+  function setVerticalScroll(scrollTop: number) {
     if (leftBodyRef.current && leftBodyRef.current.scrollTop !== scrollTop) {
       leftBodyRef.current.scrollTop = scrollTop;
     }
+
+    if (bodyRef.current && bodyRef.current.scrollTop !== scrollTop) {
+      bodyRef.current.scrollTop = scrollTop;
+    }
+  }
+
+  function syncVertical(scrollTop: number) {
+    setVerticalScroll(scrollTop);
+  }
+
+  function emitScrollSnapshot(nextScrollLeft?: number, nextScrollTop?: number) {
+    if (!onScrollSnapshotChange) {
+      return;
+    }
+
+    onScrollSnapshotChange({
+      scrollLeft: nextScrollLeft ?? bodyRef.current?.scrollLeft ?? headerRef.current?.scrollLeft ?? frozenTopRef.current?.scrollLeft ?? 0,
+      scrollTop: nextScrollTop ?? bodyRef.current?.scrollTop ?? leftBodyRef.current?.scrollTop ?? 0,
+    });
   }
 
   useEffect(() => {
@@ -307,6 +334,19 @@ export function VirtualSheetTable({
     }
 
   }, [rowVirtualizer, rows, safeFreezeRows, selectedCell]);
+
+  useLayoutEffect(() => {
+    if (!restoreScrollRequest) {
+      return;
+    }
+
+    const nextScrollTop = Math.max(0, restoreScrollRequest.scrollTop);
+    const nextScrollLeft = Math.max(0, restoreScrollRequest.scrollLeft);
+
+    syncHorizontal(nextScrollLeft, "body");
+    setVerticalScroll(nextScrollTop);
+    emitScrollSnapshot(nextScrollLeft, nextScrollTop);
+  }, [restoreScrollRequest, rightPaneWidth, virtualCanvasHeight]);
 
   useEffect(() => {
     const targetElement = selectedCellKey
@@ -698,6 +738,33 @@ export function VirtualSheetTable({
     setContextMenuState(null);
   }
 
+  function isWholeRowSelectionAt(rowIndex: number) {
+    return Boolean(
+      selectionBounds &&
+      columns.length > 0 &&
+      selectionBounds.startColumnIndex === 0 &&
+      selectionBounds.endColumnIndex === columns.length - 1 &&
+      rowIndex >= selectionBounds.startRowIndex &&
+      rowIndex <= selectionBounds.endRowIndex,
+    );
+  }
+
+  function isWholeColumnSelectionAt(columnIndex: number) {
+    const firstVisibleRowIndex = rows[0]?.rowIndex;
+    const lastVisibleRowIndex = rows[rows.length - 1]?.rowIndex;
+
+    return Boolean(
+      selectionBounds &&
+      rows.length > 0 &&
+      firstVisibleRowIndex !== undefined &&
+      lastVisibleRowIndex !== undefined &&
+      selectionBounds.startRowIndex === firstVisibleRowIndex &&
+      selectionBounds.endRowIndex === lastVisibleRowIndex &&
+      columnIndex >= selectionBounds.startColumnIndex &&
+      columnIndex <= selectionBounds.endColumnIndex,
+    );
+  }
+
   function renderHeaderCells(columnSubset: SheetColumn[], columnOffset: number) {
     return columnSubset.map((column, offset) => {
       const columnIndex = columnOffset + offset;
@@ -720,7 +787,9 @@ export function VirtualSheetTable({
             onSelectColumn(columnIndex, { extendSelection: event.shiftKey });
           }}
           onContextMenu={(event) => {
-            onSelectColumn(columnIndex, { extendSelection: event.shiftKey });
+            if (event.shiftKey || !isWholeColumnSelectionAt(columnIndex)) {
+              onSelectColumn(columnIndex, { extendSelection: event.shiftKey });
+            }
             openContextMenu(event, {
               kind: "column",
               columnIndex,
@@ -940,7 +1009,9 @@ export function VirtualSheetTable({
             onSelectRow(rowEntry.rowIndex, { extendSelection: event.shiftKey });
           }}
           onContextMenu={(event) => {
-            onSelectRow(rowEntry.rowIndex, { extendSelection: event.shiftKey });
+            if (event.shiftKey || !isWholeRowSelectionAt(rowEntry.rowIndex)) {
+              onSelectRow(rowEntry.rowIndex, { extendSelection: event.shiftKey });
+            }
             openContextMenu(event, {
               kind: "row",
               rowIndex: rowEntry.rowIndex,
@@ -1004,7 +1075,10 @@ export function VirtualSheetTable({
 
       <div
         className={`virtual-pane virtual-pane-header-scroll${scrollColumns.length === 0 ? " is-hidden" : ""}`}
-        onScroll={(event) => syncHorizontal(event.currentTarget.scrollLeft, "header")}
+        onScroll={(event) => {
+          syncHorizontal(event.currentTarget.scrollLeft, "header");
+          emitScrollSnapshot(event.currentTarget.scrollLeft);
+        }}
         ref={headerRef}
       >
         <div className="virtual-table-header" style={{ gridTemplateColumns: rightGridTemplateColumns, width: rightPaneWidth }}>
@@ -1024,7 +1098,10 @@ export function VirtualSheetTable({
 
       <div
         className={`virtual-pane virtual-pane-frozen-top-scroll${safeFreezeRows === 0 || scrollColumns.length === 0 ? " is-hidden" : ""}`}
-        onScroll={(event) => syncHorizontal(event.currentTarget.scrollLeft, "frozen")}
+        onScroll={(event) => {
+          syncHorizontal(event.currentTarget.scrollLeft, "frozen");
+          emitScrollSnapshot(event.currentTarget.scrollLeft);
+        }}
         ref={frozenTopRef}
       >
         <div className="virtual-table-static" style={{ width: rightPaneWidth }}>
@@ -1040,7 +1117,10 @@ export function VirtualSheetTable({
         className={`virtual-pane virtual-pane-left-body${scrollColumns.length === 0 ? " is-scroll-host" : ""}`}
         onScroll={
           scrollColumns.length === 0
-            ? (event) => syncVertical(event.currentTarget.scrollTop)
+            ? (event) => {
+              syncVertical(event.currentTarget.scrollTop);
+              emitScrollSnapshot(undefined, event.currentTarget.scrollTop);
+            }
             : undefined
         }
         ref={leftBodyRef}
@@ -1067,6 +1147,7 @@ export function VirtualSheetTable({
         onScroll={(event) => {
           syncHorizontal(event.currentTarget.scrollLeft, "body");
           syncVertical(event.currentTarget.scrollTop);
+          emitScrollSnapshot(event.currentTarget.scrollLeft, event.currentTarget.scrollTop);
         }}
         ref={bodyRef}
       >

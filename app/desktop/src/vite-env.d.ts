@@ -70,6 +70,13 @@ interface McpPreferences {
   lastStartError: string | null;
 }
 
+interface WorkspaceFilesChangedEvent {
+  workspacePath: string;
+  changedPath: string | null;
+  eventType: string;
+  timestamp: string;
+}
+
 interface Window {
   lightyDesign?: {
     getDesktopHostInfo: () => Promise<DesktopHostInfo>;
@@ -85,6 +92,8 @@ interface Window {
     getMcpConfigJson: () => Promise<string>;
     setMcpEditorContext: (context: unknown) => Promise<{ ok: boolean; error?: string }>;
     chooseWorkspaceDirectory: () => Promise<string | null>;
+    setWorkspaceWatchPath: (workspacePath: string | null) => Promise<{ ok: boolean; error?: string }>;
+    onWorkspaceFilesChanged: (listener: (event: WorkspaceFilesChangedEvent) => void) => () => void;
     openDirectory: (directoryPath: string) => Promise<{ ok: boolean; error?: string }>;
     openExternal: (targetUrl: string) => Promise<{ ok: boolean; error?: string }>;
     setHasDirtyChanges: (hasDirtyChanges: boolean) => void;

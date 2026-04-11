@@ -20,6 +20,11 @@ type CopiedSelectionSnapshot = {
   canInsertColumns: boolean;
 };
 
+type SheetScrollSnapshot = {
+  scrollLeft: number;
+  scrollTop: number;
+};
+
 type ToolbarMenuId = "file" | "edit" | "table" | "ai" | "help";
 type CodegenDialogMode = "single" | "all";
 type McpConfigTargetClient = "vscode";
@@ -236,6 +241,7 @@ function App() {
     setWorkspaceSearch,
     activeTabId,
     sheetFilter,
+    externalRefreshVersion,
     setSheetFilter,
     workbookTree,
     activeTab,
@@ -266,8 +272,10 @@ function App() {
     applyCellEdits,
     insertRow,
     deleteRow,
+    deleteRows,
     insertColumn,
     deleteColumn,
+    deleteColumns,
     insertCopiedRows,
     insertCopiedColumns,
     insertCopiedCellsDown,
@@ -384,6 +392,13 @@ function App() {
   } | null>(null);
   const [copiedSelectionSnapshot, setCopiedSelectionSnapshot] = useState<CopiedSelectionSnapshot | null>(null);
   const [mcpPreferences, setMcpPreferences] = useState<McpPreferences | null>(null);
+  const sheetScrollSnapshotsRef = useRef<Record<string, SheetScrollSnapshot>>({});
+  const [scrollRestoreRequest, setScrollRestoreRequest] = useState<{
+    tabId: string;
+    key: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
 
   const editingColumn = editingColumnIndex !== null ? (activeSheetColumns[editingColumnIndex] ?? null) : null;
   const focusedWorkbook = useMemo(
@@ -825,8 +840,111 @@ function App() {
     insertRow(rowIndex);
   }
 
+  function findNextSelectedRowAfterDeletion(rowIndices: number[], preferredRowIndex: number) {
+    if (filteredRowEntries.length === 0) {
+      return null;
+    }
+
+    const deletedRowSet = new Set(rowIndices);
+    const preferredVisibleIndex = filteredRowEntries.findIndex((entry) => entry.rowIndex === preferredRowIndex);
+    const startingVisibleIndex = preferredVisibleIndex >= 0 ? preferredVisibleIndex : 0;
+    const nextVisibleEntry = filteredRowEntries.slice(startingVisibleIndex + 1).find((entry) => !deletedRowSet.has(entry.rowIndex))
+      ?? filteredRowEntries.slice(0, startingVisibleIndex).reverse().find((entry) => !deletedRowSet.has(entry.rowIndex));
+
+    if (!nextVisibleEntry) {
+      return null;
+    }
+
+    const deletedBeforeCount = rowIndices.filter((rowIndex) => rowIndex < nextVisibleEntry.rowIndex).length;
+    return nextVisibleEntry.rowIndex - deletedBeforeCount;
+  }
+
+  function findNextSelectedColumnAfterDeletion(columnIndices: number[], preferredColumnIndex: number) {
+    if (activeSheetColumns.length - columnIndices.length <= 0) {
+      return null;
+    }
+
+    const deletedColumnSet = new Set(columnIndices);
+    const allColumnIndices = Array.from({ length: activeSheetColumns.length }, (_, columnIndex) => columnIndex);
+    const nextOldColumnIndex = allColumnIndices.find(
+      (columnIndex) => columnIndex > preferredColumnIndex && !deletedColumnSet.has(columnIndex),
+    ) ?? [...allColumnIndices].reverse().find(
+      (columnIndex) => columnIndex < preferredColumnIndex && !deletedColumnSet.has(columnIndex),
+    );
+
+    if (nextOldColumnIndex === undefined) {
+      return null;
+    }
+
+    const deletedBeforeCount = columnIndices.filter((columnIndex) => columnIndex < nextOldColumnIndex).length;
+    return nextOldColumnIndex - deletedBeforeCount;
+  }
+
+  function deleteSelectedRowsFromSelection(rowIndices: number[], preferredRowIndex: number) {
+    if (rowIndices.length === 0) {
+      return;
+    }
+
+    const normalizedRowIndices = Array.from(new Set(rowIndices)).sort((left, right) => left - right);
+    const nextRowIndex = findNextSelectedRowAfterDeletion(normalizedRowIndices, preferredRowIndex);
+    deleteRows(normalizedRowIndices);
+
+    if (nextRowIndex === null || activeSheetColumns.length === 0) {
+      setSelectedCell(null);
+      setSelectionAnchor(null);
+      return;
+    }
+
+    applySelectionRange(
+      { rowIndex: nextRowIndex, columnIndex: 0 },
+      { rowIndex: nextRowIndex, columnIndex: activeSheetColumns.length - 1 },
+    );
+  }
+
+  function deleteSelectedColumnsFromSelection(columnIndices: number[], preferredColumnIndex: number) {
+    if (columnIndices.length === 0) {
+      return;
+    }
+
+    const normalizedColumnIndices = Array.from(new Set(columnIndices)).sort((left, right) => left - right);
+    const nextColumnIndex = findNextSelectedColumnAfterDeletion(normalizedColumnIndices, preferredColumnIndex);
+    deleteColumns(normalizedColumnIndices);
+
+    if (nextColumnIndex === null || filteredRowEntries.length === 0) {
+      setSelectedCell(null);
+      setSelectionAnchor(null);
+      return;
+    }
+
+    applySelectionRange(
+      { rowIndex: filteredRowEntries[0].rowIndex, columnIndex: nextColumnIndex },
+      { rowIndex: filteredRowEntries[filteredRowEntries.length - 1].rowIndex, columnIndex: nextColumnIndex },
+    );
+  }
+
   function handleDeleteRow(rowIndex: number) {
+    const targetRowIndices = isFullRowSelection && selectedRangeRowEntries.some((entry) => entry.rowIndex === rowIndex)
+      ? selectedRangeRowEntries.map((entry) => entry.rowIndex)
+      : [rowIndex];
+
+    if (targetRowIndices.length > 1) {
+      deleteSelectedRowsFromSelection(targetRowIndices, rowIndex);
+      return;
+    }
+
     deleteRow(rowIndex);
+
+    const nextRowIndex = findNextSelectedRowAfterDeletion(targetRowIndices, rowIndex);
+    if (nextRowIndex === null || activeSheetColumns.length === 0) {
+      setSelectedCell(null);
+      setSelectionAnchor(null);
+      return;
+    }
+
+    applySelectionRange(
+      { rowIndex: nextRowIndex, columnIndex: 0 },
+      { rowIndex: nextRowIndex, columnIndex: activeSheetColumns.length - 1 },
+    );
   }
 
   function handleInsertCopiedRows(atRowIndex: number) {
@@ -859,6 +977,15 @@ function App() {
       return;
     }
 
+    const targetColumnIndices = isFullColumnSelection && selectedColumnIndices.includes(columnIndex)
+      ? selectedColumnIndices
+      : [columnIndex];
+
+    if (targetColumnIndices.length > 1) {
+      deleteSelectedColumnsFromSelection(targetColumnIndices, columnIndex);
+      return;
+    }
+
     deleteColumn(columnIndex);
 
     if (filteredRowEntries.length === 0) {
@@ -868,16 +995,10 @@ function App() {
     }
 
     const nextColumnIndex = Math.max(0, Math.min(columnIndex, activeSheetColumns.length - 2));
-    const fallbackRowIndex = selectedCell?.rowIndex ?? filteredRowEntries[0].rowIndex;
-    const nextRowIndex = filteredRowEntries.some((entry) => entry.rowIndex === fallbackRowIndex)
-      ? fallbackRowIndex
-      : filteredRowEntries[0].rowIndex;
-    const nextSelection = {
-      rowIndex: nextRowIndex,
-      columnIndex: nextColumnIndex,
-    };
-
-    applySelectionRange(nextSelection, nextSelection);
+    applySelectionRange(
+      { rowIndex: filteredRowEntries[0].rowIndex, columnIndex: nextColumnIndex },
+      { rowIndex: filteredRowEntries[filteredRowEntries.length - 1].rowIndex, columnIndex: nextColumnIndex },
+    );
   }
 
   function handleInsertCopiedColumns(atColumnIndex: number) {
@@ -1487,6 +1608,31 @@ function App() {
     : 0;
   const selectedCellCount = selectedRangeRowEntries.length * selectedRangeColumnCount;
   const selectedRowCount = selectedRangeRowEntries.length;
+  const selectedColumnIndices = useMemo(() => {
+    if (!selectedRangeBounds) {
+      return [] as number[];
+    }
+
+    return Array.from(
+      { length: selectedRangeBounds.endColumnIndex - selectedRangeBounds.startColumnIndex + 1 },
+      (_, offset) => selectedRangeBounds.startColumnIndex + offset,
+    );
+  }, [selectedRangeBounds]);
+  const isFullRowSelection = Boolean(
+    selectedRangeBounds &&
+    activeSheetColumns.length > 0 &&
+    selectedRangeBounds.startColumnIndex === 0 &&
+    selectedRangeBounds.endColumnIndex === activeSheetColumns.length - 1 &&
+    selectedRangeRowEntries.length > 0,
+  );
+  const isFullColumnSelection = Boolean(
+    selectedRangeBounds &&
+    filteredRowEntries.length > 0 &&
+    selectedRangeRowEntries.length === filteredRowEntries.length &&
+    selectedRangeBounds.startRowIndex === filteredRowEntries[0].rowIndex &&
+    selectedRangeBounds.endRowIndex === filteredRowEntries[filteredRowEntries.length - 1].rowIndex &&
+    selectedColumnIndices.length > 0,
+  );
   const selectedEditTargets = useMemo(() => {
     if (!selectedRangeBounds || selectedRangeRowEntries.length === 0) {
       return [] as Array<{ rowIndex: number; columnIndex: number }>;
@@ -1693,6 +1839,22 @@ function App() {
       return;
     }
 
+    if (isFullRowSelection) {
+      deleteSelectedRowsFromSelection(
+        selectedRangeRowEntries.map((entry) => entry.rowIndex),
+        selectedCell?.rowIndex ?? selectedRangeRowEntries[0]?.rowIndex ?? 0,
+      );
+      return;
+    }
+
+    if (isFullColumnSelection) {
+      deleteSelectedColumnsFromSelection(
+        selectedColumnIndices,
+        selectedCell?.columnIndex ?? selectedColumnIndices[0] ?? 0,
+      );
+      return;
+    }
+
     handleClearSelectionContents();
   }
 
@@ -1739,9 +1901,10 @@ function App() {
       selectedRangeBounds.startColumnIndex === 0 &&
       selectedRangeBounds.endColumnIndex === activeSheetColumns.length - 1;
     const isFullColumnSelection =
-      filteredRowEntries.length === activeSheetRows.length &&
-      selectedRangeBounds.startRowIndex === 0 &&
-      selectedRangeBounds.endRowIndex === activeSheetRows.length - 1;
+      filteredRowEntries.length > 0 &&
+      selectedRangeRowEntries.length === filteredRowEntries.length &&
+      selectedRangeBounds.startRowIndex === filteredRowEntries[0].rowIndex &&
+      selectedRangeBounds.endRowIndex === filteredRowEntries[filteredRowEntries.length - 1].rowIndex;
 
     setCopiedSelectionSnapshot({
       matrix,
@@ -2013,6 +2176,24 @@ function App() {
   useEffect(() => {
     setEditingColumnIndex(null);
   }, [activeTabId]);
+
+  useEffect(() => {
+    if (!activeTabId) {
+      return;
+    }
+
+    const snapshot = sheetScrollSnapshotsRef.current[activeTabId];
+    if (!snapshot) {
+      return;
+    }
+
+    setScrollRestoreRequest((current) => ({
+      tabId: activeTabId,
+      key: (current?.key ?? 0) + 1,
+      scrollLeft: snapshot.scrollLeft,
+      scrollTop: snapshot.scrollTop,
+    }));
+  }, [activeTabId, externalRefreshVersion]);
 
   useEffect(() => {
     if (activeTab?.workbookName) {
@@ -3194,6 +3375,13 @@ function App() {
                   onEditColumn={handleOpenColumnEditor}
                   freezeColumns={appliedFreezeColumnCount}
                   freezeRows={appliedFreezeRowCount}
+                  onScrollSnapshotChange={(snapshot) => {
+                    if (!activeTabId) {
+                      return;
+                    }
+
+                    sheetScrollSnapshotsRef.current[activeTabId] = snapshot;
+                  }}
                   onAutoSizeColumn={handleAutoSizeColumn}
                   onCopySelection={handleCopySelection}
                   onCopySelectionToClipboard={() => {
@@ -3224,6 +3412,11 @@ function App() {
                   onSelectAll={handleSelectAll}
                   onSelectRow={handleSelectRow}
                   rows={filteredRowEntries}
+                  restoreScrollRequest={
+                    scrollRestoreRequest && activeTabId === scrollRestoreRequest.tabId
+                      ? scrollRestoreRequest
+                      : null
+                  }
                   selectedCell={selectedCell}
                   selectionRange={selectionRange}
                 />

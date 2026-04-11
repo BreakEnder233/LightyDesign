@@ -208,6 +208,46 @@ function buildStructureHistoryEntry(
   };
 }
 
+function buildReadySheetState(data: SheetResponse): SheetLoadState {
+  return {
+    status: "ready",
+    data,
+    draftColumns: cloneColumns(data.metadata.columns),
+    draftRows: cloneRows(data.rows),
+    editedCells: {},
+    undoStack: [],
+    redoStack: [],
+    dirty: false,
+  };
+}
+
+async function fetchWorkspaceData(currentHostInfo: DesktopHostInfo, workspacePath: string) {
+  const query = new URLSearchParams({ workspacePath });
+  const [data, headerPropertyResponse] = await Promise.all([
+    fetchJson<WorkspaceNavigationResponse>(
+      `${currentHostInfo.desktopHostUrl}/api/workspace/navigation?${query.toString()}`,
+    ),
+    fetchJson<{ properties: HeaderPropertySchema[] }>(
+      `${currentHostInfo.desktopHostUrl}/api/workspace/header-properties?${query.toString()}`,
+    ),
+  ]);
+
+  return {
+    workspace: data,
+    headerPropertySchemas: headerPropertyResponse.properties,
+  };
+}
+
+async function fetchSheetData(currentHostInfo: DesktopHostInfo, workspacePath: string, tab: SheetTab) {
+  const query = new URLSearchParams({ workspacePath });
+  const workbookName = encodeURIComponent(tab.workbookName);
+  const sheetName = encodeURIComponent(tab.sheetName);
+
+  return fetchJson<SheetResponse>(
+    `${currentHostInfo.desktopHostUrl}/api/workspace/workbooks/${workbookName}/sheets/${sheetName}?${query.toString()}`,
+  );
+}
+
 type UseWorkspaceEditorArgs = {
   hostInfo: DesktopHostInfo | null;
   onToast: (toast: {
@@ -240,13 +280,164 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
   const [sheetStateMap, setSheetStateMap] = useState<Record<string, SheetLoadState>>({});
   const [workbookSaveStateMap, setWorkbookSaveStateMap] = useState<Record<string, WorkbookSaveState>>({});
   const [sheetFilter, setSheetFilter] = useState("");
+  const [externalRefreshVersion, setExternalRefreshVersion] = useState(0);
   const restoredWorkspacePathRef = useRef<string | null>(null);
+  const isExternalRefreshRunningRef = useRef(false);
+  const hasPendingExternalRefreshRef = useRef(false);
 
   const hasDirtyChanges = useMemo(
     () => Object.values(sheetStateMap).some((sheetState) => sheetState.dirty),
     [sheetStateMap],
   );
   const emitToast = useEffectEvent(onToast);
+  const refreshWorkspaceFromExternalChange = useEffectEvent(async () => {
+    if (!hostInfo || !workspacePath) {
+      return;
+    }
+
+    if (isExternalRefreshRunningRef.current) {
+      hasPendingExternalRefreshRef.current = true;
+      return;
+    }
+
+    isExternalRefreshRunningRef.current = true;
+
+    try {
+      do {
+        hasPendingExternalRefreshRef.current = false;
+
+        const { workspace: nextWorkspace, headerPropertySchemas: nextHeaderPropertySchemas } = await fetchWorkspaceData(hostInfo, workspacePath);
+        const nextOpenTabs = openTabs.filter((tab) => isSheetAvailable(nextWorkspace, tab));
+        const nextActiveTabId = nextOpenTabs.some((tab) => tab.id === activeTabId)
+          ? activeTabId
+          : nextOpenTabs[0]?.id ?? null;
+
+        setWorkspace(nextWorkspace);
+        setHeaderPropertySchemas(nextHeaderPropertySchemas);
+        setWorkspaceStatus("ready");
+        setWorkspaceError(null);
+        setOpenTabs(nextOpenTabs);
+        setActiveTabId(nextActiveTabId);
+        setWorkbookSaveStateMap({});
+
+        if (nextOpenTabs.length === 0) {
+          setSheetStateMap({});
+          continue;
+        }
+
+        const refreshedSheetResults = await Promise.all(
+          nextOpenTabs.map(async (tab) => {
+            try {
+              const data = await fetchSheetData(hostInfo, workspacePath, tab);
+              return {
+                tab,
+                data,
+                error: null,
+              };
+            } catch (error) {
+              return {
+                tab,
+                data: null,
+                error: error instanceof Error ? error.message : "Sheet 读取失败。",
+              };
+            }
+          }),
+        );
+
+        setSheetStateMap((current) => {
+          const nextStateMap: Record<string, SheetLoadState> = {};
+
+          nextOpenTabs.forEach((tab) => {
+            const refreshedSheet = refreshedSheetResults.find((result) => result.tab.id === tab.id);
+            if (refreshedSheet?.data) {
+              nextStateMap[tab.id] = buildReadySheetState(refreshedSheet.data);
+              return;
+            }
+
+            if (current[tab.id]) {
+              nextStateMap[tab.id] = current[tab.id];
+              return;
+            }
+
+            nextStateMap[tab.id] = {
+              status: "error",
+              error: refreshedSheet?.error ?? "Sheet 读取失败。",
+            };
+          });
+
+          return nextStateMap;
+        });
+
+        refreshedSheetResults
+          .filter((result) => result.error)
+          .forEach((result) => {
+            emitToast({
+              title: `Sheet 重新加载失败: ${result.tab.sheetName}`,
+              detail: result.error ?? "Sheet 读取失败。",
+              source: "sheet",
+              variant: "error",
+              canOpenDetail: true,
+              durationMs: 8000,
+            });
+          });
+
+        setExternalRefreshVersion((current) => current + 1);
+      } while (hasPendingExternalRefreshRef.current);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "工作区刷新失败。";
+      emitToast({
+        title: "外部修改刷新失败",
+        detail: errorMessage,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+    } finally {
+      isExternalRefreshRunningRef.current = false;
+    }
+  });
+
+  useEffect(() => {
+    const desktopBridge = window.lightyDesign;
+    if (!desktopBridge) {
+      return;
+    }
+
+    if (!workspacePath) {
+      void desktopBridge.setWorkspaceWatchPath(null);
+      return;
+    }
+
+    let disposed = false;
+    void desktopBridge.setWorkspaceWatchPath(workspacePath);
+
+    const unsubscribe = desktopBridge.onWorkspaceFilesChanged((event) => {
+      if (disposed || event.workspacePath !== workspacePath) {
+        return;
+      }
+
+      if (hasDirtyChanges) {
+        emitToast({
+          title: "检测到外部修改",
+          detail: "当前存在未保存更改，已跳过自动刷新，避免覆盖本地编辑。",
+          source: "system",
+          variant: "error",
+          canOpenDetail: false,
+          durationMs: 4500,
+        });
+        return;
+      }
+
+      void refreshWorkspaceFromExternalChange();
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+      void desktopBridge.setWorkspaceWatchPath(null);
+    };
+  }, [emitToast, hasDirtyChanges, refreshWorkspaceFromExternalChange, workspacePath]);
 
   useEffect(() => {
     if (!workspacePath) {
@@ -274,22 +465,14 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       setWorkspaceError(null);
 
       try {
-        const query = new URLSearchParams({ workspacePath });
-        const [data, headerPropertyResponse] = await Promise.all([
-          fetchJson<WorkspaceNavigationResponse>(
-            `${hostInfo.desktopHostUrl}/api/workspace/navigation?${query.toString()}`,
-          ),
-          fetchJson<{ properties: HeaderPropertySchema[] }>(
-            `${hostInfo.desktopHostUrl}/api/workspace/header-properties?${query.toString()}`,
-          ),
-        ]);
+        const { workspace: data, headerPropertySchemas: nextHeaderPropertySchemas } = await fetchWorkspaceData(hostInfo, workspacePath);
 
         if (canceled) {
           return;
         }
 
         setWorkspace(data);
-        setHeaderPropertySchemas(headerPropertyResponse.properties);
+        setHeaderPropertySchemas(nextHeaderPropertySchemas);
         setWorkspaceStatus("ready");
         setSheetStateMap({});
         setWorkbookSaveStateMap({});
@@ -415,12 +598,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       }));
 
       try {
-        const query = new URLSearchParams({ workspacePath });
-        const workbookName = encodeURIComponent(activeTabToLoad.workbookName);
-        const sheetName = encodeURIComponent(activeTabToLoad.sheetName);
-        const data = await fetchJson<SheetResponse>(
-          `${currentHostInfo.desktopHostUrl}/api/workspace/workbooks/${workbookName}/sheets/${sheetName}?${query.toString()}`,
-        );
+        const data = await fetchSheetData(currentHostInfo, workspacePath, activeTabToLoad);
 
         if (canceled) {
           return;
@@ -428,16 +606,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
         setSheetStateMap((current) => ({
           ...current,
-          [activeTabToLoad.id]: {
-            status: "ready",
-            data,
-            draftColumns: cloneColumns(data.metadata.columns),
-            draftRows: cloneRows(data.rows),
-            editedCells: {},
-            undoStack: [],
-            redoStack: [],
-            dirty: false,
-          },
+          [activeTabToLoad.id]: buildReadySheetState(data),
         }));
       } catch (error) {
         if (canceled) {
@@ -1601,6 +1770,64 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     }));
   }
 
+  function deleteRows(rowIndices: number[]) {
+    if (!activeTab || !activeSheetState?.data) {
+      return;
+    }
+
+    const normalizedRowIndices = Array.from(
+      new Set(
+        rowIndices
+          .filter((rowIndex) => Number.isInteger(rowIndex))
+          .map((rowIndex) => Math.trunc(rowIndex)),
+      ),
+    ).sort((left, right) => left - right);
+
+    if (normalizedRowIndices.length === 0) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!hasLoadedSheetData(currentSheetState)) {
+        return current;
+      }
+
+      const currentColumns = currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns;
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length,
+      );
+      const validRowIndexSet = new Set(
+        normalizedRowIndices.filter((rowIndex) => rowIndex >= 0 && rowIndex < normalizedRows.length),
+      );
+
+      if (validRowIndexSet.size === 0) {
+        return current;
+      }
+
+      const nextDraftRows = normalizedRows.filter((_, currentRowIndex) => !validRowIndexSet.has(currentRowIndex));
+      const historyEntry = buildStructureHistoryEntry(currentColumns, normalizedRows, currentColumns, nextDraftRows);
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, currentColumns, nextDraftRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
   function insertColumn(atColumnIndex: number) {
     if (!activeTab || !activeSheetState?.data) {
       return;
@@ -1683,6 +1910,71 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         ...current,
         [activeTab.id]: {
           ...buildSheetStateFromDraft(currentSheetState, currentColumns, nextDraftRows, {
+            nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
+            nextRedoStack: [],
+          }),
+        },
+      };
+    });
+
+    setWorkbookSaveStateMap((current) => ({
+      ...current,
+      [activeTab.workbookName]: {
+        status: "idle",
+      },
+    }));
+  }
+
+  function deleteColumns(columnIndices: number[]) {
+    if (!activeTab || !activeSheetState?.data) {
+      return;
+    }
+
+    const normalizedColumnIndices = Array.from(
+      new Set(
+        columnIndices
+          .filter((columnIndex) => Number.isInteger(columnIndex))
+          .map((columnIndex) => Math.trunc(columnIndex)),
+      ),
+    ).sort((left, right) => left - right);
+
+    if (normalizedColumnIndices.length === 0) {
+      return;
+    }
+
+    setSheetStateMap((current) => {
+      const currentSheetState = current[activeTab.id];
+      if (!hasLoadedSheetData(currentSheetState)) {
+        return current;
+      }
+
+      const currentColumns = cloneColumns(currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns);
+      const validColumnIndices = normalizedColumnIndices.filter(
+        (columnIndex) => columnIndex >= 0 && columnIndex < currentColumns.length,
+      );
+      const validColumnIndexSet = new Set(validColumnIndices);
+
+      if (validColumnIndexSet.size === 0 || currentColumns.length - validColumnIndexSet.size <= 0) {
+        return current;
+      }
+
+      const nextColumns = currentColumns.filter((_, currentColumnIndex) => !validColumnIndexSet.has(currentColumnIndex));
+      const normalizedRows = sanitizeRowsToColumnCount(
+        currentSheetState.draftRows ?? currentSheetState.data.rows,
+        currentColumns.length,
+      );
+      const nextDraftRows = normalizedRows.map((row) => row.filter((_, currentColumnIndex) => !validColumnIndexSet.has(currentColumnIndex)));
+      const historyEntry = buildStructureHistoryEntry(
+        currentSheetState.draftColumns ?? currentSheetState.data.metadata.columns,
+        normalizedRows,
+        nextColumns,
+        nextDraftRows,
+      );
+
+      return {
+        ...current,
+        [activeTab.id]: {
+          ...buildSheetStateFromDraft(currentSheetState, nextColumns, nextDraftRows, {
             nextUndoStack: [...(currentSheetState.undoStack ?? []), historyEntry],
             nextRedoStack: [],
           }),
@@ -2218,6 +2510,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     activeTabId,
     setActiveTabId,
     sheetFilter,
+    externalRefreshVersion,
     setSheetFilter,
     workbookTree,
     totalSheetCount,
@@ -2250,8 +2543,10 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     applyCellEdits,
     insertRow,
     deleteRow,
+    deleteRows,
     insertColumn,
     deleteColumn,
+    deleteColumns,
     insertCopiedRows,
     insertCopiedColumns,
     insertCopiedCellsDown,

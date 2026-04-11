@@ -3,6 +3,7 @@
 /app/desktop/dist/
 /app/desktop/dist-*
 /app/desktop/win-unpacked/
+ /app/desktop/build-resources/
 
 # Ignore artifacts and local installer outputs
 /artifacts/

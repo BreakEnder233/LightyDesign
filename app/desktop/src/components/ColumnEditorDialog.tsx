@@ -183,7 +183,7 @@ export function ColumnEditorDialog({
 
                   {editorKind === "enum" ? (
                     <select
-                      className="virtual-cell-input virtual-cell-select"
+                      className="dialog-field-select"
                       onChange={(event) => {
                         updateDraftValue(schema.headerType, event.target.value);
                       }}
@@ -200,7 +200,7 @@ export function ColumnEditorDialog({
 
                   {editorKind === "text" ? (
                     <input
-                      className="virtual-cell-input"
+                      className="dialog-field-input"
                       onChange={(event) => {
                         updateDraftValue(schema.headerType, event.target.value);
                       }}
@@ -212,7 +212,7 @@ export function ColumnEditorDialog({
 
                   {editorKind === "json" ? (
                     <textarea
-                      className="virtual-cell-input column-editor-textarea"
+                      className="dialog-field-textarea column-editor-textarea"
                       onChange={(event) => {
                         updateDraftValue(schema.headerType, event.target.value);
                       }}

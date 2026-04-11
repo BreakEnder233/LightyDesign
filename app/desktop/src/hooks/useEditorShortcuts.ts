@@ -15,6 +15,14 @@ function isEditableElement(target: EventTarget | null): target is HTMLElement {
   return tagName === "input" || tagName === "textarea" || tagName === "select" || target.isContentEditable;
 }
 
+function isVirtualCellEditableTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    target.classList.contains("virtual-cell-input") &&
+    Boolean(target.closest('[role="gridcell"]'))
+  );
+}
+
 function isNativeEditingShortcut(event: KeyboardEvent) {
   if (!isShortcutModifierPressed(event) || event.altKey) {
     return false;
@@ -24,12 +32,22 @@ function isNativeEditingShortcut(event: KeyboardEvent) {
   return key === "a" || key === "c" || key === "x" || key === "v" || key === "z" || key === "y";
 }
 
-function shouldPreserveNativeDialogEditing(event: KeyboardEvent) {
+function shouldPreserveNativeEditing(event: KeyboardEvent) {
   if (!isEditableElement(event.target) || !isNativeEditingShortcut(event)) {
     return false;
   }
 
-  return Boolean(event.target.closest('[role="dialog"]'));
+  return !isVirtualCellEditableTarget(event.target);
+}
+
+function shouldSuppressBrowserSelectAll(event: KeyboardEvent) {
+  return (
+    isShortcutModifierPressed(event) &&
+    !event.altKey &&
+    !event.shiftKey &&
+    event.key.toLowerCase() === "a" &&
+    !isEditableElement(event.target)
+  );
 }
 
 function isShortcutTargetAllowed(target: EventTarget | null) {
@@ -39,7 +57,7 @@ function isShortcutTargetAllowed(target: EventTarget | null) {
 
   const tagName = target.tagName.toLowerCase();
   if (tagName === "input" || tagName === "textarea" || tagName === "select") {
-    return target.classList.contains("virtual-cell-input");
+    return isVirtualCellEditableTarget(target);
   }
 
   if (target.isContentEditable) {
@@ -68,7 +86,7 @@ export function useEditorShortcuts(bindings: ShortcutBinding[]) {
         return;
       }
 
-      if (shouldPreserveNativeDialogEditing(event)) {
+      if (shouldPreserveNativeEditing(event)) {
         return;
       }
 
@@ -80,6 +98,10 @@ export function useEditorShortcuts(bindings: ShortcutBinding[]) {
       );
 
       if (!matchedShortcut) {
+        if (shouldSuppressBrowserSelectAll(event)) {
+          event.preventDefault();
+        }
+
         return;
       }
 

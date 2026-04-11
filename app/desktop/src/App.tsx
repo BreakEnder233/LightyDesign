@@ -2810,7 +2810,7 @@ function App() {
                 <label className="search-field mcp-config-field">
                   <span>配置 JSON</span>
                   <textarea
-                    className="column-editor-textarea mcp-config-textarea"
+                    className="dialog-field-textarea column-editor-textarea mcp-config-textarea"
                     readOnly
                     ref={mcpConfigTextareaRef}
                     value={mcpConfigPreviewJson}

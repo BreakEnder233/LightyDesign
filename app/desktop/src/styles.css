@@ -383,10 +383,11 @@ button {
 }
 
 .search-field input,
-.virtual-cell-input,
-.virtual-cell-select,
+.search-field textarea,
 .workspace-create-name-field input,
-.column-editor-textarea {
+.dialog-field-input,
+.dialog-field-select,
+.dialog-field-textarea {
   width: 100%;
   min-height: 28px;
   padding: 5px 8px;
@@ -398,11 +399,21 @@ button {
 }
 
 .search-field input:focus,
-.virtual-cell-input:focus,
-.virtual-cell-select:focus,
+.search-field textarea:focus,
 .workspace-create-name-field input:focus,
-.column-editor-textarea:focus {
+.dialog-field-input:focus,
+.dialog-field-select:focus,
+.dialog-field-textarea:focus {
   border-color: #007acc;
+}
+
+.dialog-field-select {
+  appearance: none;
+  padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, #9da0a6 50%), linear-gradient(135deg, #9da0a6 50%, transparent 50%);
+  background-position: calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px);
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
 }
 
 .tree-workbook-title span,
@@ -1410,13 +1421,10 @@ button {
   display: block;
   min-height: 108px;
   resize: vertical;
-  border: 1px solid #3c3c3c;
-  background-color: #1f1f1f;
   font-family: "Cascadia Mono", "Consolas", monospace;
 }
 
-.column-editor-field .virtual-cell-select {
-  border: 1px solid #3c3c3c;
+.column-editor-field .dialog-field-select {
   background-color: #1f1f1f;
 }
 

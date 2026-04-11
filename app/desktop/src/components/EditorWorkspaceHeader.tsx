@@ -57,14 +57,11 @@ export function EditorWorkspaceHeader({
   onSheetFilterChange,
 }: EditorWorkspaceHeaderProps) {
   return (
-    <>
+    <div className="editor-workspace-header">
       {focusedWorkbook ? (
         <section className="sheet-selector-panel compact-sheet-selector-panel">
           <div className="compact-sheet-selector-header">
-            <div>
-              <p className="eyebrow">工作簿 / {focusedWorkbook.name}</p>
-              <p className="compact-sheet-selector-meta">{focusedWorkbook.sheets.length} 个表格，优先保持编辑区可见。</p>
-            </div>
+            <p className="eyebrow">工作簿 / {focusedWorkbook.name}</p>
             <button
               className="secondary-button compact-sheet-selector-action"
               disabled={!canCreateSheet}
@@ -95,7 +92,6 @@ export function EditorWorkspaceHeader({
                     type="button"
                   >
                     <span className="sheet-selector-name">{sheet.sheetName}</span>
-                    <em>{sheet.columnCount} 列 × {sheet.rowCount} 行</em>
                   </button>
                 );
               })}
@@ -182,6 +178,6 @@ export function EditorWorkspaceHeader({
           </div>
         </section>
       ) : null}
-    </>
+    </div>
   );
 }

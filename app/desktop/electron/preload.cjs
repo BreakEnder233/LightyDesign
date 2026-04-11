@@ -11,4 +11,9 @@ contextBridge.exposeInMainWorld("lightyDesign", {
   openDirectory: (directoryPath) => ipcRenderer.invoke("shell:open-directory", directoryPath),
   openExternal: (targetUrl) => ipcRenderer.invoke("shell:open-external", targetUrl),
   setHasDirtyChanges: (hasDirtyChanges) => ipcRenderer.send("app:set-dirty-state", Boolean(hasDirtyChanges)),
+  windowControls: {
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    toggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
+    close: () => ipcRenderer.invoke("window:close"),
+  },
 });

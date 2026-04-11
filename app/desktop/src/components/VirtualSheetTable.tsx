@@ -1,5 +1,5 @@
 ﻿import { useVirtualizer } from "@tanstack/react-virtual";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import {
@@ -57,6 +57,7 @@ type VirtualSheetTableProps = {
 const rowHeight = 30;
 const overscanCount = 12;
 const rowNumberWidth = 56;
+const contextMenuViewportMargin = 8;
 
 type HeaderContextMenuState =
   | {
@@ -174,6 +175,7 @@ export function VirtualSheetTable({
   const leftBodyRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const frozenTopRef = useRef<HTMLDivElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const inputRefs = useRef(new Map<string, HTMLInputElement | HTMLSelectElement>());
   const cellRefs = useRef(new Map<string, HTMLDivElement>());
   const isPointerSelectingRef = useRef(false);
@@ -219,6 +221,50 @@ export function VirtualSheetTable({
   }));
   const renderedVirtualRows = virtualRows.length > 0 ? virtualRows : fallbackVirtualRows;
   const virtualCanvasHeight = scrollRows.length > 0 ? Math.max(rowVirtualizer.getTotalSize(), scrollRows.length * rowHeight) : rowHeight;
+
+  useLayoutEffect(() => {
+    if (!contextMenuState || !contextMenuRef.current) {
+      return;
+    }
+
+    const menuWidth = contextMenuRef.current.offsetWidth;
+    const menuHeight = contextMenuRef.current.offsetHeight;
+    const minLeft = contextMenuViewportMargin;
+    const minTop = contextMenuViewportMargin;
+    const maxLeft = Math.max(minLeft, window.innerWidth - menuWidth - contextMenuViewportMargin);
+    const maxTop = Math.max(minTop, window.innerHeight - menuHeight - contextMenuViewportMargin);
+    const nextX = Math.min(Math.max(contextMenuState.x, minLeft), maxLeft);
+    const nextY = Math.min(Math.max(contextMenuState.y, minTop), maxTop);
+
+    if (nextX !== contextMenuState.x || nextY !== contextMenuState.y) {
+      setContextMenuState((current) => {
+        if (!current) {
+          return null;
+        }
+
+        return nextX === current.x && nextY === current.y
+          ? current
+          : { ...current, x: nextX, y: nextY };
+      });
+    }
+  }, [contextMenuState]);
+
+  useLayoutEffect(() => {
+    const verticalScrollHost = bodyRef.current ?? leftBodyRef.current;
+    if (verticalScrollHost) {
+      const maxScrollTop = Math.max(0, virtualCanvasHeight - verticalScrollHost.clientHeight);
+      if (verticalScrollHost.scrollTop > maxScrollTop) {
+        syncVertical(maxScrollTop);
+      }
+    }
+
+    if (bodyRef.current) {
+      const maxScrollLeft = Math.max(0, rightPaneWidth - bodyRef.current.clientWidth);
+      if (bodyRef.current.scrollLeft > maxScrollLeft) {
+        syncHorizontal(maxScrollLeft, "body");
+      }
+    }
+  }, [rightPaneWidth, safeFreezeColumns, safeFreezeRows, syncHorizontal, virtualCanvasHeight]);
 
   function logIme(stage: string, payload: Record<string, unknown> = {}) {
     pushImeDebugLog(stage, {
@@ -1047,6 +1093,7 @@ export function VirtualSheetTable({
         <div
           className="sheet-context-menu"
           onMouseDown={(event) => event.stopPropagation()}
+          ref={contextMenuRef}
           style={{ left: contextMenuState.x, top: contextMenuState.y }}
         >
           {contextMenuState.kind === "row" ? (

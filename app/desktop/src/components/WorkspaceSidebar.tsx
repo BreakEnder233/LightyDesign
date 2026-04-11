@@ -3,12 +3,8 @@ import type { MouseEvent } from "react";
 import type { WorkspaceTreeWorkbook } from "../types/desktopApp";
 
 type WorkspaceSidebarProps = {
-  workspacePath: string;
   workspaceStatus: "idle" | "loading" | "ready" | "error";
   workbookTree: WorkspaceTreeWorkbook[];
-  totalSheetCount: number;
-  headerCount: number;
-  hasDirtyChanges: boolean;
   workspaceSearch: string;
   workspaceError: string | null;
   focusedWorkbookName: string | null;
@@ -20,12 +16,8 @@ type WorkspaceSidebarProps = {
 };
 
 export function WorkspaceSidebar({
-  workspacePath,
   workspaceStatus,
   workbookTree,
-  totalSheetCount,
-  headerCount,
-  hasDirtyChanges,
   workspaceSearch,
   workspaceError,
   focusedWorkbookName,
@@ -37,39 +29,6 @@ export function WorkspaceSidebar({
 }: WorkspaceSidebarProps) {
   return (
     <aside className="workspace-sidebar">
-      <div className="brand-block">
-        <p className="eyebrow eyebrow-brand">LightyDesign</p>
-        <p className="workspace-path compact-workspace-path">{workspacePath || "未打开工作区"}</p>
-      </div>
-
-      <section className="sidebar-section workspace-entry-card workspace-summary-card">
-        <div className="section-header">
-          <div>
-            <p className="eyebrow">工作区概览</p>
-          </div>
-          {workspaceStatus === "loading" ? <span className="badge">加载中</span> : null}
-        </div>
-
-        <div className="workspace-stats">
-          <div>
-            <span>工作簿</span>
-            <strong>{workbookTree.length}</strong>
-          </div>
-          <div>
-            <span>表格</span>
-            <strong>{totalSheetCount}</strong>
-          </div>
-          <div>
-            <span>表头</span>
-            <strong>{headerCount}</strong>
-          </div>
-        </div>
-
-        <p className="workspace-summary-meta">
-          {hasDirtyChanges ? "当前工作区包含未保存修改。" : "当前工作区已同步到界面。"}
-        </p>
-      </section>
-
       <section className="sidebar-section tree-card">
         <div className="section-header">
           <div>

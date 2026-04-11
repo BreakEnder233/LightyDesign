@@ -113,6 +113,10 @@ let appUpdateDownloadState: AppUpdateDownloadState = {
 };
 let appUpdateInstallPromise: Promise<AppUpdateDownloadState> | null = null;
 
+function getPrimaryWindow() {
+  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -905,6 +909,7 @@ function createMainWindow() {
     minWidth: 1200,
     minHeight: 760,
     backgroundColor: "#0d1516",
+    frame: false,
     title: "LightyDesign",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -992,7 +997,7 @@ ipcMain.handle("app:download-and-install-update", async () => downloadAndInstall
 ipcMain.handle("desktop-host:health", async () => fetchDesktopHostHealth());
 
 ipcMain.handle("workspace:choose-directory", async () => {
-  const browserWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const browserWindow = getPrimaryWindow() ?? undefined;
   const result = await dialog.showOpenDialog(browserWindow, {
     title: "选择 LightyDesign 工作区目录",
     properties: ["openDirectory"],
@@ -1003,6 +1008,41 @@ ipcMain.handle("workspace:choose-directory", async () => {
   }
 
   return result.filePaths[0];
+});
+
+ipcMain.handle("window:minimize", async () => {
+  const browserWindow = getPrimaryWindow();
+  if (!browserWindow) {
+    return { ok: false, error: "主窗口不可用。" };
+  }
+
+  browserWindow.minimize();
+  return { ok: true, isMaximized: browserWindow.isMaximized() };
+});
+
+ipcMain.handle("window:toggle-maximize", async () => {
+  const browserWindow = getPrimaryWindow();
+  if (!browserWindow) {
+    return { ok: false, error: "主窗口不可用。" };
+  }
+
+  if (browserWindow.isMaximized()) {
+    browserWindow.unmaximize();
+  } else {
+    browserWindow.maximize();
+  }
+
+  return { ok: true, isMaximized: browserWindow.isMaximized() };
+});
+
+ipcMain.handle("window:close", async () => {
+  const browserWindow = getPrimaryWindow();
+  if (!browserWindow) {
+    return { ok: false, error: "主窗口不可用。" };
+  }
+
+  browserWindow.close();
+  return { ok: true, isMaximized: browserWindow.isMaximized() };
 });
 
 ipcMain.handle("shell:open-directory", async (_event, directoryPath: string) => {

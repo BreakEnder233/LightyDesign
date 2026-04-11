@@ -51,6 +51,12 @@ interface AppUpdateDownloadState {
   detail?: string;
 }
 
+interface WindowControlResult {
+  ok: boolean;
+  isMaximized?: boolean;
+  error?: string;
+}
+
 interface Window {
   lightyDesign?: {
     getDesktopHostInfo: () => Promise<DesktopHostInfo>;
@@ -63,5 +69,10 @@ interface Window {
     openDirectory: (directoryPath: string) => Promise<{ ok: boolean; error?: string }>;
     openExternal: (targetUrl: string) => Promise<{ ok: boolean; error?: string }>;
     setHasDirtyChanges: (hasDirtyChanges: boolean) => void;
+    windowControls?: {
+      minimize: () => Promise<WindowControlResult>;
+      toggleMaximize: () => Promise<WindowControlResult>;
+      close: () => Promise<WindowControlResult>;
+    };
   };
 }

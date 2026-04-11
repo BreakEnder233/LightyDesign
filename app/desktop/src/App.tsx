@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ColumnEditorDialog } from "./components/ColumnEditorDialog";
 import { DialogBackdrop } from "./components/DialogBackdrop";
@@ -20,13 +20,14 @@ type CopiedSelectionSnapshot = {
   canInsertColumns: boolean;
 };
 
-type ToolbarMenuId = "file" | "edit" | "table";
+type ToolbarMenuId = "file" | "edit" | "table" | "help";
 type CodegenDialogMode = "single" | "all";
 
 const defaultColumnWidth = 140;
 const minColumnWidth = 88;
 const maxColumnWidth = 520;
 const columnWidthSampleLimit = 200;
+const contextMenuViewportMargin = 8;
 
 let textMeasureCanvas: HTMLCanvasElement | null = null;
 
@@ -135,7 +136,32 @@ function formatByteSize(byteCount: number | null | undefined) {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
+function clampContextMenuPosition(
+  x: number,
+  y: number,
+  menuWidth: number,
+  menuHeight: number,
+  containerRect?: DOMRect | null,
+) {
+  const boundsLeft = containerRect?.left ?? 0;
+  const boundsTop = containerRect?.top ?? 0;
+  const boundsRight = containerRect?.right ?? window.innerWidth;
+  const boundsBottom = containerRect?.bottom ?? window.innerHeight;
+  const minLeft = boundsLeft + contextMenuViewportMargin;
+  const minTop = boundsTop + contextMenuViewportMargin;
+  const maxLeft = Math.max(minLeft, boundsRight - menuWidth - contextMenuViewportMargin);
+  const maxTop = Math.max(minTop, boundsBottom - menuHeight - contextMenuViewportMargin);
+
+  return {
+    x: Math.min(Math.max(x, minLeft), maxLeft),
+    y: Math.min(Math.max(y, minTop), maxTop),
+  };
+}
+
 function App() {
+  const appShellRef = useRef<HTMLDivElement | null>(null);
+  const workbookContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const sheetContextMenuRef = useRef<HTMLDivElement | null>(null);
   const { bridgeStatus, bridgeError, hostInfo, hostHealth } = useDesktopHostConnection();
   const {
     toastNotifications,
@@ -160,13 +186,10 @@ function App() {
     workspaceError,
     workspaceSearch,
     setWorkspaceSearch,
-    openTabs,
     activeTabId,
-    setActiveTabId,
     sheetFilter,
     setSheetFilter,
     workbookTree,
-    totalSheetCount,
     activeTab,
     activeSheetState,
     activeSheetData,
@@ -177,7 +200,6 @@ function App() {
     filteredRowEntries,
     hasDirtyChanges,
     openSheet,
-    closeTab,
     closeAllTabs,
     chooseParentDirectoryForWorkspaceCreation,
     createWorkspace,
@@ -221,8 +243,6 @@ function App() {
     activeTab && hostInfo && workspacePath && activeWorkbookDirtyTabs.length > 0 && activeWorkbookSaveState?.status !== "saving",
   );
   const canChooseWorkspaceDirectory = bridgeStatus === "ready";
-  const hostUrlLabel = bridgeStatus === "unavailable" ? "Electron bridge 未就绪" : hostInfo?.desktopHostUrl ?? "加载中...";
-  const runtimeLabel = bridgeStatus === "unavailable" ? "不可用" : hostInfo?.shell ?? "加载中...";
   const isUpdateInstallInProgress =
     updateDownloadState?.status === "preparing" ||
     updateDownloadState?.status === "downloading" ||
@@ -242,6 +262,7 @@ function App() {
         : updateDownloadState?.status === "launching"
           ? "静默安装中"
           : "静默安装";
+  const canUseNativeWindowControls = Boolean(window.lightyDesign?.windowControls);
   const updateStatusText =
     bridgeStatus !== "ready"
       ? "不可用"
@@ -266,14 +287,6 @@ function App() {
                         : updateStatus === "error"
                           ? "检查失败"
                           : updateInfo?.currentVersion ?? "待检查";
-  const updateDetailText =
-    isUpdateInstallInProgress
-      ? updateDownloadProgressText ?? updateDownloadState?.fileName ?? updateDownloadState?.detail ?? "正在下载并静默安装更新"
-      : updateDownloadState?.status === "error"
-        ? updateDownloadState.detail ?? "应用内下载安装失败"
-        : updateStatus === "available"
-          ? updateResult?.downloadName ?? updateResult?.releaseName ?? "GitHub Release"
-          : updateInfo?.repository ?? "GitHub Releases";
   const [isCreateWorkspaceDialogOpen, setIsCreateWorkspaceDialogOpen] = useState(false);
   const [createWorkspaceParentDirectoryPath, setCreateWorkspaceParentDirectoryPath] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("NewWorkspace");
@@ -339,6 +352,62 @@ function App() {
   function closeToolbarMenu() {
     setOpenToolbarMenu(null);
   }
+
+  function getContextMenuContainerRect() {
+    return appShellRef.current?.getBoundingClientRect() ?? null;
+  }
+
+  useLayoutEffect(() => {
+    if (!workbookContextMenu || !workbookContextMenuRef.current) {
+      return;
+    }
+
+    const nextPosition = clampContextMenuPosition(
+      workbookContextMenu.x,
+      workbookContextMenu.y,
+      workbookContextMenuRef.current.offsetWidth,
+      workbookContextMenuRef.current.offsetHeight,
+      getContextMenuContainerRect(),
+    );
+
+    if (nextPosition.x !== workbookContextMenu.x || nextPosition.y !== workbookContextMenu.y) {
+      setWorkbookContextMenu((current) => {
+        if (!current) {
+          return null;
+        }
+
+        return nextPosition.x === current.x && nextPosition.y === current.y
+          ? current
+          : { ...current, x: nextPosition.x, y: nextPosition.y };
+      });
+    }
+  }, [workbookContextMenu]);
+
+  useLayoutEffect(() => {
+    if (!sheetContextMenu || !sheetContextMenuRef.current) {
+      return;
+    }
+
+    const nextPosition = clampContextMenuPosition(
+      sheetContextMenu.x,
+      sheetContextMenu.y,
+      sheetContextMenuRef.current.offsetWidth,
+      sheetContextMenuRef.current.offsetHeight,
+      getContextMenuContainerRect(),
+    );
+
+    if (nextPosition.x !== sheetContextMenu.x || nextPosition.y !== sheetContextMenu.y) {
+      setSheetContextMenu((current) => {
+        if (!current) {
+          return null;
+        }
+
+        return nextPosition.x === current.x && nextPosition.y === current.y
+          ? current
+          : { ...current, x: nextPosition.x, y: nextPosition.y };
+      });
+    }
+  }, [sheetContextMenu]);
 
   function handleFocusWorkbook(workbookName: string) {
     if (focusedWorkbookName && focusedWorkbookName !== workbookName) {
@@ -1164,7 +1233,6 @@ function App() {
     : selectedColumn
       ? `${selectedCellAddress} · ${selectedColumn.fieldName}`
       : "未选择单元格";
-  const selectedValueLength = selectedCellValue.length;
 
   function handleResizeColumn(columnIndex: number, nextWidth: number) {
     if (!activeTab || !activeSheetData) {
@@ -1485,6 +1553,18 @@ function App() {
     }
   }
 
+  async function handleMinimizeWindow() {
+    await window.lightyDesign?.windowControls?.minimize();
+  }
+
+  async function handleToggleMaximizeWindow() {
+    await window.lightyDesign?.windowControls?.toggleMaximize();
+  }
+
+  async function handleCloseWindow() {
+    await window.lightyDesign?.windowControls?.close();
+  }
+
   async function handleOpenCreateWorkspaceDialog() {
     const parentDirectoryPath = await chooseParentDirectoryForWorkspaceCreation();
     if (!parentDirectoryPath) {
@@ -1654,7 +1734,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={appShellRef}>
       {isCreateWorkspaceDialogOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateWorkspaceDialog}>
           <div
@@ -2011,7 +2091,7 @@ function App() {
       />
 
       <header className="app-toolbar">
-        <div className="toolbar-menu-bar">
+        <div className="toolbar-menu-bar toolbar-no-drag">
           <div className="app-toolbar-menu-group">
             <button
               aria-expanded={openToolbarMenu === "file"}
@@ -2267,38 +2347,103 @@ function App() {
               </div>
             ) : null}
           </div>
+
+          <div className="app-toolbar-menu-group">
+            <button
+              aria-expanded={openToolbarMenu === "help"}
+              className={`toolbar-menu-trigger${openToolbarMenu === "help" ? " is-open" : ""}`}
+              onMouseEnter={() => handleToolbarMenuHover("help")}
+              onClick={() => toggleToolbarMenu("help")}
+              type="button"
+            >
+              帮助
+            </button>
+            {openToolbarMenu === "help" ? (
+              <div className="toolbar-menu-dropdown" role="menu">
+                {renderToolbarMenuSection("更新", <>
+                  {renderToolbarMenuItem({
+                    label: `当前版本 ${updateInfo?.currentVersion ?? "待检查"}`,
+                    disabled: true,
+                    onClick: () => {},
+                  })}
+                  {renderToolbarMenuItem({
+                    label: `更新状态 ${updateStatusText}`,
+                    disabled: true,
+                    onClick: () => {},
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "检查更新",
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleCheckForUpdates();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: installButtonLabel,
+                    disabled: !canInstallUpdate || updateDownloadState?.status === "launching",
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleInstallUpdate();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "打开发布页",
+                    disabled: !(updateResult?.downloadUrl ?? updateResult?.releasesPageUrl ?? updateInfo?.releasesPageUrl),
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleOpenUpdateRelease();
+                    },
+                  })}
+                </>)}
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <div className="toolbar-status-cluster">
-          <span className={hostStatusClassName}>{hostStatusLabel}</span>
-          <span className="toolbar-status-text">{workspacePath || "未打开工作区"}</span>
-          <button className="secondary-button toolbar-inline-button" onClick={() => void handleCheckForUpdates()} type="button">
-            检查更新
-          </button>
-          <button
-            className="secondary-button toolbar-inline-button"
-            disabled={!canInstallUpdate || updateDownloadState?.status === "launching"}
-            onClick={() => void handleInstallUpdate()}
-            type="button"
-          >
-            {installButtonLabel}
-          </button>
-        </div>
+        <div aria-hidden="true" className="app-toolbar-drag-region" />
+
+        {canUseNativeWindowControls ? (
+          <div aria-label="窗口控制" className="window-controls toolbar-no-drag">
+            <button
+              aria-label="最小化窗口"
+              className="window-control-button"
+              onClick={() => void handleMinimizeWindow()}
+              title="最小化"
+              type="button"
+            >
+              -
+            </button>
+            <button
+              aria-label="最大化或还原窗口"
+              className="window-control-button"
+              onClick={() => void handleToggleMaximizeWindow()}
+              title="最大化或还原"
+              type="button"
+            >
+              []
+            </button>
+            <button
+              aria-label="关闭窗口"
+              className="window-control-button is-close"
+              onClick={() => void handleCloseWindow()}
+              title="关闭"
+              type="button"
+            >
+              x
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <WorkspaceSidebar
         focusedWorkbookName={focusedWorkbookName}
-        hasDirtyChanges={hasDirtyChanges}
-        headerCount={workspace?.headerLayout.count ?? 0}
         onCreateWorkbook={handleOpenCreateWorkbookDialog}
         onFocusWorkbook={handleFocusWorkbook}
         onOpenWorkbookContextMenu={handleOpenWorkbookContextMenu}
         onRetryWorkspaceLoad={retryWorkspaceLoad}
         onWorkspaceSearchChange={setWorkspaceSearch}
-        totalSheetCount={totalSheetCount}
         workbookTree={workbookTree}
         workspaceError={workspaceError}
-        workspacePath={workspacePath}
         workspaceSearch={workspaceSearch}
         workspaceStatus={workspaceStatus}
       />
@@ -2337,24 +2482,6 @@ function App() {
             onUndoActiveSheetEdit={undoActiveSheetEdit}
             sheetFilter={sheetFilter}
           />
-
-          <div className="tab-strip">
-            {openTabs.length === 0 ? (
-              <div className="tab-strip-empty">打开左侧任意 Sheet 开始编辑。</div>
-            ) : (
-              openTabs.map((tab) => (
-                <div className={`sheet-tab${tab.id === activeTabId ? " is-active" : ""}`} key={tab.id}>
-                  <button className="sheet-tab-trigger" onClick={() => setActiveTabId(tab.id)} type="button">
-                    <span>{tab.sheetName}</span>
-                    <em>{tab.workbookName}</em>
-                  </button>
-                  <button className="sheet-tab-close" onClick={() => closeTab(tab.id)} type="button">
-                    ×
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
 
           <div className="viewer-panel">
             {!activeTab ? (
@@ -2465,6 +2592,7 @@ function App() {
         <div
           className="tree-context-menu"
           onClick={(event) => event.stopPropagation()}
+          ref={workbookContextMenuRef}
           role="menu"
           style={{ left: workbookContextMenu.x, top: workbookContextMenu.y }}
         >
@@ -2499,6 +2627,7 @@ function App() {
         <div
           className="tree-context-menu"
           onClick={(event) => event.stopPropagation()}
+          ref={sheetContextMenuRef}
           role="menu"
           style={{ left: sheetContextMenu.x, top: sheetContextMenu.y }}
         >
@@ -2530,48 +2659,18 @@ function App() {
         <div className="status-segment">
           <span className="status-label">后端</span>
           <strong className={hostStatusClassName}>{hostStatusLabel}</strong>
-          <span className="status-detail">{runtimeLabel}</span>
-        </div>
-        <div className="status-segment is-wide">
-          <span className="status-label">工作区</span>
-          <strong>{workspacePath || "未选择工作区"}</strong>
-        </div>
-        <div className="status-segment is-wide">
-          <span className="status-label">表格</span>
-          <strong>{activeTab && activeSheetData ? `${activeTab.workbookName} / ${activeSheetData.metadata.name}` : "未打开表格"}</strong>
         </div>
         <div className="status-segment">
           <span className="status-label">选区</span>
           <strong>{selectionStatusText}</strong>
-          <span className="status-detail">{selectedValueLength} chars</span>
         </div>
         <div className="status-segment">
           <span className="status-label">冻结</span>
           <strong>{freezeStatusText}</strong>
-          <span className="status-detail">滚动区继续支持筛选与编辑</span>
         </div>
         <div className="status-segment">
-          <span className="status-label">保存</span>
-          <strong>{saveStatusText}</strong>
-          <span className="status-detail">{hostUrlLabel}</span>
-        </div>
-        <div className="status-segment status-update-segment">
-          <span className="status-label">更新</span>
-          <strong>{updateStatusText}</strong>
-          <div className="status-update-actions">
-            <span className="status-detail">{updateDetailText}</span>
-            <button className="status-link-button" onClick={() => void handleCheckForUpdates()} type="button">
-              刷新
-            </button>
-            <button
-              className="status-link-button"
-              disabled={!canInstallUpdate || updateDownloadState?.status === "launching"}
-              onClick={() => void handleInstallUpdate()}
-              type="button"
-            >
-              安装
-            </button>
-          </div>
+          <span className="status-label">更改</span>
+          <strong>{hasDirtyChanges ? "存在未保存更改" : "无未保存更改"}</strong>
         </div>
       </footer>
     </div>

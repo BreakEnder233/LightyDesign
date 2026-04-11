@@ -59,6 +59,7 @@ button {
   padding: 0 8px;
   border-bottom: 1px solid #333333;
   background: #252526;
+  position: relative;
 }
 
 .toolbar-no-drag {
@@ -209,6 +210,18 @@ button {
 .window-control-button.is-close:hover {
   background: #c42b1c;
   color: #ffffff;
+}
+
+.app-toolbar-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #dcdcdc;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 40px;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
 }
 
 .workspace-sidebar {

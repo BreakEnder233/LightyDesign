@@ -3239,6 +3239,8 @@ function App() {
 
         <div aria-hidden="true" className="app-toolbar-drag-region" />
 
+        <div aria-hidden="true" className="app-toolbar-title toolbar-no-drag">Lighty Design</div>
+
         {canUseNativeWindowControls ? (
           <div aria-label="窗口控制" className="window-controls toolbar-no-drag">
             <button

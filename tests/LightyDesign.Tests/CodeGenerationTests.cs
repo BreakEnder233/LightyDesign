@@ -28,20 +28,34 @@ public class CodeGenerationTests
         var consumableRowFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ConsumableRow.cs");
         Assert.Contains("namespace LightyDesignData", consumableRowFile.Content, StringComparison.Ordinal);
         Assert.Contains("public sealed partial class ConsumableRow", consumableRowFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public int ID { get; set; }", consumableRowFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public string Name { get; set; }", consumableRowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("private Action _editNotifier;", consumableRowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public int ID", consumableRowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("get => _ID;", consumableRowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("_editNotifier?.Invoke();", consumableRowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public string Name", consumableRowFile.Content, StringComparison.Ordinal);
 
         var consumableTableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ConsumableTable.cs");
-        Assert.Contains("public sealed partial class ConsumableTable", consumableTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public sealed partial class ConsumableTable : ILightyDesignEditableTable", consumableTableFile.Content, StringComparison.Ordinal);
         Assert.Contains("public ConsumableRow this[int id]", consumableTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public bool EditByKey(int id, Action<ConsumableRow> editAction)", consumableTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public bool RemoveByKey(int id)", consumableTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public void ReplaceAll(IEnumerable<ConsumableRow> rows)", consumableTableFile.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("ThrowIfNull(", consumableTableFile.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("using var", consumableTableFile.Content, StringComparison.Ordinal);
         Assert.Contains("Name = \"Potion\"", consumableTableFile.Content, StringComparison.Ordinal);
 
         var stageTableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/StageTable.cs");
         Assert.Contains("public StageByID1Index this[int id1]", stageTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public StageRow this[int id1, int id2]", stageTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public bool EditByKey(int id1, int id2, Action<StageRow> editAction)", stageTableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public bool RemoveByKey(int id1, int id2)", stageTableFile.Content, StringComparison.Ordinal);
 
         var stageIndexFile = Assert.Single(package.Files, file => file.RelativePath == "Item/StageByID1Index.cs");
+        var normalizedStageIndexContent = NormalizeNewlines(stageIndexFile.Content);
         Assert.Contains("public sealed partial class StageByID1Index", stageIndexFile.Content, StringComparison.Ordinal);
         Assert.Contains("public StageRow this[int id2]", stageIndexFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public bool TryGet(int id2, out StageRow row)", stageIndexFile.Content, StringComparison.Ordinal);
+        Assert.EndsWith("    }\n\n}\n", normalizedStageIndexContent, StringComparison.Ordinal);
 
         var workbookFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ItemWorkbook.cs");
         Assert.Contains("public sealed partial class ItemWorkbook", workbookFile.Content, StringComparison.Ordinal);
@@ -90,6 +104,14 @@ public class CodeGenerationTests
 
         Assert.Contains("public static ItemWorkbook Item", content, StringComparison.Ordinal);
         Assert.Contains("public static MonsterWorkbook Monster", content, StringComparison.Ordinal);
+        Assert.Contains("internal interface ILightyDesignEditableTable", content, StringComparison.Ordinal);
+        Assert.Contains("public sealed class EditingScope : IDisposable", content, StringComparison.Ordinal);
+        Assert.Contains("public static EditingScope BeginEditing()", content, StringComparison.Ordinal);
+        Assert.Contains("private static int EditingScopeRefCount;", content, StringComparison.Ordinal);
+        Assert.Contains("DirtyTables.Add(table);", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("ThrowIfNull(", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("new();", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("? tables", content, StringComparison.Ordinal);
         Assert.Contains("_ = Item;", content, StringComparison.Ordinal);
         Assert.Contains("_ = Monster;", content, StringComparison.Ordinal);
         Assert.DoesNotContain("public static MonsterWorkbook Monster { get; } = MonsterWorkbook.Create();\npublic static MonsterWorkbook Monster", content, StringComparison.Ordinal);
@@ -109,12 +131,12 @@ public class CodeGenerationTests
         var normalizedTableContent = NormalizeNewlines(tableFile.Content);
 
         Assert.Contains("namespace LightyDesignData", rowFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public int ID { get; set; }", rowFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public string SharedName { get; set; }", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public int ID", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public string SharedName", rowFile.Content, StringComparison.Ordinal);
         Assert.Contains("#if LDD_Client", normalizedRowContent, StringComparison.Ordinal);
-        Assert.Contains("public string ClientOnlyName { get; set; }", normalizedRowContent, StringComparison.Ordinal);
+        Assert.Contains("public string ClientOnlyName", normalizedRowContent, StringComparison.Ordinal);
         Assert.Contains("#if LDD_Server", normalizedRowContent, StringComparison.Ordinal);
-        Assert.Contains("public string ServerOnlyNote { get; set; }", normalizedRowContent, StringComparison.Ordinal);
+        Assert.Contains("public string ServerOnlyNote", normalizedRowContent, StringComparison.Ordinal);
         Assert.Contains("new FeatureFlagRow()", normalizedTableContent, StringComparison.Ordinal);
         Assert.Contains("ID = 1,", normalizedTableContent, StringComparison.Ordinal);
         Assert.Contains("SharedName = \"Shared\",", normalizedTableContent, StringComparison.Ordinal);
@@ -141,9 +163,9 @@ public class CodeGenerationTests
         Assert.DoesNotContain("ThrowIfNull(", supportFile.Content, StringComparison.Ordinal);
         Assert.Contains("if (string.IsNullOrWhiteSpace(workbookName))", supportFile.Content, StringComparison.Ordinal);
         Assert.Contains("throw new ArgumentNullException(nameof(resolver));", supportFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public DesignDataReference<ConsumableRow> PrimaryItem { get; set; }", rowFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public DesignDataReference<StageRow> TargetStage { get; set; }", rowFile.Content, StringComparison.Ordinal);
-        Assert.Contains("public IReadOnlyList<DesignDataReference<StageRow>> StageHistory { get; set; }", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public DesignDataReference<ConsumableRow> PrimaryItem", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public DesignDataReference<StageRow> TargetStage", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public List<DesignDataReference<StageRow>> StageHistory", rowFile.Content, StringComparison.Ordinal);
         Assert.Contains("new DesignDataReference<ConsumableRow>(\"Item\", \"Consumable\", identifiers => LDD.Item.Consumable[DesignDataReferenceHelper.ParseInt32(identifiers[0])], \"1001\")", tableFile.Content, StringComparison.Ordinal);
         Assert.Contains("new DesignDataReference<StageRow>(\"Item\", \"Stage\", identifiers => LDD.Item.Stage[DesignDataReferenceHelper.ParseInt32(identifiers[0])][DesignDataReferenceHelper.ParseInt32(identifiers[1])], \"1\", \"10\")", tableFile.Content, StringComparison.Ordinal);
         Assert.Contains("new List<DesignDataReference<StageRow>>", tableFile.Content, StringComparison.Ordinal);
@@ -185,10 +207,11 @@ public class CodeGenerationTests
         var rowFile = Assert.Single(package.Files, file => file.RelativePath == "Text/LocalizationRow.cs");
         var tableFile = Assert.Single(package.Files, file => file.RelativePath == "Text/LocalizationTable.cs");
 
-        Assert.Contains("public string Key { get; set; }", rowFile.Content, StringComparison.Ordinal);
-        Assert.Contains("private readonly IReadOnlyDictionary<string, LocalizationRow> _byKey;", tableFile.Content, StringComparison.Ordinal);
-        Assert.Contains("_byKey = rows.ToDictionary(row => row.Key);", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public string Key", rowFile.Content, StringComparison.Ordinal);
+        Assert.Contains("private IReadOnlyDictionary<string, LocalizationRow> _byKey = new Dictionary<string, LocalizationRow>();", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("_byKey = _rows.ToDictionary(row => row.Key);", tableFile.Content, StringComparison.Ordinal);
         Assert.Contains("public LocalizationRow this[string key] => _byKey[key];", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("public bool EditByKey(string key, Action<LocalizationRow> editAction)", tableFile.Content, StringComparison.Ordinal);
     }
 
     private static LightyWorkspace CreateWorkspace(LightyWorkbookCodegenOptions codegenOptions)
@@ -462,6 +485,7 @@ public class CodeGenerationTests
             codegenOptions,
             Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
     }
+
 
     private static IReadOnlyDictionary<string, JsonElement> CreateAttributes(string key, string value)
     {

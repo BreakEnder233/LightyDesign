@@ -204,12 +204,12 @@ public sealed class LightyWorkbookCodeGenerator
     {
         if (descriptor.IsList)
         {
-            return $"IReadOnlyList<{MapToCSharpType(LightyColumnTypeDescriptor.Parse(descriptor.ValueType))}>";
+            return $"List<{MapToCSharpType(LightyColumnTypeDescriptor.Parse(descriptor.ValueType))}>";
         }
 
         if (descriptor.IsDictionary)
         {
-            return $"IReadOnlyDictionary<{MapToCSharpType(LightyColumnTypeDescriptor.Parse(descriptor.DictionaryKeyType!))}, {MapToCSharpType(LightyColumnTypeDescriptor.Parse(descriptor.DictionaryValueType!))}>";
+            return $"Dictionary<{MapToCSharpType(LightyColumnTypeDescriptor.Parse(descriptor.DictionaryKeyType!))}, {MapToCSharpType(LightyColumnTypeDescriptor.Parse(descriptor.DictionaryValueType!))}>";
         }
 
         if (descriptor.IsReference)
@@ -272,22 +272,45 @@ public sealed class LightyWorkbookCodeGenerator
     private static string RenderRowFile(GeneratedSheetModel sheet)
     {
         var writer = new CodeWriter();
+        writer.AppendLine("using System;");
         writer.AppendLine("using System.Collections.Generic;");
         writer.AppendLine();
         AppendNamespaceStart(writer);
         writer.AppendLine($"public sealed partial class {sheet.RowTypeName}");
         writer.AppendLine("{");
         writer.Indent();
+        writer.AppendLine("private Action _editNotifier;");
+        writer.AppendLine();
+        writer.AppendLine("internal void SetEditNotifier(Action editNotifier)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("_editNotifier = editNotifier;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
         AppendScopedItems(writer, sheet.Fields, field => field.ExportScope, (scopedWriter, field) =>
         {
+            var backingFieldName = BuildBackingFieldName(field.PropertyName);
             if (!string.IsNullOrWhiteSpace(field.DisplayName))
             {
                 scopedWriter.AppendLine($"// {field.DisplayName}");
             }
 
-            scopedWriter.AppendLine($"public {field.CSharpTypeName} {field.PropertyName} {{ get; set; }}");
+            scopedWriter.AppendLine($"private {field.CSharpTypeName} {backingFieldName};");
+            scopedWriter.AppendLine($"public {field.CSharpTypeName} {field.PropertyName}");
+            scopedWriter.AppendLine("{");
+            scopedWriter.Indent();
+            scopedWriter.AppendLine($"get => {backingFieldName};");
+            scopedWriter.AppendLine("set");
+            scopedWriter.AppendLine("{");
+            scopedWriter.Indent();
+            scopedWriter.AppendLine($"{backingFieldName} = value;");
+            scopedWriter.AppendLine("_editNotifier?.Invoke();");
+            scopedWriter.Outdent();
+            scopedWriter.AppendLine("}");
+            scopedWriter.Outdent();
+            scopedWriter.AppendLine("}");
         });
-        writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
         AppendNamespaceEnd(writer);
@@ -299,31 +322,91 @@ public sealed class LightyWorkbookCodeGenerator
     {
         var writer = new CodeWriter();
         var indexAvailabilityScope = ResolveIndexAvailabilityScope(sheet.PrimaryKeyFields);
+        writer.AppendLine("using System;");
         writer.AppendLine("using System.Collections.Generic;");
         writer.AppendLine("using System.Linq;");
         writer.AppendLine();
         AppendNamespaceStart(writer);
-        writer.AppendLine($"public sealed partial class {sheet.TableTypeName}");
+        writer.AppendLine($"public sealed partial class {sheet.TableTypeName} : ILightyDesignEditableTable");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine($"private readonly IReadOnlyList<{sheet.RowTypeName}> _rows;");
+        writer.AppendLine($"private readonly List<{sheet.RowTypeName}> _rows;");
+        writer.AppendLine($"private readonly IReadOnlyList<{sheet.RowTypeName}> _rowsView;");
 
         AppendIndexMembers(writer, sheet, indexAvailabilityScope);
 
         writer.AppendLine();
-        writer.AppendLine($"private {sheet.TableTypeName}(IReadOnlyList<{sheet.RowTypeName}> rows)");
+        writer.AppendLine($"private {sheet.TableTypeName}(IEnumerable<{sheet.RowTypeName}> rows)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("_rows = rows;");
-
-        AppendIndexConstructorBody(writer, sheet, indexAvailabilityScope);
+        writer.AppendLine($"_rows = new List<{sheet.RowTypeName}>();");
+        writer.AppendLine("_rowsView = _rows.AsReadOnly();");
+        writer.AppendLine("LoadRows(rows);");
+        writer.AppendLine("((ILightyDesignEditableTable)this).RebuildIndexes();");
 
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
-        writer.AppendLine($"public IReadOnlyList<{sheet.RowTypeName}> Rows => _rows;");
+        writer.AppendLine($"public IReadOnlyList<{sheet.RowTypeName}> Rows => _rowsView;");
 
         AppendIndexAccessor(writer, sheet, indexAvailabilityScope);
+        AppendMutationMembers(writer, sheet, indexAvailabilityScope);
+
+        writer.AppendLine();
+        writer.AppendLine($"private void LoadRows(IEnumerable<{sheet.RowTypeName}> rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (rows == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(rows));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("foreach (var row in rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("AddRow(row);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"private void AddRow({sheet.RowTypeName} row)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (row == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(row));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine("row.SetEditNotifier(MarkDirty);");
+        writer.AppendLine("_rows.Add(row);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"private void RemoveRow({sheet.RowTypeName} row)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("row.SetEditNotifier(null);");
+        writer.AppendLine("_ = _rows.Remove(row);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private void MarkDirty()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("LDD.MarkDirty(this);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("void ILightyDesignEditableTable.RebuildIndexes()");
+        writer.AppendLine("{");
+        writer.Indent();
+        AppendIndexRebuildBody(writer, sheet, indexAvailabilityScope, "_rows");
+        writer.Outdent();
+        writer.AppendLine("}");
 
         writer.AppendLine();
         writer.AppendLine($"internal static {sheet.TableTypeName} Create()");
@@ -494,6 +577,7 @@ public sealed class LightyWorkbookCodeGenerator
         var currentTypeName = BuildIndexNodeTypeName(sheet, level);
         var isLeaf = level == sheet.PrimaryKeyFields.Count - 1;
         var valueTypeName = isLeaf ? sheet.RowTypeName : BuildIndexNodeTypeName(sheet, level + 1);
+        var remainingKeyFields = sheet.PrimaryKeyFields.Skip(level + 1).ToList();
 
         writer.AppendLine($"public sealed partial class {currentTypeName}");
         writer.AppendLine("{");
@@ -517,6 +601,35 @@ public sealed class LightyWorkbookCodeGenerator
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine($"public {valueTypeName} this[{MapToCSharpType(currentKeyField.TypeDescriptor)} {ToParameterIdentifier(currentKeyField.FieldName)}] => _by{currentKeyField.PropertyName}[{ToParameterIdentifier(currentKeyField.FieldName)}];");
+        writer.AppendLine();
+        if (isLeaf)
+        {
+            writer.AppendLine($"public bool TryGet({MapToCSharpType(currentKeyField.TypeDescriptor)} {ToParameterIdentifier(currentKeyField.FieldName)}, out {sheet.RowTypeName} row)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine($"return _by{currentKeyField.PropertyName}.TryGetValue({ToParameterIdentifier(currentKeyField.FieldName)}, out row);");
+            writer.Outdent();
+            writer.AppendLine("}");
+        }
+        else
+        {
+            var signature = BuildMethodParameterList(new[] { currentKeyField }.Concat(remainingKeyFields));
+            var nextArguments = BuildMethodArgumentList(remainingKeyFields);
+            writer.AppendLine($"public bool TryGet({signature}, out {sheet.RowTypeName} row)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine($"if (!_by{currentKeyField.PropertyName}.TryGetValue({ToParameterIdentifier(currentKeyField.FieldName)}, out var nextIndex))");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("row = null;");
+            writer.AppendLine("return false;");
+            writer.Outdent();
+            writer.AppendLine("}");
+            writer.AppendLine();
+            writer.AppendLine($"return nextIndex.TryGet({nextArguments}, out row);");
+            writer.Outdent();
+            writer.AppendLine("}");
+        }
         writer.Outdent();
         writer.AppendLine("}");
         return writer.ToString();
@@ -575,10 +688,54 @@ public sealed class LightyWorkbookCodeGenerator
     private static string RenderEntryPointFile(IReadOnlyList<string> workbookNames)
     {
         var writer = new CodeWriter();
+        writer.AppendLine("using System;");
+        writer.AppendLine("using System.Collections.Generic;");
+        writer.AppendLine("using System.Linq;");
+        writer.AppendLine();
         AppendNamespaceStart(writer);
+        writer.AppendLine("internal interface ILightyDesignEditableTable");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("void RebuildIndexes();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
         writer.AppendLine("public static partial class LDD");
         writer.AppendLine("{");
         writer.Indent();
+        writer.AppendLine("private static readonly object EditingSync = new object();");
+        writer.AppendLine("private static readonly HashSet<ILightyDesignEditableTable> DirtyTables = new HashSet<ILightyDesignEditableTable>();");
+        writer.AppendLine("private static int EditingScopeRefCount;");
+        writer.AppendLine();
+        writer.AppendLine("public sealed class EditingScope : IDisposable");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("private bool _disposed;");
+        writer.AppendLine();
+        writer.AppendLine("public EditingScope()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("EnterEditingScope();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public void Dispose()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (_disposed)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("_disposed = true;");
+        writer.AppendLine("ExitEditingScope();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
 
         foreach (var workbookName in workbookNames)
         {
@@ -588,6 +745,13 @@ public sealed class LightyWorkbookCodeGenerator
         }
 
         writer.AppendLine();
+        writer.AppendLine("public static EditingScope BeginEditing()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return new EditingScope();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
         writer.AppendLine("public static void Initialize()");
         writer.AppendLine("{");
         writer.Indent();
@@ -595,6 +759,98 @@ public sealed class LightyWorkbookCodeGenerator
         {
             writer.AppendLine($"_ = {ToTypeIdentifier(workbookName)};");
         }
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("internal static void MarkDirty(ILightyDesignEditableTable table)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (table == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(table));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("ILightyDesignEditableTable[] tablesToRebuild = null;");
+        writer.AppendLine("lock (EditingSync)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (EditingScopeRefCount > 0)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("DirtyTables.Add(table);");
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("tablesToRebuild = new[] { table }; ");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("RebuildIndexes(tablesToRebuild);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private static void EnterEditingScope()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("lock (EditingSync)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("EditingScopeRefCount += 1;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private static void ExitEditingScope()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("ILightyDesignEditableTable[] tablesToRebuild = null;");
+        writer.AppendLine("lock (EditingSync)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (EditingScopeRefCount == 0)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("EditingScopeRefCount -= 1;");
+        writer.AppendLine("if (EditingScopeRefCount > 0 || DirtyTables.Count == 0)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("tablesToRebuild = DirtyTables.ToArray();");
+        writer.AppendLine("DirtyTables.Clear();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("RebuildIndexes(tablesToRebuild);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private static void RebuildIndexes(IEnumerable<ILightyDesignEditableTable> tables)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (tables == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("foreach (var table in tables)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("table.RebuildIndexes();");
+        writer.Outdent();
+        writer.AppendLine("}");
         writer.Outdent();
         writer.AppendLine("}");
         writer.Outdent();
@@ -676,17 +932,17 @@ public sealed class LightyWorkbookCodeGenerator
             if (sheet.PrimaryKeyFields.Count == 1)
             {
                 var keyField = sheet.PrimaryKeyFields[0];
-                writer.AppendLine($"private readonly IReadOnlyDictionary<{MapToCSharpType(keyField.TypeDescriptor)}, {sheet.RowTypeName}> _by{keyField.PropertyName};");
+                writer.AppendLine($"private IReadOnlyDictionary<{MapToCSharpType(keyField.TypeDescriptor)}, {sheet.RowTypeName}> _by{keyField.PropertyName} = new Dictionary<{MapToCSharpType(keyField.TypeDescriptor)}, {sheet.RowTypeName}>();");
             }
             else if (sheet.PrimaryKeyFields.Count > 1)
             {
                 var rootKeyField = sheet.PrimaryKeyFields[0];
-                writer.AppendLine($"private readonly IReadOnlyDictionary<{MapToCSharpType(rootKeyField.TypeDescriptor)}, {BuildIndexNodeTypeName(sheet, 1)}> _by{rootKeyField.PropertyName};");
+                writer.AppendLine($"private IReadOnlyDictionary<{MapToCSharpType(rootKeyField.TypeDescriptor)}, {BuildIndexNodeTypeName(sheet, 1)}> _by{rootKeyField.PropertyName} = new Dictionary<{MapToCSharpType(rootKeyField.TypeDescriptor)}, {BuildIndexNodeTypeName(sheet, 1)}>();");
             }
         });
     }
 
-    private static void AppendIndexConstructorBody(CodeWriter writer, GeneratedSheetModel sheet, LightyExportScope? indexAvailabilityScope)
+    private static void AppendIndexRebuildBody(CodeWriter writer, GeneratedSheetModel sheet, LightyExportScope? indexAvailabilityScope, string rowsExpression)
     {
         if (!indexAvailabilityScope.HasValue)
         {
@@ -698,12 +954,12 @@ public sealed class LightyWorkbookCodeGenerator
             if (sheet.PrimaryKeyFields.Count == 1)
             {
                 var keyField = sheet.PrimaryKeyFields[0];
-                writer.AppendLine($"_by{keyField.PropertyName} = rows.ToDictionary(row => row.{keyField.PropertyName});");
+                writer.AppendLine($"_by{keyField.PropertyName} = {rowsExpression}.ToDictionary(row => row.{keyField.PropertyName});");
             }
             else if (sheet.PrimaryKeyFields.Count > 1)
             {
                 var rootKeyField = sheet.PrimaryKeyFields[0];
-                writer.AppendLine($"_by{rootKeyField.PropertyName} = rows");
+                writer.AppendLine($"_by{rootKeyField.PropertyName} = {rowsExpression}");
                 writer.AppendLine($"    .GroupBy(row => row.{rootKeyField.PropertyName})");
                 writer.AppendLine($"    .ToDictionary(group => group.Key, group => new {BuildIndexNodeTypeName(sheet, 1)}(group.ToList()));");
             }
@@ -724,12 +980,181 @@ public sealed class LightyWorkbookCodeGenerator
             {
                 var keyField = sheet.PrimaryKeyFields[0];
                 writer.AppendLine($"public {sheet.RowTypeName} this[{MapToCSharpType(keyField.TypeDescriptor)} {ToParameterIdentifier(keyField.FieldName)}] => _by{keyField.PropertyName}[{ToParameterIdentifier(keyField.FieldName)}];");
+                writer.AppendLine($"public bool TryGet({MapToCSharpType(keyField.TypeDescriptor)} {ToParameterIdentifier(keyField.FieldName)}, out {sheet.RowTypeName} row) => _by{keyField.PropertyName}.TryGetValue({ToParameterIdentifier(keyField.FieldName)}, out row);");
             }
             else if (sheet.PrimaryKeyFields.Count > 1)
             {
                 var rootKeyField = sheet.PrimaryKeyFields[0];
                 writer.AppendLine($"public {BuildIndexNodeTypeName(sheet, 1)} this[{MapToCSharpType(rootKeyField.TypeDescriptor)} {ToParameterIdentifier(rootKeyField.FieldName)}] => _by{rootKeyField.PropertyName}[{ToParameterIdentifier(rootKeyField.FieldName)}];");
+                writer.AppendLine($"public {sheet.RowTypeName} this[{BuildMethodParameterList(sheet.PrimaryKeyFields)}] => {BuildCompositeIndexerExpression(sheet.PrimaryKeyFields)};");
+                writer.AppendLine($"public bool TryGet({BuildMethodParameterList(sheet.PrimaryKeyFields)}, out {sheet.RowTypeName} row)");
+                writer.AppendLine("{");
+                writer.Indent();
+                writer.AppendLine($"if (!_by{rootKeyField.PropertyName}.TryGetValue({ToParameterIdentifier(rootKeyField.FieldName)}, out var nextIndex))");
+                writer.AppendLine("{");
+                writer.Indent();
+                writer.AppendLine("row = null;");
+                writer.AppendLine("return false;");
+                writer.Outdent();
+                writer.AppendLine("}");
+                writer.AppendLine();
+                writer.AppendLine($"return nextIndex.TryGet({BuildMethodArgumentList(sheet.PrimaryKeyFields.Skip(1))}, out row);");
+                writer.Outdent();
+                writer.AppendLine("}");
             }
+        });
+    }
+
+    private static void AppendMutationMembers(CodeWriter writer, GeneratedSheetModel sheet, LightyExportScope? indexAvailabilityScope)
+    {
+        writer.AppendLine();
+        writer.AppendLine($"public void Add({sheet.RowTypeName} row)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("AddRow(row);");
+        writer.AppendLine("MarkDirty();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"public void AddRange(IEnumerable<{sheet.RowTypeName}> rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (rows == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(rows));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("var added = false;");
+        writer.AppendLine("foreach (var row in rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("AddRow(row);");
+        writer.AppendLine("added = true;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("if (added)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("MarkDirty();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"public bool Remove({sheet.RowTypeName} row)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (row == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(row));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("if (!_rows.Contains(row))");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return false;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("RemoveRow(row);");
+        writer.AppendLine("MarkDirty();");
+        writer.AppendLine("return true;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public void Clear()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (_rows.Count == 0)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("foreach (var row in _rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("row.SetEditNotifier(null);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("_rows.Clear();");
+        writer.AppendLine("MarkDirty();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"public void ReplaceAll(IEnumerable<{sheet.RowTypeName}> rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (rows == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(rows));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("foreach (var existingRow in _rows)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("existingRow.SetEditNotifier(null);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("_rows.Clear();");
+        writer.AppendLine("LoadRows(rows);");
+        writer.AppendLine("MarkDirty();");
+        writer.Outdent();
+        writer.AppendLine("}");
+
+        if (!indexAvailabilityScope.HasValue)
+        {
+            return;
+        }
+
+        writer.AppendLine();
+        AppendScopeBlock(writer, indexAvailabilityScope.Value, () =>
+        {
+            var keyParameters = BuildMethodParameterList(sheet.PrimaryKeyFields);
+            var keyArguments = BuildMethodArgumentList(sheet.PrimaryKeyFields);
+            writer.AppendLine($"public bool RemoveByKey({keyParameters})");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine($"return TryGet({keyArguments}, out var row) && row != null && Remove(row);");
+            writer.Outdent();
+            writer.AppendLine("}");
+            writer.AppendLine();
+            writer.AppendLine($"public bool EditByKey({keyParameters}, Action<{sheet.RowTypeName}> editAction)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("if (editAction == null)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("throw new ArgumentNullException(nameof(editAction));");
+            writer.Outdent();
+            writer.AppendLine("}");
+            writer.AppendLine();
+            writer.AppendLine($"if (!TryGet({keyArguments}, out var row) || row == null)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("return false;");
+            writer.Outdent();
+            writer.AppendLine("}");
+            writer.AppendLine();
+            writer.AppendLine("using (new LDD.EditingScope())");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("editAction(row);");
+            writer.Outdent();
+            writer.AppendLine("}");
+            writer.AppendLine("return true;");
+            writer.Outdent();
+            writer.AppendLine("}");
         });
     }
 
@@ -905,6 +1330,35 @@ public sealed class LightyWorkbookCodeGenerator
     private static string BuildIndexNodeTypeName(GeneratedSheetModel sheet, int level)
     {
         return string.Join(string.Empty, sheet.PrimaryKeyFields.Take(level).Select(field => $"{sheet.TypeName}By{field.PropertyName}")) + "Index";
+    }
+
+    private static string BuildBackingFieldName(string propertyName)
+    {
+        return propertyName.StartsWith("@", StringComparison.Ordinal)
+            ? $"_{propertyName[1..]}"
+            : $"_{propertyName}";
+    }
+
+    private static string BuildMethodParameterList(IEnumerable<GeneratedFieldModel> fields)
+    {
+        return string.Join(", ", fields.Select(field => $"{MapToCSharpType(field.TypeDescriptor)} {ToParameterIdentifier(field.FieldName)}"));
+    }
+
+    private static string BuildMethodArgumentList(IEnumerable<GeneratedFieldModel> fields)
+    {
+        return string.Join(", ", fields.Select(field => ToParameterIdentifier(field.FieldName)));
+    }
+
+    private static string BuildCompositeIndexerExpression(IReadOnlyList<GeneratedFieldModel> primaryKeyFields)
+    {
+        var rootKeyField = primaryKeyFields[0];
+        var expression = $"_by{rootKeyField.PropertyName}[{ToParameterIdentifier(rootKeyField.FieldName)}]";
+        foreach (var keyField in primaryKeyFields.Skip(1))
+        {
+            expression += $"[{ToParameterIdentifier(keyField.FieldName)}]";
+        }
+
+        return expression;
     }
 
     private static string ToTypeIdentifier(string value)

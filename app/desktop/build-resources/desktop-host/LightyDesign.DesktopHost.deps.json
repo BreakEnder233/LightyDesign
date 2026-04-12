@@ -7,11 +7,11 @@
   "targets": {
     ".NETCoreApp,Version=v9.0": {},
     ".NETCoreApp,Version=v9.0/win-x64": {
-      "LightyDesign.DesktopHost/0.2.2": {
+      "LightyDesign.DesktopHost/0.1.0": {
         "dependencies": {
-          "LightyDesign.Core": "0.2.2",
-          "LightyDesign.FileProcess": "0.2.2",
-          "LightyDesign.Generator": "0.2.2",
+          "LightyDesign.Core": "0.1.0",
+          "LightyDesign.FileProcess": "0.1.0",
+          "LightyDesign.Generator": "0.1.0",
           "Microsoft.AspNetCore.OpenApi": "9.0.9"
         },
         "runtime": {
@@ -114,7 +114,7 @@
           }
         }
       },
-      "LightyDesign.Core/0.2.2": {
+      "LightyDesign.Core/0.1.0": {
         "runtime": {
           "LightyDesign.Core.dll": {
             "assemblyVersion": "0.1.0.0",
@@ -122,10 +122,10 @@
           }
         }
       },
-      "LightyDesign.FileProcess/0.2.2": {
+      "LightyDesign.FileProcess/0.1.0": {
         "dependencies": {
           "ClosedXML": "0.104.2",
-          "LightyDesign.Core": "0.2.2"
+          "LightyDesign.Core": "0.1.0"
         },
         "runtime": {
           "LightyDesign.FileProcess.dll": {
@@ -134,9 +134,9 @@
           }
         }
       },
-      "LightyDesign.Generator/0.2.2": {
+      "LightyDesign.Generator/0.1.0": {
         "dependencies": {
-          "LightyDesign.Core": "0.2.2"
+          "LightyDesign.Core": "0.1.0"
         },
         "runtime": {
           "LightyDesign.Generator.dll": {
@@ -148,7 +148,7 @@
     }
   },
   "libraries": {
-    "LightyDesign.DesktopHost/0.2.2": {
+    "LightyDesign.DesktopHost/0.1.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
@@ -223,17 +223,17 @@
       "path": "system.io.packaging/8.0.1",
       "hashPath": "system.io.packaging.8.0.1.nupkg.sha512"
     },
-    "LightyDesign.Core/0.2.2": {
+    "LightyDesign.Core/0.1.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "LightyDesign.FileProcess/0.2.2": {
+    "LightyDesign.FileProcess/0.1.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "LightyDesign.Generator/0.2.2": {
+    "LightyDesign.Generator/0.1.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

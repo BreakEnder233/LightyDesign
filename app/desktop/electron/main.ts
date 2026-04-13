@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -1387,6 +1387,24 @@ async function waitForDesktopHostReady(timeoutMs: number) {
   return null;
 }
 
+function showEditableContextMenu(browserWindow: BrowserWindow, params: Electron.ContextMenuParams) {
+  if (!params.isEditable) {
+    return;
+  }
+
+  const menu = Menu.buildFromTemplate([
+    { role: "undo", enabled: params.editFlags.canUndo },
+    { role: "redo", enabled: params.editFlags.canRedo },
+    { type: "separator" },
+    { role: "cut", enabled: params.editFlags.canCut },
+    { role: "copy", enabled: params.editFlags.canCopy },
+    { role: "paste", enabled: params.editFlags.canPaste },
+    { role: "selectAll", enabled: params.editFlags.canSelectAll },
+  ]);
+
+  menu.popup({ window: browserWindow });
+}
+
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
     width: 1440,
@@ -1434,6 +1452,10 @@ function createMainWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    showEditableContextMenu(mainWindow, params);
   });
 
   mainWindow.on("close", (event) => {

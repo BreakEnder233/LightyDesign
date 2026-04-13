@@ -12,6 +12,7 @@ import { isShortcutModifierPressed, useEditorShortcuts } from "./hooks/useEditor
 import { useToastCenter } from "./hooks/useToastCenter";
 import { useWorkspaceEditor } from "./hooks/useWorkspaceEditor";
 import { buildWorkspaceScopedStorageKey, cloneColumns, getSelectionBounds, type SheetColumn, type SheetSelection, type SheetSelectionRange, type ShortcutBinding } from "./types/desktopApp";
+import { buildAutoFillSeriesGenerator } from "./utils/autoFill";
 
 type CopiedSelectionSnapshot = {
   matrix: string[][];
@@ -132,6 +133,22 @@ function parseClipboardMatrix(clipboardText: string) {
   }
 
   return rows.map((row) => row.split("\t"));
+}
+
+function getPositiveModulo(value: number, divisor: number) {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+function buildRepeatedFillValue(sourceMatrix: string[][], sourceStartVisibleIndex: number, visibleRowIndex: number, startColumnIndex: number, columnIndex: number) {
+  const sourceRowCount = sourceMatrix.length;
+  const sourceColumnCount = sourceMatrix[0]?.length ?? 0;
+  if (sourceRowCount <= 0 || sourceColumnCount <= 0) {
+    return "";
+  }
+
+  const sourceRowOffset = getPositiveModulo(visibleRowIndex - sourceStartVisibleIndex, sourceRowCount);
+  const sourceColumnOffset = getPositiveModulo(columnIndex - startColumnIndex, sourceColumnCount);
+  return sourceMatrix[sourceRowOffset]?.[sourceColumnOffset] ?? "";
 }
 
 function normalizeDirectoryPath(path: string) {
@@ -1316,6 +1333,111 @@ function App() {
       {
         rowIndex: startRowIndex + insertedRowCount - 1,
         columnIndex: Math.min(startColumnIndex + insertedColumnCount - 1, activeSheetColumns.length - 1),
+      },
+    );
+  }
+
+  function handleAutoFillSelection(targetRowIndex: number, targetColumnIndex: number) {
+    if (!activeSheetData || !selectedRangeBounds || selectedRangeRowEntries.length === 0) {
+      return;
+    }
+
+    const sourceStartVisibleIndex = filteredRowEntries.findIndex((entry) => entry.rowIndex === selectedRangeRowEntries[0]?.rowIndex);
+    const sourceEndVisibleIndex = filteredRowEntries.findIndex(
+      (entry) => entry.rowIndex === selectedRangeRowEntries[selectedRangeRowEntries.length - 1]?.rowIndex,
+    );
+    const targetVisibleIndex = filteredRowEntries.findIndex((entry) => entry.rowIndex === targetRowIndex);
+    if (sourceStartVisibleIndex < 0 || sourceEndVisibleIndex < 0 || targetVisibleIndex < 0) {
+      return;
+    }
+
+    const sourceColumnCount = selectedRangeBounds.endColumnIndex - selectedRangeBounds.startColumnIndex + 1;
+    if (sourceColumnCount <= 0) {
+      return;
+    }
+
+    const destinationStartVisibleIndex = Math.min(sourceStartVisibleIndex, targetVisibleIndex);
+    const destinationEndVisibleIndex = Math.max(sourceEndVisibleIndex, targetVisibleIndex);
+    const destinationStartColumnIndex = Math.min(selectedRangeBounds.startColumnIndex, targetColumnIndex);
+    const destinationEndColumnIndex = Math.max(selectedRangeBounds.endColumnIndex, targetColumnIndex);
+
+    const sourceMatrix = selectedRangeRowEntries.map((entry) =>
+      Array.from({ length: sourceColumnCount }, (_, columnOffset) => entry.row[selectedRangeBounds.startColumnIndex + columnOffset] ?? ""),
+    );
+    const sourceRowCount = sourceMatrix.length;
+    if (sourceRowCount === 0) {
+      return;
+    }
+
+    const isVerticalOnlyExpansion =
+      destinationStartColumnIndex === selectedRangeBounds.startColumnIndex &&
+      destinationEndColumnIndex === selectedRangeBounds.endColumnIndex;
+    const isHorizontalOnlyExpansion =
+      destinationStartVisibleIndex === sourceStartVisibleIndex &&
+      destinationEndVisibleIndex === sourceEndVisibleIndex;
+    const columnSeriesGenerators = isVerticalOnlyExpansion
+      ? Array.from({ length: sourceColumnCount }, (_, columnOffset) =>
+        buildAutoFillSeriesGenerator(
+          sourceMatrix.map((row) => row[columnOffset] ?? ""),
+        ),
+      )
+      : [];
+    const rowSeriesGenerators = isHorizontalOnlyExpansion
+      ? Array.from({ length: sourceRowCount }, (_, rowOffset) => buildAutoFillSeriesGenerator(sourceMatrix[rowOffset] ?? []))
+      : [];
+
+    const edits = filteredRowEntries.slice(destinationStartVisibleIndex, destinationEndVisibleIndex + 1).flatMap((entry, rowOffset) => {
+      const visibleRowIndex = destinationStartVisibleIndex + rowOffset;
+
+      return Array.from(
+        { length: destinationEndColumnIndex - destinationStartColumnIndex + 1 },
+        (_, columnOffset) => destinationStartColumnIndex + columnOffset,
+      ).flatMap((columnIndex) => {
+        const isInsideSourceRange =
+          visibleRowIndex >= sourceStartVisibleIndex &&
+          visibleRowIndex <= sourceEndVisibleIndex &&
+          columnIndex >= selectedRangeBounds.startColumnIndex &&
+          columnIndex <= selectedRangeBounds.endColumnIndex;
+        if (isInsideSourceRange) {
+          return [];
+        }
+
+        const sourceRowOffset = visibleRowIndex - sourceStartVisibleIndex;
+        const sourceColumnOffset = columnIndex - selectedRangeBounds.startColumnIndex;
+        const repeatedFillValue = buildRepeatedFillValue(
+          sourceMatrix,
+          sourceStartVisibleIndex,
+          visibleRowIndex,
+          selectedRangeBounds.startColumnIndex,
+          columnIndex,
+        );
+        const nextValue = isVerticalOnlyExpansion
+          ? columnSeriesGenerators[sourceColumnOffset]?.(sourceRowOffset) ?? repeatedFillValue
+          : isHorizontalOnlyExpansion
+            ? rowSeriesGenerators[sourceRowOffset]?.(sourceColumnOffset) ?? repeatedFillValue
+            : repeatedFillValue;
+
+        return {
+          rowIndex: entry.rowIndex,
+          columnIndex,
+          nextValue,
+        };
+      });
+    });
+
+    if (edits.length === 0) {
+      return;
+    }
+
+    applyCellEdits(edits);
+    applySelectionRange(
+      {
+        rowIndex: filteredRowEntries[destinationStartVisibleIndex]?.rowIndex ?? selectedRangeRowEntries[0].rowIndex,
+        columnIndex: destinationStartColumnIndex,
+      },
+      {
+        rowIndex: filteredRowEntries[destinationEndVisibleIndex]?.rowIndex ?? selectedRangeRowEntries[selectedRangeRowEntries.length - 1].rowIndex,
+        columnIndex: destinationEndColumnIndex,
       },
     );
   }
@@ -3396,6 +3518,7 @@ function App() {
                   onEditCell={updateCellValue}
                   onFreezeColumns={setFreezeColumnCount}
                   onFreezeRows={setFreezeRowCount}
+                  onAutoFillSelection={handleAutoFillSelection}
                   onInsertColumn={handleInsertColumn}
                   onInsertCopiedCellsDown={handleInsertCopiedCellsDown}
                   onInsertCopiedColumnsAfter={(columnIndex) => handleInsertCopiedColumns(columnIndex + 1)}

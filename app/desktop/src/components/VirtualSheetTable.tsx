@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import {
   buildCellKey,
   getColumnEditorKind,
+  getColumnExportScope,
   getSelectionBounds,
   type SheetColumn,
   type SheetSelection,
@@ -51,6 +52,7 @@ type VirtualSheetTableProps = {
   onInsertCopiedColumnsAfter: (columnIndex: number) => void;
   onDeleteColumn: (columnIndex: number) => void;
   onInsertCopiedCellsDown: (rowIndex: number, columnIndex: number) => void;
+  onAutoFillSelection: (targetRowIndex: number, targetColumnIndex: number) => void;
   onCopySelection: () => string;
   onCopySelectionToClipboard: () => void;
   onCutSelection: () => void;
@@ -64,6 +66,21 @@ const rowHeight = 30;
 const overscanCount = 12;
 const rowNumberWidth = 56;
 const contextMenuViewportMargin = 8;
+const autoFillScrollEdgeThreshold = 48;
+const autoFillMaxScrollStep = 26;
+
+type SelectionBounds = {
+  startRowIndex: number;
+  endRowIndex: number;
+  startColumnIndex: number;
+  endColumnIndex: number;
+};
+
+type AutoFillDragState = {
+  sourceBounds: SelectionBounds;
+  targetRowIndex: number;
+  targetColumnIndex: number;
+};
 
 type HeaderContextMenuState =
   | {
@@ -138,6 +155,34 @@ function buildGridTemplateColumns(widths: number[], includeRowNumber: boolean) {
   return segments.join(" ");
 }
 
+function hasColumnValidation(column: SheetColumn) {
+  const validation = column.attributes.Validation;
+
+  if (validation === null || validation === undefined) {
+    return false;
+  }
+
+  if (typeof validation === "string") {
+    return validation.trim().length > 0;
+  }
+
+  return true;
+}
+
+function getColumnExportScopeClassName(column: SheetColumn) {
+  switch (getColumnExportScope(column).trim().toLowerCase()) {
+    case "client":
+      return "virtual-header-cell--export-client";
+    case "server":
+      return "virtual-header-cell--export-server";
+    case "none":
+      return null;
+    case "all":
+    default:
+      return "virtual-header-cell--export-all";
+  }
+}
+
 export function VirtualSheetTable({
   restoreScrollRequest,
   canInsertCopiedCellsDown,
@@ -171,6 +216,7 @@ export function VirtualSheetTable({
   onInsertCopiedColumnsAfter,
   onDeleteColumn,
   onInsertCopiedCellsDown,
+  onAutoFillSelection,
   onCopySelection,
   onCopySelectionToClipboard,
   onCutSelection,
@@ -188,9 +234,13 @@ export function VirtualSheetTable({
   const cellRefs = useRef(new Map<string, HTMLDivElement>());
   const isPointerSelectingRef = useRef(false);
   const resizeStateRef = useRef<{ columnIndex: number; startX: number; startWidth: number } | null>(null);
+  const autoFillDragStateRef = useRef<AutoFillDragState | null>(null);
+  const autoFillPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const autoFillScrollFrameRef = useRef<number | null>(null);
   const editFocusModeRef = useRef<"select-all" | "caret-end">("select-all");
   const [contextMenuState, setContextMenuState] = useState<HeaderContextMenuState | null>(null);
   const [editingCellKey, setEditingCellKey] = useState<string | null>(null);
+  const [autoFillPreviewBounds, setAutoFillPreviewBounds] = useState<SelectionBounds | null>(null);
 
   const safeFreezeRows = Math.max(0, Math.min(freezeRows, rows.length));
   const safeFreezeColumns = Math.max(0, Math.min(freezeColumns, columns.length));
@@ -312,6 +362,223 @@ export function VirtualSheetTable({
     setVerticalScroll(scrollTop);
   }
 
+  function getBodyScrollHost() {
+    return bodyRef.current ?? leftBodyRef.current;
+  }
+
+  function stopAutoFillScrollLoop() {
+    if (autoFillScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(autoFillScrollFrameRef.current);
+      autoFillScrollFrameRef.current = null;
+    }
+  }
+
+  function isPointOutsideBounds(point: { rowIndex: number; columnIndex: number }, bounds: SelectionBounds) {
+    return (
+      point.rowIndex < bounds.startRowIndex ||
+      point.rowIndex > bounds.endRowIndex ||
+      point.columnIndex < bounds.startColumnIndex ||
+      point.columnIndex > bounds.endColumnIndex
+    );
+  }
+
+  function buildAutoFillPreviewBounds(sourceBounds: SelectionBounds, targetRowIndex: number, targetColumnIndex: number) {
+    if (!isPointOutsideBounds({ rowIndex: targetRowIndex, columnIndex: targetColumnIndex }, sourceBounds)) {
+      return null;
+    }
+
+    return {
+      startRowIndex: Math.min(sourceBounds.startRowIndex, targetRowIndex),
+      endRowIndex: Math.max(sourceBounds.endRowIndex, targetRowIndex),
+      startColumnIndex: Math.min(sourceBounds.startColumnIndex, targetColumnIndex),
+      endColumnIndex: Math.max(sourceBounds.endColumnIndex, targetColumnIndex),
+    };
+  }
+
+  function getCellFromPoint(clientX: number, clientY: number) {
+    const element = document.elementFromPoint(clientX, clientY);
+    const cellElement = element instanceof HTMLElement
+      ? element.closest<HTMLElement>("[data-row-index][data-column-index]")
+      : null;
+
+    if (!cellElement) {
+      return null;
+    }
+
+    const rowIndex = Number(cellElement.dataset.rowIndex ?? "");
+    const columnIndex = Number(cellElement.dataset.columnIndex ?? "");
+    if (!Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) {
+      return null;
+    }
+
+    return { rowIndex, columnIndex };
+  }
+
+  function updateAutoFillTarget(clientX: number, clientY: number) {
+    const dragState = autoFillDragStateRef.current;
+    if (!dragState) {
+      return;
+    }
+
+    const nextTarget = getCellFromPoint(clientX, clientY);
+    if (!nextTarget) {
+      return;
+    }
+
+    const previewBounds = buildAutoFillPreviewBounds(dragState.sourceBounds, nextTarget.rowIndex, nextTarget.columnIndex);
+    dragState.targetRowIndex = nextTarget.rowIndex;
+    dragState.targetColumnIndex = nextTarget.columnIndex;
+    setAutoFillPreviewBounds((current) => {
+      if (
+        current?.startRowIndex === previewBounds?.startRowIndex &&
+        current?.endRowIndex === previewBounds?.endRowIndex &&
+        current?.startColumnIndex === previewBounds?.startColumnIndex &&
+        current?.endColumnIndex === previewBounds?.endColumnIndex
+      ) {
+        return current;
+      }
+
+      return previewBounds;
+    });
+  }
+
+  function getAutoFillScrollStep(pointer: number, min: number, max: number) {
+    if (pointer < min + autoFillScrollEdgeThreshold) {
+      const intensity = Math.min((min + autoFillScrollEdgeThreshold - pointer) / autoFillScrollEdgeThreshold, 1);
+      return -Math.max(1, Math.round(intensity * autoFillMaxScrollStep));
+    }
+
+    if (pointer > max - autoFillScrollEdgeThreshold) {
+      const intensity = Math.min((pointer - (max - autoFillScrollEdgeThreshold)) / autoFillScrollEdgeThreshold, 1);
+      return Math.max(1, Math.round(intensity * autoFillMaxScrollStep));
+    }
+
+    return 0;
+  }
+
+  function isPointerNearAutoFillEdge(pointer: { clientX: number; clientY: number }) {
+    const verticalHost = getBodyScrollHost();
+    const horizontalHost = bodyRef.current;
+    if (!verticalHost) {
+      return false;
+    }
+
+    const verticalRect = verticalHost.getBoundingClientRect();
+    const isNearVerticalEdge =
+      pointer.clientY <= verticalRect.top + autoFillScrollEdgeThreshold ||
+      pointer.clientY >= verticalRect.bottom - autoFillScrollEdgeThreshold;
+    if (isNearVerticalEdge) {
+      return true;
+    }
+
+    if (!horizontalHost) {
+      return false;
+    }
+
+    const horizontalRect = horizontalHost.getBoundingClientRect();
+    return (
+      pointer.clientX <= horizontalRect.left + autoFillScrollEdgeThreshold ||
+      pointer.clientX >= horizontalRect.right - autoFillScrollEdgeThreshold
+    );
+  }
+
+  function stepAutoFillScroll() {
+    const pointer = autoFillPointerRef.current;
+    const verticalHost = getBodyScrollHost();
+    const horizontalHost = bodyRef.current;
+    if (!pointer || !verticalHost || !autoFillDragStateRef.current) {
+      autoFillScrollFrameRef.current = null;
+      return;
+    }
+
+    let nextScrollLeft = horizontalHost?.scrollLeft ?? 0;
+    let nextScrollTop = verticalHost.scrollTop;
+    let didScroll = false;
+
+    const verticalRect = verticalHost.getBoundingClientRect();
+    const verticalStep = getAutoFillScrollStep(pointer.clientY, verticalRect.top, verticalRect.bottom);
+    if (verticalStep !== 0) {
+      const maxScrollTop = Math.max(0, verticalHost.scrollHeight - verticalHost.clientHeight);
+      const clampedScrollTop = Math.max(0, Math.min(maxScrollTop, verticalHost.scrollTop + verticalStep));
+      if (clampedScrollTop !== verticalHost.scrollTop) {
+        nextScrollTop = clampedScrollTop;
+        syncVertical(clampedScrollTop);
+        didScroll = true;
+      }
+    }
+
+    if (horizontalHost) {
+      const horizontalRect = horizontalHost.getBoundingClientRect();
+      const horizontalStep = getAutoFillScrollStep(pointer.clientX, horizontalRect.left, horizontalRect.right);
+      if (horizontalStep !== 0) {
+        const maxScrollLeft = Math.max(0, horizontalHost.scrollWidth - horizontalHost.clientWidth);
+        const clampedScrollLeft = Math.max(0, Math.min(maxScrollLeft, horizontalHost.scrollLeft + horizontalStep));
+        if (clampedScrollLeft !== horizontalHost.scrollLeft) {
+          nextScrollLeft = clampedScrollLeft;
+          syncHorizontal(clampedScrollLeft, "body");
+          didScroll = true;
+        }
+      }
+    }
+
+    if (didScroll) {
+      emitScrollSnapshot(nextScrollLeft, nextScrollTop);
+    }
+
+    updateAutoFillTarget(pointer.clientX, pointer.clientY);
+
+    if (didScroll || isPointerNearAutoFillEdge(pointer)) {
+      autoFillScrollFrameRef.current = window.requestAnimationFrame(stepAutoFillScroll);
+      return;
+    }
+
+    autoFillScrollFrameRef.current = null;
+  }
+
+  function ensureAutoFillScrollLoop() {
+    if (autoFillScrollFrameRef.current !== null || !autoFillDragStateRef.current || !autoFillPointerRef.current) {
+      return;
+    }
+
+    autoFillScrollFrameRef.current = window.requestAnimationFrame(stepAutoFillScroll);
+  }
+
+  function startAutoFillDrag(event: React.MouseEvent<HTMLButtonElement>) {
+    if (!selectionBounds) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    autoFillDragStateRef.current = {
+      sourceBounds: selectionBounds,
+      targetRowIndex: selectionBounds.endRowIndex,
+      targetColumnIndex: selectionBounds.endColumnIndex,
+    };
+    autoFillPointerRef.current = { clientX: event.clientX, clientY: event.clientY };
+    setAutoFillPreviewBounds(null);
+    ensureAutoFillScrollLoop();
+  }
+
+  function finishAutoFillDrag() {
+    const dragState = autoFillDragStateRef.current;
+    stopAutoFillScrollLoop();
+    autoFillPointerRef.current = null;
+    autoFillDragStateRef.current = null;
+    setAutoFillPreviewBounds(null);
+
+    if (!dragState) {
+      return;
+    }
+
+    if (!isPointOutsideBounds({ rowIndex: dragState.targetRowIndex, columnIndex: dragState.targetColumnIndex }, dragState.sourceBounds)) {
+      return;
+    }
+
+    onAutoFillSelection(dragState.targetRowIndex, dragState.targetColumnIndex);
+  }
+
   function emitScrollSnapshot(nextScrollLeft?: number, nextScrollTop?: number) {
     if (!onScrollSnapshotChange) {
       return;
@@ -404,10 +671,18 @@ export function VirtualSheetTable({
     const handlePointerRelease = () => {
       isPointerSelectingRef.current = false;
       resizeStateRef.current = null;
+      finishAutoFillDrag();
     };
 
     const handlePointerMove = (event: MouseEvent) => {
       if (!resizeStateRef.current) {
+        if (!autoFillDragStateRef.current) {
+          return;
+        }
+
+        autoFillPointerRef.current = { clientX: event.clientX, clientY: event.clientY };
+        updateAutoFillTarget(event.clientX, event.clientY);
+        ensureAutoFillScrollLoop();
         return;
       }
 
@@ -430,12 +705,21 @@ export function VirtualSheetTable({
     window.addEventListener("keydown", handleEscape);
     window.addEventListener("mousedown", handleWindowMouseDown);
     return () => {
+      stopAutoFillScrollLoop();
       window.removeEventListener("mouseup", handlePointerRelease);
       window.removeEventListener("mousemove", handlePointerMove);
       window.removeEventListener("keydown", handleEscape);
       window.removeEventListener("mousedown", handleWindowMouseDown);
     };
-  }, [onResizeColumn]);
+  }, [onAutoFillSelection, onResizeColumn]);
+
+  useEffect(() => {
+    if (autoFillDragStateRef.current) {
+      return;
+    }
+
+    setAutoFillPreviewBounds(null);
+  }, [selectionBounds]);
 
   function moveSelection(
     originRowIndex: number,
@@ -716,6 +1000,23 @@ export function VirtualSheetTable({
     );
   }
 
+  function isCellInAutoFillPreview(rowIndex: number, columnIndex: number) {
+    if (!autoFillPreviewBounds) {
+      return false;
+    }
+
+    const isInPreviewBounds =
+      rowIndex >= autoFillPreviewBounds.startRowIndex &&
+      rowIndex <= autoFillPreviewBounds.endRowIndex &&
+      columnIndex >= autoFillPreviewBounds.startColumnIndex &&
+      columnIndex <= autoFillPreviewBounds.endColumnIndex;
+    if (!isInPreviewBounds) {
+      return false;
+    }
+
+    return !isCellInRange(rowIndex, columnIndex);
+  }
+
   function openContextMenu(event: React.MouseEvent, nextState: HeaderContextMenuState) {
     event.preventDefault();
     event.stopPropagation();
@@ -774,10 +1075,14 @@ export function VirtualSheetTable({
         columnIndex >= selectionBounds.startColumnIndex &&
         columnIndex <= selectionBounds.endColumnIndex,
       );
+      const displayLabel = column.displayName || column.fieldName;
+      const showFieldName = Boolean(column.displayName && column.displayName !== column.fieldName);
+      const exportScopeClassName = getColumnExportScopeClassName(column);
+      const hasValidation = hasColumnValidation(column);
 
       return (
         <div
-          className={`virtual-header-cell is-actionable${isSelectedColumn ? " is-selected-column" : ""}${isInRangeColumn ? " is-in-range-column" : ""}`}
+          className={`virtual-header-cell is-actionable${isSelectedColumn ? " is-selected-column" : ""}${isInRangeColumn ? " is-in-range-column" : ""}${exportScopeClassName ? ` ${exportScopeClassName}` : ""}${hasValidation ? " has-validation" : ""}`}
           key={column.fieldName}
           onMouseDown={(event) => {
             if (event.button !== 0) {
@@ -798,10 +1103,17 @@ export function VirtualSheetTable({
             });
           }}
         >
-          <div className="virtual-header-label">{column.displayName || column.fieldName}</div>
-          <small>{column.type}</small>
+          {exportScopeClassName ? <span aria-hidden="true" className="virtual-header-export-strip" /> : null}
+          <div className="virtual-header-title-row">
+            <div className="virtual-header-label">{displayLabel}</div>
+            {showFieldName ? <small className="virtual-header-field-name">{column.fieldName}</small> : null}
+          </div>
+          <div className="virtual-header-meta">
+            <small>{column.type}</small>
+          </div>
+          {hasValidation ? <span aria-hidden="true" className="virtual-header-validation-corner" /> : null}
           <button
-            aria-label={`调整列宽 ${column.displayName || column.fieldName}`}
+            aria-label={`调整列宽 ${displayLabel}`}
             className="virtual-column-resizer"
             onDoubleClick={(event) => {
               event.preventDefault();
@@ -823,11 +1135,19 @@ export function VirtualSheetTable({
     const cellValue = rowEntry.row[columnIndex] ?? "";
     const isSelected = selectedCell?.rowIndex === rowEntry.rowIndex && selectedCell?.columnIndex === columnIndex;
     const isInRange = isCellInRange(rowEntry.rowIndex, columnIndex);
+    const isInAutoFillPreview = isCellInAutoFillPreview(rowEntry.rowIndex, columnIndex);
     const isEditing = editingCellKey === cellKey;
+    const isAutoFillHandleCell = Boolean(
+      selectionBounds &&
+      rowEntry.rowIndex === selectionBounds.endRowIndex &&
+      columnIndex === selectionBounds.endColumnIndex,
+    );
 
     return (
       <div
-        className={`virtual-cell is-${editorKind}${isDirty ? " is-dirty" : ""}${isSelected ? " is-selected" : ""}${isInRange ? " is-in-range" : ""}`}
+        className={`virtual-cell is-${editorKind}${isDirty ? " is-dirty" : ""}${isSelected ? " is-selected" : ""}${isInRange ? " is-in-range" : ""}${isInAutoFillPreview ? " is-autofill-preview" : ""}`}
+        data-column-index={columnIndex}
+        data-row-index={rowEntry.rowIndex}
         key={`${column.fieldName}-${rowEntry.rowIndex}`}
         onCompositionStart={() => {
           logIme("cell-shell.compositionstart", {
@@ -985,6 +1305,14 @@ export function VirtualSheetTable({
         ) : null}
 
         {!isEditing ? <span className={`virtual-cell-display${editorKind === "reference" || editorKind === "list" ? " is-code" : ""}`}>{cellValue || " "}</span> : null}
+        {isAutoFillHandleCell && !isEditing ? (
+          <button
+            aria-label="拖动填充选区"
+            className="virtual-cell-autofill-handle"
+            onMouseDown={startAutoFillDrag}
+            type="button"
+          />
+        ) : null}
       </div>
     );
   }

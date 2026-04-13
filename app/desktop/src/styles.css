@@ -50,6 +50,17 @@ button {
   background: #1e1e1e;
 }
 
+.app-shell,
+.app-shell * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.app-shell :is(input, textarea, select, [contenteditable="true"]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .app-toolbar {
   grid-column: 1 / -1;
   display: flex;

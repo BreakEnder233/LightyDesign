@@ -303,6 +303,8 @@ function App() {
     redoActiveSheetEdit,
     restoreActiveSheetDraft,
     saveActiveWorkbook,
+    setWorkbookAlias,
+    setSheetAlias,
   } = useWorkspaceEditor({
     hostInfo,
     onToast: pushToastNotification,
@@ -364,8 +366,15 @@ function App() {
   const [createWorkspaceParentDirectoryPath, setCreateWorkspaceParentDirectoryPath] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("NewWorkspace");
   const [isCreateWorkbookDialogOpen, setIsCreateWorkbookDialogOpen] = useState(false);
+  const [isEditWorkbookAliasDialogOpen, setIsEditWorkbookAliasDialogOpen] = useState(false);
+  const [editWorkbookAliasTarget, setEditWorkbookAliasTarget] = useState<string | null>(null);
+  const [editWorkbookAliasValue, setEditWorkbookAliasValue] = useState("");
   const [isCreateSheetDialogOpen, setIsCreateSheetDialogOpen] = useState(false);
   const [isRenameSheetDialogOpen, setIsRenameSheetDialogOpen] = useState(false);
+  const [isEditSheetAliasDialogOpen, setIsEditSheetAliasDialogOpen] = useState(false);
+  const [editSheetAliasTarget, setEditSheetAliasTarget] = useState<{ workbookName: string; sheetName: string } | null>(null);
+  const [editSheetAliasValue, setEditSheetAliasValue] = useState("");
+  const [isDotnetMissingModalOpen, setIsDotnetMissingModalOpen] = useState(false);
   const [isCodegenDialogOpen, setIsCodegenDialogOpen] = useState(false);
   const [isFreezeDialogOpen, setIsFreezeDialogOpen] = useState(false);
   const [isMcpConfigDialogOpen, setIsMcpConfigDialogOpen] = useState(false);
@@ -416,6 +425,17 @@ function App() {
     scrollLeft: number;
     scrollTop: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!hostHealth) {
+      return;
+    }
+
+    const message = (hostHealth.message ?? "").toLowerCase();
+    if (!hostHealth.ok && (message.includes("dotnet") || message.includes(".net") || message.includes("运行库") || message.includes("runtime"))) {
+      setIsDotnetMissingModalOpen(true);
+    }
+  }, [hostHealth]);
 
   const editingColumn = editingColumnIndex !== null ? (activeSheetColumns[editingColumnIndex] ?? null) : null;
   const focusedWorkbook = useMemo(
@@ -1102,6 +1122,57 @@ function App() {
     setIsRenameSheetDialogOpen(true);
     setWorkbookContextMenu(null);
     setSheetContextMenu(null);
+  }
+
+  function handleOpenEditWorkbookAliasDialog(workbookName: string) {
+    const workbook = workbookTree.find((w) => w.name === workbookName) ?? null;
+    setEditWorkbookAliasTarget(workbookName);
+    setEditWorkbookAliasValue(workbook?.alias ?? "");
+    setIsEditWorkbookAliasDialogOpen(true);
+    setWorkbookContextMenu(null);
+    setSheetContextMenu(null);
+  }
+
+  function handleCloseEditWorkbookAliasDialog() {
+    setIsEditWorkbookAliasDialogOpen(false);
+    setEditWorkbookAliasTarget(null);
+    setEditWorkbookAliasValue("");
+  }
+
+  async function handleConfirmEditWorkbookAlias() {
+    if (!editWorkbookAliasTarget) {
+      return;
+    }
+
+    const alias = editWorkbookAliasValue.trim();
+    await setWorkbookAlias(editWorkbookAliasTarget, alias === "" ? null : alias);
+    handleCloseEditWorkbookAliasDialog();
+  }
+
+  function handleOpenEditSheetAliasDialog(workbookName: string, sheetName: string) {
+    const workbook = workbookTree.find((w) => w.name === workbookName) ?? null;
+    const sheet = workbook?.sheets.find((s) => s.sheetName === sheetName) ?? null;
+    setEditSheetAliasTarget({ workbookName, sheetName });
+    setEditSheetAliasValue(sheet?.alias ?? "");
+    setIsEditSheetAliasDialogOpen(true);
+    setWorkbookContextMenu(null);
+    setSheetContextMenu(null);
+  }
+
+  function handleCloseEditSheetAliasDialog() {
+    setIsEditSheetAliasDialogOpen(false);
+    setEditSheetAliasTarget(null);
+    setEditSheetAliasValue("");
+  }
+
+  async function handleConfirmEditSheetAlias() {
+    if (!editSheetAliasTarget) {
+      return;
+    }
+
+    const alias = editSheetAliasValue.trim();
+    await setSheetAlias(editSheetAliasTarget.workbookName, editSheetAliasTarget.sheetName, alias === "" ? null : alias);
+    handleCloseEditSheetAliasDialog();
   }
 
   function handleCloseRenameSheetDialog() {
@@ -2595,6 +2666,54 @@ function App() {
         </DialogBackdrop>
       ) : null}
 
+      {isEditWorkbookAliasDialogOpen ? (
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseEditWorkbookAliasDialog}>
+          <div
+            aria-label="编辑工作簿别名"
+            aria-modal="true"
+            className="workspace-create-dialog"
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">编辑工作簿别名</p>
+              </div>
+            </div>
+
+            <div className="workspace-create-body">
+              <p className="workspace-create-path-label">工作簿</p>
+              <p className="workspace-create-path-value">{editWorkbookAliasTarget ?? ""}</p>
+
+              <label className="search-field workspace-create-name-field">
+                <span>别名（留空可移除）</span>
+                <input
+                  autoFocus
+                  onChange={(event) => setEditWorkbookAliasValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleConfirmEditWorkbookAlias();
+                    }
+                  }}
+                  placeholder="例如 Items"
+                  type="text"
+                  value={editWorkbookAliasValue}
+                />
+              </label>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseEditWorkbookAliasDialog} type="button">
+                取消
+              </button>
+              <button className="primary-button" onClick={() => void handleConfirmEditWorkbookAlias()} type="button">
+                保存
+              </button>
+            </div>
+          </div>
+        </DialogBackdrop>
+      ) : null}
+
       {isCreateSheetDialogOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateSheetDialog}>
           <div
@@ -2637,6 +2756,104 @@ function App() {
               </button>
               <button className="primary-button" onClick={() => void handleConfirmCreateSheet()} type="button">
                 创建并打开
+              </button>
+            </div>
+          </div>
+        </DialogBackdrop>
+      ) : null}
+
+      {isEditSheetAliasDialogOpen ? (
+        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseEditSheetAliasDialog}>
+          <div
+            aria-label="编辑表格别名"
+            aria-modal="true"
+            className="workspace-create-dialog"
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">编辑表格别名</p>
+              </div>
+            </div>
+
+            <div className="workspace-create-body">
+              <p className="workspace-create-path-label">表格</p>
+              <p className="workspace-create-path-value">{editSheetAliasTarget ? `${editSheetAliasTarget.workbookName} / ${editSheetAliasTarget.sheetName}` : ""}</p>
+
+              <label className="search-field workspace-create-name-field">
+                <span>别名（留空可移除）</span>
+                <input
+                  autoFocus
+                  onChange={(event) => setEditSheetAliasValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleConfirmEditSheetAlias();
+                    }
+                  }}
+                  placeholder="例如 Consumables"
+                  type="text"
+                  value={editSheetAliasValue}
+                />
+              </label>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={handleCloseEditSheetAliasDialog} type="button">
+                取消
+              </button>
+              <button className="primary-button" onClick={() => void handleConfirmEditSheetAlias()} type="button">
+                保存
+              </button>
+            </div>
+          </div>
+        </DialogBackdrop>
+      ) : null}
+
+      {isDotnetMissingModalOpen ? (
+        <DialogBackdrop className="workspace-create-backdrop" onClose={() => setIsDotnetMissingModalOpen(false)}>
+          <div
+            aria-label="缺少 .NET 运行库"
+            aria-modal="true"
+            className="workspace-create-dialog"
+            role="dialog"
+          >
+            <div className="workspace-create-header">
+              <div>
+                <p className="eyebrow">检测到缺少 .NET 运行时</p>
+              </div>
+            </div>
+
+            <div className="workspace-create-body">
+              <p>未检测到运行 DesktopHost 所需的 .NET 运行库。请安装 .NET 9 运行时后重试。</p>
+              <p className="workspace-create-path-value">如果你已安装，请点击“重试”以尝试重新启动后端。</p>
+            </div>
+
+            <div className="workspace-create-actions">
+              <button className="secondary-button" onClick={() => setIsDotnetMissingModalOpen(false)} type="button">
+                忽略
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  window.open("https://dotnet.microsoft.com/en-us/download/dotnet/9.0", "_blank");
+                }}
+                type="button"
+              >
+                打开 .NET 下载页面
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => {
+                  try {
+                    window.location.reload();
+                  } catch {
+                    // fallback
+                  }
+                }}
+                type="button"
+              >
+                重试
               </button>
             </div>
           </div>
@@ -3413,8 +3630,15 @@ function App() {
         <section className="editor-panel">
           <EditorWorkspaceHeader
             activeSheet={activeTab && activeSheetData ? {
-              sheetName: activeSheetData.metadata.name,
-              workbookName: activeTab.workbookName,
+              sheetName: (() => {
+                const wb = workbookTree.find((w) => w.name === activeTab.workbookName);
+                const sheetAlias = wb?.sheets.find((s) => s.sheetName === activeTab.sheetName)?.alias;
+                return sheetAlias ?? activeSheetData.metadata.name;
+              })(),
+              workbookName: (() => {
+                const wb = workbookTree.find((w) => w.name === activeTab.workbookName);
+                return wb?.alias ?? activeTab.workbookName;
+              })(),
               columnCount: activeSheetColumns.length,
               rowCount: activeSheetRows.length,
               saveStatusText,
@@ -3579,6 +3803,13 @@ function App() {
           </button>
           <button
             className="tree-context-menu-item"
+            onClick={() => handleOpenEditWorkbookAliasDialog(workbookContextMenu.workbookName)}
+            type="button"
+          >
+            编辑别名
+          </button>
+          <button
+            className="tree-context-menu-item"
             onClick={() => handleConvertWorkbookCode(workbookContextMenu.workbookName)}
             type="button"
           >
@@ -3611,6 +3842,13 @@ function App() {
             type="button"
           >
             重命名表格
+          </button>
+          <button
+            className="tree-context-menu-item"
+            onClick={() => handleOpenEditSheetAliasDialog(sheetContextMenu.workbookName, sheetContextMenu.sheetName)}
+            type="button"
+          >
+            编辑别名
           </button>
           <button
             className="tree-context-menu-item"

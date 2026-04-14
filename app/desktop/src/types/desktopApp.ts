@@ -108,12 +108,14 @@ export type WorkspaceTreeSheet = {
   sheetName: string;
   rowCount: number;
   columnCount: number;
+  alias?: string | null;
 };
 
 export type WorkspaceTreeWorkbook = {
   name: string;
   outputRelativePath?: string | null;
   sheets: WorkspaceTreeSheet[];
+  alias?: string | null;
 };
 
 export type WorkbookCodegenExportResponse = {

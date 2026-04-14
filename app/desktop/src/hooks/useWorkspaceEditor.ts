@@ -646,17 +646,25 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
     const search = workspaceSearch.trim().toLocaleLowerCase();
 
+    // Aliases are provided by the backend in the workspace navigation response
+    const getWorkbookAlias = (name: string) => workspace.workbooks.find((w) => w.name === name)?.alias ?? null;
+    const getSheetAlias = (workbookName: string, sheetName: string) =>
+      workspace.workbooks.find((w) => w.name === workbookName)?.sheets.find((s) => s.name === sheetName)?.alias ?? null;
+
     return workspace.workbooks
       .map<WorkspaceTreeWorkbook | null>((workbook) => {
         const sheets = workbook.sheets
           .filter((sheet) => {
-            if (!search) {
-              return true;
-            }
+            if (!search) return true;
+
+            const workbookAlias = String(getWorkbookAlias(workbook.name) ?? "");
+            const sheetAlias = String(getSheetAlias(workbook.name, sheet.name) ?? "");
 
             return (
               workbook.name.toLocaleLowerCase().includes(search) ||
-              sheet.name.toLocaleLowerCase().includes(search)
+              workbookAlias.toLocaleLowerCase().includes(search) ||
+              sheet.name.toLocaleLowerCase().includes(search) ||
+              sheetAlias.toLocaleLowerCase().includes(search)
             );
           })
           .map((sheet) => ({
@@ -664,6 +672,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
             sheetName: sheet.name,
             rowCount: sheet.rowCount,
             columnCount: sheet.columnCount,
+            alias: getSheetAlias(workbook.name, sheet.name),
           }));
 
         if (!search || workbook.name.toLocaleLowerCase().includes(search) || sheets.length > 0) {
@@ -671,6 +680,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
             name: workbook.name,
             outputRelativePath: workspace.codegen.outputRelativePath,
             sheets,
+            alias: getWorkbookAlias(workbook.name),
           };
         }
 
@@ -678,6 +688,57 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       })
       .filter((workbook): workbook is WorkspaceTreeWorkbook => workbook !== null);
   }, [workspace, workspaceSearch]);
+
+  // Alias persistence is handled by the backend; do not use localStorage for aliases.
+
+  async function setWorkbookAlias(workbookName: string, alias: string | null) {
+    if (!workspacePath) {
+      return false;
+    }
+    // Persist alias to backend workbook config
+    try {
+      await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo?.desktopHostUrl ?? ""}/api/workspace/workbooks/${encodeURIComponent(workbookName)}/config`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspacePath, alias: alias ?? null }),
+        },
+      );
+
+      // refresh workspace navigation
+      const updated = await fetchJson<WorkspaceNavigationResponse>(`${hostInfo?.desktopHostUrl ?? ""}/api/workspace/navigation?workspacePath=${encodeURIComponent(workspacePath)}`);
+      setWorkspace(updated);
+      return true;
+    } catch {
+      // Do NOT persist aliases to localStorage; surface failure to caller.
+      return false;
+    }
+  }
+
+  async function setSheetAlias(workbookName: string, sheetName: string, alias: string | null) {
+    if (!workspacePath) {
+      return false;
+    }
+
+    try {
+      await fetchJson<WorkspaceNavigationResponse>(
+        `${hostInfo?.desktopHostUrl ?? ""}/api/workspace/workbooks/${encodeURIComponent(workbookName)}/sheets/${encodeURIComponent(sheetName)}/config`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspacePath, alias: alias ?? null }),
+        },
+      );
+
+      const updated = await fetchJson<WorkspaceNavigationResponse>(`${hostInfo?.desktopHostUrl ?? ""}/api/workspace/navigation?workspacePath=${encodeURIComponent(workspacePath)}`);
+      setWorkspace(updated);
+      return true;
+    } catch {
+      // Do NOT persist aliases to localStorage; surface failure to caller.
+      return false;
+    }
+  }
 
   const activeTab = openTabs.find((tab) => tab.id === activeTabId) ?? null;
   const activeSheetState = activeTab ? sheetStateMap[activeTab.id] : undefined;
@@ -2557,6 +2618,8 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     redoActiveSheetEdit,
     restoreActiveSheetDraft,
     saveActiveWorkbook,
+    setWorkbookAlias,
+    setSheetAlias,
   };
 }
 

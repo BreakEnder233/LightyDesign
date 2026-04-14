@@ -61,7 +61,7 @@ export function EditorWorkspaceHeader({
       {focusedWorkbook ? (
         <section className="sheet-selector-panel compact-sheet-selector-panel">
           <div className="compact-sheet-selector-header">
-            <p className="eyebrow">工作簿 / {focusedWorkbook.name}</p>
+            <p className="eyebrow">工作簿 / {focusedWorkbook.alias ?? focusedWorkbook.name}</p>
             <button
               className="secondary-button compact-sheet-selector-action"
               disabled={!canCreateSheet}
@@ -79,7 +79,7 @@ export function EditorWorkspaceHeader({
             </div>
           ) : (
             <div className="sheet-selector-grid">
-              {focusedWorkbook.sheets.map((sheet) => {
+                {focusedWorkbook.sheets.map((sheet) => {
                 const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
                 const isActive = activeTabId === tabId;
 
@@ -91,7 +91,7 @@ export function EditorWorkspaceHeader({
                     onContextMenu={(event) => onOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
                     type="button"
                   >
-                    <span className="sheet-selector-name">{sheet.sheetName}</span>
+                    <span className="sheet-selector-name">{sheet.alias ?? sheet.sheetName}</span>
                   </button>
                 );
               })}

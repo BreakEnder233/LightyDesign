@@ -486,6 +486,17 @@ button {
   gap: 8px;
 }
 
+.tree-workbook-alias {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.tree-workbook-alias small {
+  color: #8b8b8b;
+  font-size: 11px;
+}
+
 .tree-workbook-title {
   min-width: 0;
 }

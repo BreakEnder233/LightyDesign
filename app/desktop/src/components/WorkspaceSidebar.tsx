@@ -101,8 +101,13 @@ export function WorkspaceSidebar({
               >
                 <div className="tree-workbook-header">
                   <div className="tree-workbook-title">
-                    <strong>{workbook.name}</strong>
+                      <strong>{workbook.alias ?? workbook.name}</strong>
                   </div>
+                    {workbook.alias ? (
+                      <div className="tree-workbook-alias" aria-hidden>
+                        <small className="muted">{workbook.name}</small>
+                      </div>
+                    ) : null}
                 </div>
               </button>
             ))}

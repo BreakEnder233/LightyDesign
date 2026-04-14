@@ -884,6 +884,164 @@ app.MapPost("/api/workspace/workbooks/codegen/config", (SaveWorkbookCodegenConfi
     }
 });
 
+app.MapPost("/api/workspace/workbooks/{workbookName}/config", (string workbookName, SaveWorkbookConfigRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new { error = "workspacePath is required." });
+    }
+
+    if (string.IsNullOrWhiteSpace(workbookName))
+    {
+        return Results.BadRequest(new { error = "workbookName is required." });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var alias = request.Alias;
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+        {
+            return Results.NotFound(new { error = $"Workbook '{workbookName}' was not found.", workspacePath });
+        }
+
+        var configFilePath = Path.Combine(workbook.DirectoryPath, "config.json");
+
+        // Read existing config if present
+        Dictionary<string, object?> current = new();
+        if (File.Exists(configFilePath))
+        {
+            try
+            {
+                var raw = File.ReadAllText(configFilePath);
+                current = JsonSerializer.Deserialize<Dictionary<string, object?>>(raw) ?? new Dictionary<string, object?>();
+            }
+            catch
+            {
+                current = new Dictionary<string, object?>();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(alias))
+        {
+            if (current.ContainsKey("alias")) current.Remove("alias");
+        }
+        else
+        {
+            current["alias"] = alias;
+        }
+
+        var serialized = JsonSerializer.Serialize(current, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(configFilePath, serialized);
+
+        var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new { error = exception.Message, path = exception.FileName });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new { error = exception.Message });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+});
+
+app.MapPost("/api/workspace/workbooks/{workbookName}/sheets/{sheetName}/config", (string workbookName, string sheetName, SaveSheetConfigRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new { error = "workspacePath is required." });
+    }
+
+    if (string.IsNullOrWhiteSpace(workbookName) || string.IsNullOrWhiteSpace(sheetName))
+    {
+        return Results.BadRequest(new { error = "workbookName and sheetName are required." });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var alias = request.Alias;
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+        {
+            return Results.NotFound(new { error = $"Workbook '{workbookName}' was not found.", workspacePath });
+        }
+
+        if (!workbook.TryGetSheet(sheetName, out var sheet) || sheet is null)
+        {
+            return Results.NotFound(new { error = $"Sheet '{sheetName}' was not found in '{workbookName}'.", workspacePath });
+        }
+
+        var configFilePath = Path.Combine(workbook.DirectoryPath, $"{sheetName}_config.json");
+
+        Dictionary<string, object?> current = new();
+        if (File.Exists(configFilePath))
+        {
+            try
+            {
+                var raw = File.ReadAllText(configFilePath);
+                current = JsonSerializer.Deserialize<Dictionary<string, object?>>(raw) ?? new Dictionary<string, object?>();
+            }
+            catch
+            {
+                current = new Dictionary<string, object?>();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(alias))
+        {
+            if (current.ContainsKey("alias")) current.Remove("alias");
+        }
+        else
+        {
+            current["alias"] = alias;
+        }
+
+        var serialized = JsonSerializer.Serialize(current, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(configFilePath, serialized);
+
+        var reloadedWorkspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToWorkspaceNavigationResponse(reloadedWorkspace));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new { error = exception.Message, path = exception.FileName });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new { error = exception.Message });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+});
+
 app.MapPost("/api/workspace/workbooks/codegen/export", (ExportWorkbookCodegenRequest request) =>
 {
     if (string.IsNullOrWhiteSpace(request.WorkspacePath))
@@ -1126,7 +1284,7 @@ app.MapGet("/api/workspace/workbooks/{workbookName}/sheets/{sheetName}", (string
             });
         }
 
-        return Results.Ok(ToSheetResponse(sheet));
+        return Results.Ok(ToSheetResponse(sheet, workbook.DirectoryPath, workbook.Name));
     }
     catch (FileNotFoundException exception)
     {
@@ -1416,9 +1574,19 @@ static object ToWorkspaceNavigationResponse(LightyWorkspace workspace)
         {
             workbook.Name,
             workbook.DirectoryPath,
+            alias = ReadAliasFromConfig(Path.Combine(workbook.DirectoryPath, "config.json")),
             codegen = ToWorkbookCodegenResponse(workbook),
             sheetCount = workbook.Sheets.Count,
-            sheets = workbook.Sheets.Select(sheet => ToSheetNavigationResponse(workbook.Name, sheet)),
+            sheets = workbook.Sheets.Select(sheet => new
+            {
+                workbookName = workbook.Name,
+                sheet.Name,
+                sheet.DataFilePath,
+                sheet.HeaderFilePath,
+                rowCount = sheet.RowCount,
+                columnCount = sheet.Header.Count,
+                alias = ReadAliasFromConfig(Path.Combine(workbook.DirectoryPath, $"{sheet.Name}_config.json")),
+            }),
         }),
     };
 }
@@ -1429,9 +1597,10 @@ static object ToWorkbookResponse(LightyWorkbook workbook, bool previewOnly)
     {
         workbook.Name,
         workbook.DirectoryPath,
+        alias = ReadAliasFromConfig(Path.Combine(workbook.DirectoryPath, "config.json")),
         codegen = ToWorkbookCodegenResponse(workbook),
         previewOnly,
-        sheets = workbook.Sheets.Select(ToSheetResponse),
+        sheets = workbook.Sheets.Select(sheet => ToSheetResponse(sheet, workbook.DirectoryPath, workbook.Name)),
     };
 }
 
@@ -1451,11 +1620,12 @@ static object ToWorkbookCodegenResponse(LightyWorkbook workbook)
     };
 }
 
-static object ToSheetResponse(LightySheet sheet)
+static object ToSheetResponse(LightySheet sheet, string? workbookDirectory = null, string? workbookName = null)
 {
     return new
     {
-        metadata = ToSheetMetadataResponse(workbookName: null, sheet),
+        metadata = ToSheetMetadataResponse(workbookName, sheet),
+        alias = workbookDirectory is null ? null : ReadAliasFromConfig(Path.Combine(workbookDirectory, $"{sheet.Name}_config.json")),
         rows = sheet.Rows.Select(row => row.Cells.ToArray()),
     };
 }
@@ -1495,6 +1665,26 @@ static object ToSheetNavigationResponse(string workbookName, LightySheet sheet)
         rowCount = sheet.RowCount,
         columnCount = sheet.Header.Count,
     };
+}
+
+static string? ReadAliasFromConfig(string configFilePath)
+{
+    try
+    {
+        if (!File.Exists(configFilePath)) return null;
+        var raw = File.ReadAllText(configFilePath);
+        using var doc = JsonDocument.Parse(raw);
+        if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("alias", out var aliasProp) && aliasProp.ValueKind == JsonValueKind.String)
+        {
+            return aliasProp.GetString();
+        }
+    }
+    catch
+    {
+        // ignore and return null on parse/IO errors
+    }
+
+    return null;
 }
 
 static object ToExcelErrorResponse(LightyExcelProcessException exception)
@@ -1676,6 +1866,20 @@ sealed class SaveWorkbookCodegenConfigRequest
     public string WorkspacePath { get; set; } = string.Empty;
 
     public string? OutputRelativePath { get; set; }
+}
+
+sealed class SaveWorkbookConfigRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string? Alias { get; set; }
+}
+
+sealed class SaveSheetConfigRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string? Alias { get; set; }
 }
 
 sealed class ExportWorkbookCodegenRequest

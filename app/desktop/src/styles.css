@@ -839,9 +839,30 @@ button {
 
 .compact-sheet-selector-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+}
+
+.compact-sheet-selector-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.compact-sheet-selector-search {
+  width: min(220px, 100%);
+  margin-top: 0;
+}
+
+.compact-sheet-selector-search input {
+  min-height: 24px;
+}
+
+.sheet-selector-meta {
+  margin: 0;
+  font-size: 11px;
+  color: #8b8b8b;
 }
 
 .virtual-table-shell {
@@ -1681,6 +1702,16 @@ button {
 
   .sheet-table-topbar {
     grid-template-columns: 1fr;
+  }
+
+  .compact-sheet-selector-header,
+  .compact-sheet-selector-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .compact-sheet-selector-search {
+    width: 100%;
   }
 
   .action-grid {

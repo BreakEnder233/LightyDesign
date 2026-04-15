@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 
 import type { WorkspaceTreeWorkbook } from "../types/desktopApp";
 
@@ -56,20 +56,56 @@ export function EditorWorkspaceHeader({
   sheetFilter,
   onSheetFilterChange,
 }: EditorWorkspaceHeaderProps) {
+  const [workbookSheetSearch, setWorkbookSheetSearch] = useState("");
+
+  useEffect(() => {
+    setWorkbookSheetSearch("");
+  }, [focusedWorkbook?.name]);
+
+  const filteredSheets = useMemo(() => {
+    if (!focusedWorkbook) {
+      return [];
+    }
+
+    const search = workbookSheetSearch.trim().toLocaleLowerCase();
+    if (!search) {
+      return focusedWorkbook.sheets;
+    }
+
+    return focusedWorkbook.sheets.filter((sheet) => {
+      const displayName = sheet.alias ?? sheet.sheetName;
+      return (
+        displayName.toLocaleLowerCase().includes(search) ||
+        sheet.sheetName.toLocaleLowerCase().includes(search)
+      );
+    });
+  }, [focusedWorkbook, workbookSheetSearch]);
+
   return (
     <div className="editor-workspace-header">
       {focusedWorkbook ? (
         <section className="sheet-selector-panel compact-sheet-selector-panel">
           <div className="compact-sheet-selector-header">
             <p className="eyebrow">工作簿 / {focusedWorkbook.alias ?? focusedWorkbook.name}</p>
-            <button
-              className="secondary-button compact-sheet-selector-action"
-              disabled={!canCreateSheet}
-              onClick={() => onCreateSheet(focusedWorkbook.name)}
-              type="button"
-            >
-              新建表格
-            </button>
+            <div className="compact-sheet-selector-toolbar">
+              <label className="search-field compact-field compact-sheet-selector-search">
+                <span>筛选表格</span>
+                <input
+                  onChange={(event) => setWorkbookSheetSearch(event.target.value)}
+                  placeholder="按表格名搜索"
+                  type="text"
+                  value={workbookSheetSearch}
+                />
+              </label>
+              <button
+                className="secondary-button compact-sheet-selector-action"
+                disabled={!canCreateSheet}
+                onClick={() => onCreateSheet(focusedWorkbook.name)}
+                type="button"
+              >
+                新建表格
+              </button>
+            </div>
           </div>
 
           {focusedWorkbook.sheets.length === 0 ? (
@@ -77,25 +113,35 @@ export function EditorWorkspaceHeader({
               <strong>当前工作簿还没有表格</strong>
               <p>可以从文件菜单或工作簿右键菜单新建表格。</p>
             </div>
-          ) : (
-            <div className="sheet-selector-grid">
-                {focusedWorkbook.sheets.map((sheet) => {
-                const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
-                const isActive = activeTabId === tabId;
-
-                return (
-                  <button
-                    className={`sheet-selector-button${isActive ? " is-active" : ""}`}
-                    key={tabId}
-                    onClick={() => onOpenSheet(sheet.workbookName, sheet.sheetName)}
-                    onContextMenu={(event) => onOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
-                    type="button"
-                  >
-                    <span className="sheet-selector-name">{sheet.alias ?? sheet.sheetName}</span>
-                  </button>
-                );
-              })}
+          ) : filteredSheets.length === 0 ? (
+            <div className="table-empty-panel">
+              <strong>没有匹配的表格</strong>
+              <p>试试更短的关键词，或者搜索原始表名与别名。</p>
             </div>
+          ) : (
+            <>
+              <p className="sheet-selector-meta">
+                显示 {filteredSheets.length} / {focusedWorkbook.sheets.length} 个表格
+              </p>
+              <div className="sheet-selector-grid">
+                {filteredSheets.map((sheet) => {
+                  const tabId = `${sheet.workbookName}::${sheet.sheetName}`;
+                  const isActive = activeTabId === tabId;
+
+                  return (
+                    <button
+                      className={`sheet-selector-button${isActive ? " is-active" : ""}`}
+                      key={tabId}
+                      onClick={() => onOpenSheet(sheet.workbookName, sheet.sheetName)}
+                      onContextMenu={(event) => onOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
+                      type="button"
+                    >
+                      <span className="sheet-selector-name">{sheet.alias ?? sheet.sheetName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </section>
       ) : null}

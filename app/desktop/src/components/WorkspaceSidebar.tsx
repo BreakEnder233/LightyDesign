@@ -56,10 +56,10 @@ export function WorkspaceSidebar({
         </div>
 
         <label className="search-field compact-field">
-          <span>搜索工作簿或表格</span>
+          <span>搜索工作簿</span>
           <input
             onChange={(event) => onWorkspaceSearchChange(event.target.value)}
-            placeholder="例如 Item / Consumable"
+            placeholder="例如 Item"
             type="text"
             value={workspaceSearch}
           />
@@ -85,7 +85,7 @@ export function WorkspaceSidebar({
         {workspaceStatus === "ready" && workbookTree.length === 0 ? (
           <div className="empty-panel">
             <strong>工作区为空</strong>
-            <p>{workspaceSearch ? "当前搜索条件没有匹配结果。" : "已读取 headers.json，但暂未发现任何工作簿或表格。"}</p>
+            <p>{workspaceSearch ? "当前搜索条件没有匹配结果。" : "已读取 headers.json，但暂未发现任何工作簿。"}</p>
           </div>
         ) : null}
 

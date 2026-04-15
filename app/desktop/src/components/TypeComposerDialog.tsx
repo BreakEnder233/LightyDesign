@@ -35,8 +35,15 @@ type TypeComposerDialogProps = {
   isOpen: boolean;
   typeMetadata: TypeMetadataResponse | null;
   onClose: () => void;
-  onApply: (nextType: string) => void;
+  onApply?: (nextType: string) => void;
+  onApplyNode?: (nextNode: BuilderNode, nextType: string) => void;
   onResolveType: (type: string) => Promise<TypeValidationResponse>;
+  allowedKinds?: TypeKind[];
+  initialNode?: BuilderNode | null;
+  title?: string;
+  subtitle?: string;
+  applyLabel?: string;
+  depth?: number;
 };
 
 type NodeEditorProps = {
@@ -45,11 +52,36 @@ type NodeEditorProps = {
   metadata: TypeMetadataResponse;
   node: BuilderNode | null;
   onChange: (node: BuilderNode) => void;
+  onResolveType: (type: string) => Promise<TypeValidationResponse>;
   layout?: "sidebar" | "inline";
+  depth?: number;
+};
+
+type SlotEditorState = {
+  label: string;
+  allowedKinds: TypeKind[];
+  node: BuilderNode | null;
+  onApply: (node: BuilderNode) => void;
 };
 
 function getNodeKind(node: BuilderNode | null): TypeKind | null {
   return node?.kind ?? null;
+}
+
+function getEffectiveAllowedKinds(allowedKinds?: TypeKind[]): TypeKind[] {
+  return allowedKinds && allowedKinds.length > 0 ? allowedKinds : ["scalar", "reference", "container"];
+}
+
+function isNodeKindAllowed(node: BuilderNode | null, allowedKinds: TypeKind[]) {
+  return !!node && allowedKinds.includes(node.kind);
+}
+
+function describeTypeKind(kind: TypeKind) {
+  return kind === "scalar" ? "基础类型" : kind === "reference" ? "表引用" : "容器类型";
+}
+
+function formatAllowedKinds(allowedKinds: TypeKind[]) {
+  return getEffectiveAllowedKinds(allowedKinds).map(describeTypeKind).join(" / ");
 }
 
 function buildDefaultNode(kind: TypeKind, metadata: TypeMetadataResponse): BuilderNode {
@@ -76,6 +108,10 @@ function buildDefaultNode(kind: TypeKind, metadata: TypeMetadataResponse): Build
     keyType: null,
     valueType: null,
   };
+}
+
+function buildDefaultNodeForAllowedKinds(allowedKinds: TypeKind[], metadata: TypeMetadataResponse) {
+  return buildDefaultNode(getEffectiveAllowedKinds(allowedKinds)[0] ?? "scalar", metadata);
 }
 
 function getAllowedKindsForContainerSlot(slot: TypeMetadataSlot): TypeKind[] {
@@ -188,15 +224,25 @@ function buildDefaultContainerNode(containerType: "List" | "Dictionary", metadat
   };
 }
 
-function TypeNodeEditor({ label, allowedKinds, metadata, node, onChange, layout = "inline" }: NodeEditorProps) {
+function TypeNodeEditor({
+  label,
+  allowedKinds,
+  metadata,
+  node,
+  onChange,
+  onResolveType,
+  layout = "inline",
+  depth = 0,
+}: NodeEditorProps) {
+  const effectiveAllowedKinds = useMemo(() => getEffectiveAllowedKinds(allowedKinds), [allowedKinds]);
   const currentKind = useMemo<TypeKind>(() => {
     const nodeKind = getNodeKind(node);
-    if (nodeKind && allowedKinds.includes(nodeKind)) {
+    if (nodeKind && effectiveAllowedKinds.includes(nodeKind)) {
       return nodeKind;
     }
 
-    return allowedKinds[0] ?? "scalar";
-  }, [allowedKinds, node]);
+    return effectiveAllowedKinds[0] ?? "scalar";
+  }, [effectiveAllowedKinds, node]);
 
   const resolvedNode = useMemo(() => {
     if (node && node.kind === currentKind) {
@@ -207,12 +253,19 @@ function TypeNodeEditor({ label, allowedKinds, metadata, node, onChange, layout 
   }, [currentKind, metadata, node]);
 
   const [activeKind, setActiveKind] = useState<TypeKind>(currentKind);
+  const displayedNode = activeKind === resolvedNode.kind ? resolvedNode : buildDefaultNode(activeKind, metadata);
+  const [slotEditor, setSlotEditor] = useState<SlotEditorState | null>(null);
 
   useEffect(() => {
     setActiveKind(currentKind);
   }, [currentKind]);
 
-  const displayedNode = activeKind === resolvedNode.kind ? resolvedNode : buildDefaultNode(activeKind, metadata);
+  useEffect(() => {
+    if (displayedNode.kind !== "container" && slotEditor) {
+      setSlotEditor(null);
+    }
+  }, [displayedNode, slotEditor]);
+
   const referenceSheets = displayedNode.kind === "reference"
     ? metadata.referenceTargets.find((entry) => entry.workbookName === displayedNode.workbookName)?.sheetNames ?? []
     : [];
@@ -231,6 +284,13 @@ function TypeNodeEditor({ label, allowedKinds, metadata, node, onChange, layout 
     onChange(buildDefaultNode(kind, metadata));
   }
 
+  function openSlotEditor(nextEditor: SlotEditorState) {
+    setSlotEditor({
+      ...nextEditor,
+      allowedKinds: getEffectiveAllowedKinds(nextEditor.allowedKinds),
+    });
+  }
+
   const layoutClassName = layout === "sidebar" ? "type-composer-layout type-composer-layout--sidebar" : "type-composer-layout";
 
   return (
@@ -244,7 +304,7 @@ function TypeNodeEditor({ label, allowedKinds, metadata, node, onChange, layout 
         <div className="type-composer-kind-rail">
           <span className="type-composer-kind-rail-label">类型类别</span>
           <div className="type-composer-kind-tabs" role="tablist" aria-label={`${label} 类型类别`}>
-            {allowedKinds.map((kind) => (
+            {effectiveAllowedKinds.map((kind) => (
               <button
                 className={`type-composer-kind-tab${activeKind === kind ? " is-active" : ""}`}
                 key={kind}
@@ -253,7 +313,7 @@ function TypeNodeEditor({ label, allowedKinds, metadata, node, onChange, layout 
                 }}
                 type="button"
               >
-                {kind === "scalar" ? "基础类型" : kind === "reference" ? "表引用" : "容器类型"}
+                {describeTypeKind(kind)}
               </button>
             ))}
           </div>
@@ -349,19 +409,34 @@ function TypeNodeEditor({ label, allowedKinds, metadata, node, onChange, layout 
 
               {displayedNode.containerType === "List" ? (
                 listElementSlot ? (
-                  <TypeNodeEditor
-                    allowedKinds={getAllowedKindsForContainerSlot(listElementSlot)}
-                    label="元素类型"
-                    layout="inline"
-                    metadata={metadata}
-                    node={displayedNode.elementType}
-                    onChange={(elementType) => {
-                      onChange({
-                        ...displayedNode,
-                        elementType,
-                      });
-                    }}
-                  />
+                  <section className="type-composer-slot-card">
+                    <div className="type-composer-slot-card-header">
+                      <strong>元素类型</strong>
+                      <span>{formatBuilderNode(displayedNode.elementType) || "待选择"}</span>
+                    </div>
+                    <p className="type-composer-slot-card-hint">
+                      允许: {formatAllowedKinds(getAllowedKindsForContainerSlot(listElementSlot))}
+                    </p>
+                    <button
+                      className="secondary-button type-composer-slot-action"
+                      onClick={() => {
+                        openSlotEditor({
+                          allowedKinds: getAllowedKindsForContainerSlot(listElementSlot),
+                          label: "元素类型",
+                          node: displayedNode.elementType,
+                          onApply: (elementType) => {
+                            onChange({
+                              ...displayedNode,
+                              elementType,
+                            });
+                          },
+                        });
+                      }}
+                      type="button"
+                    >
+                      快速填写元素类型
+                    </button>
+                  </section>
                 ) : (
                   <p className="column-editor-error">List 类型元数据缺少元素槽位，暂时无法继续编辑。</p>
                 )
@@ -370,36 +445,66 @@ function TypeNodeEditor({ label, allowedKinds, metadata, node, onChange, layout 
               {displayedNode.containerType === "Dictionary" ? (
                 <div className="type-composer-dictionary-grid">
                   {dictionaryKeySlot ? (
-                    <TypeNodeEditor
-                      allowedKinds={getAllowedKindsForContainerSlot(dictionaryKeySlot)}
-                      label="Key 类型"
-                      layout="inline"
-                      metadata={metadata}
-                      node={displayedNode.keyType}
-                      onChange={(keyType) => {
-                        onChange({
-                          ...displayedNode,
-                          keyType,
-                        });
-                      }}
-                    />
+                    <section className="type-composer-slot-card">
+                      <div className="type-composer-slot-card-header">
+                        <strong>Key 类型</strong>
+                        <span>{formatBuilderNode(displayedNode.keyType) || "待选择"}</span>
+                      </div>
+                      <p className="type-composer-slot-card-hint">
+                        允许: {formatAllowedKinds(getAllowedKindsForContainerSlot(dictionaryKeySlot))}
+                      </p>
+                      <button
+                        className="secondary-button type-composer-slot-action"
+                        onClick={() => {
+                          openSlotEditor({
+                            allowedKinds: getAllowedKindsForContainerSlot(dictionaryKeySlot),
+                            label: "Key 类型",
+                            node: displayedNode.keyType,
+                            onApply: (keyType) => {
+                              onChange({
+                                ...displayedNode,
+                                keyType,
+                              });
+                            },
+                          });
+                        }}
+                        type="button"
+                      >
+                        快速填写 Key 类型
+                      </button>
+                    </section>
                   ) : (
                     <p className="column-editor-error">Dictionary 类型元数据缺少 Key 槽位。</p>
                   )}
                   {dictionaryValueSlot ? (
-                    <TypeNodeEditor
-                      allowedKinds={getAllowedKindsForContainerSlot(dictionaryValueSlot)}
-                      label="Value 类型"
-                      layout="inline"
-                      metadata={metadata}
-                      node={displayedNode.valueType}
-                      onChange={(valueType) => {
-                        onChange({
-                          ...displayedNode,
-                          valueType,
-                        });
-                      }}
-                    />
+                    <section className="type-composer-slot-card">
+                      <div className="type-composer-slot-card-header">
+                        <strong>Value 类型</strong>
+                        <span>{formatBuilderNode(displayedNode.valueType) || "待选择"}</span>
+                      </div>
+                      <p className="type-composer-slot-card-hint">
+                        允许: {formatAllowedKinds(getAllowedKindsForContainerSlot(dictionaryValueSlot))}
+                      </p>
+                      <button
+                        className="secondary-button type-composer-slot-action"
+                        onClick={() => {
+                          openSlotEditor({
+                            allowedKinds: getAllowedKindsForContainerSlot(dictionaryValueSlot),
+                            label: "Value 类型",
+                            node: displayedNode.valueType,
+                            onApply: (valueType) => {
+                              onChange({
+                                ...displayedNode,
+                                valueType,
+                              });
+                            },
+                          });
+                        }}
+                        type="button"
+                      >
+                        快速填写 Value 类型
+                      </button>
+                    </section>
                   ) : (
                     <p className="column-editor-error">Dictionary 类型元数据缺少 Value 槽位。</p>
                   )}
@@ -409,6 +514,28 @@ function TypeNodeEditor({ label, allowedKinds, metadata, node, onChange, layout 
           ) : null}
         </div>
       </div>
+
+      {slotEditor ? (
+        <TypeComposerDialog
+          allowedKinds={slotEditor.allowedKinds}
+          applyLabel={`应用到${slotEditor.label}`}
+          currentType={formatBuilderNode(slotEditor.node)}
+          depth={depth + 1}
+          initialNode={slotEditor.node}
+          isOpen
+          onApplyNode={(nextNode) => {
+            slotEditor.onApply(nextNode);
+            setSlotEditor(null);
+          }}
+          onClose={() => {
+            setSlotEditor(null);
+          }}
+          onResolveType={onResolveType}
+          subtitle={`允许: ${formatAllowedKinds(slotEditor.allowedKinds)}`}
+          title={`快速填写 / ${slotEditor.label}`}
+          typeMetadata={metadata}
+        />
+      ) : null}
     </section>
   );
 }
@@ -419,7 +546,14 @@ export function TypeComposerDialog({
   typeMetadata,
   onClose,
   onApply,
+  onApplyNode,
   onResolveType,
+  allowedKinds,
+  initialNode,
+  title = "快速填写 / 类型构造器",
+  subtitle,
+  applyLabel = "应用到 Type",
+  depth = 0,
 }: TypeComposerDialogProps) {
   const [draftNode, setDraftNode] = useState<BuilderNode | null>(null);
   const [isResolvingCurrentType, setIsResolvingCurrentType] = useState(false);
@@ -427,6 +561,7 @@ export function TypeComposerDialog({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const openSessionRef = useRef(0);
   const initializedSessionRef = useRef<number | null>(null);
+  const effectiveAllowedKinds = useMemo(() => getEffectiveAllowedKinds(allowedKinds), [allowedKinds]);
   const previewType = useMemo(() => formatBuilderNode(draftNode), [draftNode]);
 
   useEffect(() => {
@@ -456,9 +591,23 @@ export function TypeComposerDialog({
     setSubmitError(null);
     setLoadError(null);
 
+    if (initialNode !== undefined) {
+      if (isNodeKindAllowed(initialNode, effectiveAllowedKinds)) {
+        setDraftNode(initialNode);
+      } else {
+        setDraftNode(buildDefaultNodeForAllowedKinds(effectiveAllowedKinds, typeMetadata));
+        if (initialNode) {
+          setLoadError(`当前类型不满足限制，仅允许 ${formatAllowedKinds(effectiveAllowedKinds)}。`);
+        }
+      }
+
+      setIsResolvingCurrentType(false);
+      return;
+    }
+
     const normalizedCurrentType = currentType.trim();
     if (!normalizedCurrentType) {
-      setDraftNode(buildDefaultNode("scalar", typeMetadata));
+      setDraftNode(buildDefaultNodeForAllowedKinds(effectiveAllowedKinds, typeMetadata));
       setIsResolvingCurrentType(false);
       return;
     }
@@ -474,19 +623,26 @@ export function TypeComposerDialog({
         }
 
         if (!result.ok || !result.descriptor) {
-          setDraftNode(buildDefaultNode("scalar", typeMetadata));
+          setDraftNode(buildDefaultNodeForAllowedKinds(effectiveAllowedKinds, typeMetadata));
           setLoadError(result.message ?? "当前类型无法解析，请重新选择。");
           return;
         }
 
-        setDraftNode(buildNodeFromDescriptor(result.descriptor));
+        const nextNode = buildNodeFromDescriptor(result.descriptor);
+        if (!isNodeKindAllowed(nextNode, effectiveAllowedKinds)) {
+          setDraftNode(buildDefaultNodeForAllowedKinds(effectiveAllowedKinds, typeMetadata));
+          setLoadError(`当前类型不满足限制，仅允许 ${formatAllowedKinds(effectiveAllowedKinds)}。`);
+          return;
+        }
+
+        setDraftNode(nextNode);
       })
       .catch((error) => {
         if (cancelled) {
           return;
         }
 
-        setDraftNode(buildDefaultNode("scalar", typeMetadata));
+        setDraftNode(buildDefaultNodeForAllowedKinds(effectiveAllowedKinds, typeMetadata));
         setLoadError(error instanceof Error ? error.message : "当前类型无法解析，请重新选择。");
       })
       .finally(() => {
@@ -498,23 +654,29 @@ export function TypeComposerDialog({
     return () => {
       cancelled = true;
     };
-  }, [currentType, isOpen, onResolveType, typeMetadata]);
+  }, [currentType, effectiveAllowedKinds, initialNode, isOpen, onResolveType, typeMetadata]);
 
   if (!isOpen) {
     return null;
   }
 
+  const backdropClassName = depth > 0 ? "workspace-create-backdrop workspace-create-backdrop--nested" : "workspace-create-backdrop";
+  const dialogClassName = depth > 0
+    ? "workspace-create-dialog type-composer-dialog type-composer-dialog--nested"
+    : "workspace-create-dialog type-composer-dialog";
+
   return (
-    <DialogBackdrop className="workspace-create-backdrop" onClose={onClose}>
-      <div aria-label="快速填写类型" aria-modal="true" className="workspace-create-dialog type-composer-dialog" role="dialog">
+    <DialogBackdrop className={backdropClassName} onClose={onClose}>
+      <div aria-label={title} aria-modal="true" className={dialogClassName} role="dialog">
         <div className="workspace-create-header">
           <div>
-            <p className="eyebrow">快速填写 / 类型构造器</p>
+            <p className="eyebrow">{title}</p>
           </div>
           <span className="badge">{previewType || "待完成"}</span>
         </div>
 
         <div className="workspace-create-body type-composer-body">
+          {subtitle ? <p className="type-composer-subtitle">{subtitle}</p> : null}
           {!typeMetadata ? <p className="column-editor-error">类型元数据尚未加载完成。</p> : null}
           {isResolvingCurrentType ? <p className="column-editor-validation">正在解析当前类型...</p> : null}
           {loadError ? <p className="column-editor-validation column-editor-validation--invalid">{loadError}</p> : null}
@@ -527,7 +689,8 @@ export function TypeComposerDialog({
               </div>
 
               <TypeNodeEditor
-                allowedKinds={["scalar", "reference", "container"]}
+                allowedKinds={effectiveAllowedKinds}
+                depth={depth}
                 label="类型定义"
                 layout="sidebar"
                 metadata={typeMetadata}
@@ -536,6 +699,7 @@ export function TypeComposerDialog({
                   setDraftNode(node);
                   setSubmitError(null);
                 }}
+                onResolveType={onResolveType}
               />
             </>
           ) : null}
@@ -563,7 +727,20 @@ export function TypeComposerDialog({
                     return;
                   }
 
-                  onApply(result.normalizedType ?? previewType);
+                  const nextType = result.normalizedType ?? previewType;
+                  const nextNode = result.descriptor ? buildNodeFromDescriptor(result.descriptor) : draftNode;
+                  if (!nextNode) {
+                    setSubmitError("请先完成类型选择。");
+                    return;
+                  }
+
+                  if (!isNodeKindAllowed(nextNode, effectiveAllowedKinds)) {
+                    setSubmitError(`当前类型不满足限制，仅允许 ${formatAllowedKinds(effectiveAllowedKinds)}。`);
+                    return;
+                  }
+
+                  onApply?.(nextType);
+                  onApplyNode?.(nextNode, nextType);
                   onClose();
                 })
                 .catch((error) => {
@@ -572,7 +749,7 @@ export function TypeComposerDialog({
             }}
             type="button"
           >
-            应用到 Type
+            {applyLabel}
           </button>
         </div>
       </div>

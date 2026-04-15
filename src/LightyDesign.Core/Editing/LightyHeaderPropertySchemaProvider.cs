@@ -177,7 +177,7 @@ internal sealed class DisplayNameHeaderPropertyModel
 [LightyHeaderPropertyBinding(LightyHeaderTypes.Type, "field", "type")]
 internal sealed class TypeHeaderPropertyModel
 {
-    [LightyHeaderEditorField("类型", Required = true, Placeholder = "int / string / List<int> / [[Workbook.Sheet]]")]
+    [LightyHeaderEditorField("类型", Required = true, Placeholder = "int / string / List<int> / Ref:Workbook.Sheet")]
     public string Type { get; set; } = string.Empty;
 }
 

@@ -19,6 +19,55 @@ export type HeaderPropertySchema = {
   options: string[];
 };
 
+export type TypeMetadataSlot = {
+  slotName: string;
+  allowedKinds: Array<"scalar" | "reference" | "container">;
+};
+
+export type TypeMetadataContainer = {
+  typeName: string;
+  displayName: string;
+  slots: TypeMetadataSlot[];
+};
+
+export type TypeMetadataReferenceTarget = {
+  workbookName: string;
+  sheetNames: string[];
+};
+
+export type TypeMetadataResponse = {
+  scalarTypes: string[];
+  containerTypes: TypeMetadataContainer[];
+  referenceType: {
+    prefix: string;
+    format: string;
+    example: string;
+  };
+  referenceTargets: TypeMetadataReferenceTarget[];
+};
+
+export type TypeDescriptorResponse = {
+  rawType: string;
+  typeName: string;
+  genericArguments: string[];
+  valueType: string;
+  isList: boolean;
+  isDictionary: boolean;
+  isReference: boolean;
+  referenceTarget?: {
+    workbookName: string;
+    sheetName: string;
+  } | null;
+  children: TypeDescriptorResponse[];
+};
+
+export type TypeValidationResponse = {
+  ok: boolean;
+  message?: string;
+  normalizedType?: string;
+  descriptor?: TypeDescriptorResponse;
+};
+
 export function getHeaderPropertyEditorKind(schema: HeaderPropertySchema): HeaderPropertyEditorKind {
   if (schema.editorKind === "json") {
     return "json";
@@ -410,7 +459,7 @@ export function getColumnEditorKind(column: SheetColumn): ColumnEditorKind {
     return "boolean";
   }
 
-  if (["int", "long", "float", "double", "decimal", "short", "byte"].includes(normalizedType)) {
+  if (["int", "long", "float", "double"].includes(normalizedType)) {
     return "number";
   }
 

@@ -8,6 +8,7 @@ import {
   cloneRows,
   normalizeSheetColumnForSave,
   type HeaderPropertySchema,
+  type TypeMetadataResponse,
   isSheetAvailable,
   isSheetTab,
   type CellEditInput,
@@ -223,18 +224,22 @@ function buildReadySheetState(data: SheetResponse): SheetLoadState {
 
 async function fetchWorkspaceData(currentHostInfo: DesktopHostInfo, workspacePath: string) {
   const query = new URLSearchParams({ workspacePath });
-  const [data, headerPropertyResponse] = await Promise.all([
+  const [data, headerPropertyResponse, typeMetadata] = await Promise.all([
     fetchJson<WorkspaceNavigationResponse>(
       `${currentHostInfo.desktopHostUrl}/api/workspace/navigation?${query.toString()}`,
     ),
     fetchJson<{ properties: HeaderPropertySchema[] }>(
       `${currentHostInfo.desktopHostUrl}/api/workspace/header-properties?${query.toString()}`,
     ),
+    fetchJson<TypeMetadataResponse>(
+      `${currentHostInfo.desktopHostUrl}/api/workspace/type-metadata?${query.toString()}`,
+    ),
   ]);
 
   return {
     workspace: data,
     headerPropertySchemas: headerPropertyResponse.properties,
+    typeMetadata,
   };
 }
 
@@ -270,6 +275,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
   const [workspacePath, setWorkspacePath] = useState<string>(() => localStorage.getItem(workspaceStorageKey) ?? "");
   const [workspace, setWorkspace] = useState<WorkspaceNavigationResponse | null>(null);
   const [headerPropertySchemas, setHeaderPropertySchemas] = useState<HeaderPropertySchema[]>([]);
+  const [typeMetadata, setTypeMetadata] = useState<TypeMetadataResponse | null>(null);
   const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceReloadKey, setWorkspaceReloadKey] = useState(0);
@@ -306,7 +312,11 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       do {
         hasPendingExternalRefreshRef.current = false;
 
-        const { workspace: nextWorkspace, headerPropertySchemas: nextHeaderPropertySchemas } = await fetchWorkspaceData(hostInfo, workspacePath);
+        const {
+          workspace: nextWorkspace,
+          headerPropertySchemas: nextHeaderPropertySchemas,
+          typeMetadata: nextTypeMetadata,
+        } = await fetchWorkspaceData(hostInfo, workspacePath);
         const nextOpenTabs = openTabs.filter((tab) => isSheetAvailable(nextWorkspace, tab));
         const nextActiveTabId = nextOpenTabs.some((tab) => tab.id === activeTabId)
           ? activeTabId
@@ -314,6 +324,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
         setWorkspace(nextWorkspace);
         setHeaderPropertySchemas(nextHeaderPropertySchemas);
+        setTypeMetadata(nextTypeMetadata);
         setWorkspaceStatus("ready");
         setWorkspaceError(null);
         setOpenTabs(nextOpenTabs);
@@ -449,6 +460,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       setActiveTabId(null);
       setSheetStateMap({});
       setHeaderPropertySchemas([]);
+      setTypeMetadata(null);
       return;
     }
 
@@ -465,7 +477,11 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       setWorkspaceError(null);
 
       try {
-        const { workspace: data, headerPropertySchemas: nextHeaderPropertySchemas } = await fetchWorkspaceData(hostInfo, workspacePath);
+        const {
+          workspace: data,
+          headerPropertySchemas: nextHeaderPropertySchemas,
+          typeMetadata: nextTypeMetadata,
+        } = await fetchWorkspaceData(hostInfo, workspacePath);
 
         if (canceled) {
           return;
@@ -473,6 +489,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
 
         setWorkspace(data);
         setHeaderPropertySchemas(nextHeaderPropertySchemas);
+        setTypeMetadata(nextTypeMetadata);
         setWorkspaceStatus("ready");
         setSheetStateMap({});
         setWorkbookSaveStateMap({});
@@ -485,6 +502,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         const errorMessage = error instanceof Error ? error.message : "工作区读取失败。";
         setWorkspace(null);
         setHeaderPropertySchemas([]);
+        setTypeMetadata(null);
         setWorkspaceStatus("error");
         setWorkspaceError(errorMessage);
         emitToast({
@@ -2563,6 +2581,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     setWorkspacePath,
     workspace,
     headerPropertySchemas,
+    typeMetadata,
     workspaceStatus,
     workspaceError,
     workspaceSearch,

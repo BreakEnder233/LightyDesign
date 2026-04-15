@@ -209,6 +209,7 @@ app.MapGet("/api/workspace/type-validation", (string type, string? workspacePath
             normalizedType = descriptor.RawType,
             descriptor.TypeName,
             descriptor.GenericArguments,
+            descriptor.ValueType,
             descriptor.IsList,
             descriptor.IsDictionary,
             descriptor.IsReference,
@@ -219,6 +220,7 @@ app.MapGet("/api/workspace/type-validation", (string type, string? workspacePath
                     descriptor.ReferenceTarget.WorkbookName,
                     descriptor.ReferenceTarget.SheetName,
                 },
+            descriptor = ToTypeDescriptorResponse(descriptor),
         });
     }
     catch (Exception exception) when (exception is ArgumentException or LightyCoreException)
@@ -239,6 +241,42 @@ app.MapGet("/api/workspace/type-validation", (string type, string? workspacePath
     catch (DirectoryNotFoundException exception)
     {
         return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapGet("/api/workspace/type-metadata", (string? workspacePath) =>
+{
+    try
+    {
+        LightyWorkspace? workspace = null;
+        if (!string.IsNullOrWhiteSpace(workspacePath))
+        {
+            workspace = LightyWorkspaceLoader.Load(workspacePath);
+        }
+
+        return Results.Ok(ToTypeMetadataResponse(LightyTypeMetadataProvider.GetMetadata(workspace)));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
         {
             error = exception.Message,
         });
@@ -1711,6 +1749,59 @@ object ToHeaderPropertySchemaResponse(LightyHeaderPropertySchema schema)
         schema.Required,
         schema.Placeholder,
         options = schema.Options,
+    };
+}
+
+object ToTypeMetadataResponse(LightyTypeMetadata metadata)
+{
+    return new
+    {
+        scalarTypes = metadata.ScalarTypes,
+        containerTypes = metadata.ContainerTypes.Select(container => new
+        {
+            container.TypeName,
+            container.DisplayName,
+            slots = container.Slots.Select(slot => new
+            {
+                slot.SlotName,
+                allowedKinds = slot.AllowedKinds,
+            }),
+        }),
+        referenceType = new
+        {
+            metadata.ReferenceType.Prefix,
+            metadata.ReferenceType.Format,
+            metadata.ReferenceType.Example,
+        },
+        referenceTargets = metadata.ReferenceTargets.Select(workbook => new
+        {
+            workbook.WorkbookName,
+            sheetNames = workbook.SheetNames,
+        }),
+    };
+}
+
+object ToTypeDescriptorResponse(LightyColumnTypeDescriptor descriptor)
+{
+    return new
+    {
+        rawType = descriptor.RawType,
+        descriptor.TypeName,
+        descriptor.GenericArguments,
+        descriptor.ValueType,
+        descriptor.IsList,
+        descriptor.IsDictionary,
+        descriptor.IsReference,
+        referenceTarget = descriptor.ReferenceTarget is null
+            ? null
+            : new
+            {
+                descriptor.ReferenceTarget.WorkbookName,
+                descriptor.ReferenceTarget.SheetName,
+            },
+        children = descriptor.GenericArguments
+            .Select(LightyColumnTypeDescriptor.Parse)
+            .Select(ToTypeDescriptorResponse),
     };
 }
 

@@ -2,15 +2,6 @@
 
 public static class LightySheetColumnValidator
 {
-    private static readonly HashSet<string> SupportedScalarTypes = new(StringComparer.Ordinal)
-    {
-        "string",
-        "int",
-        "long",
-        "float",
-        "double",
-        "bool",
-    };
 
     public static void Validate(
         IEnumerable<ColumnDefine> columns,
@@ -78,7 +69,13 @@ public static class LightySheetColumnValidator
 
         if (descriptor.IsDictionary)
         {
-            ValidateTypeDescriptor(LightyColumnTypeDescriptor.Parse(descriptor.GenericArguments[0]), workspace, currentWorkbookName);
+            var keyDescriptor = LightyColumnTypeDescriptor.Parse(descriptor.GenericArguments[0]);
+            if (!LightyTypeMetadataProvider.IsSupportedScalarType(keyDescriptor.RawType) || keyDescriptor.IsReference || keyDescriptor.IsList || keyDescriptor.IsDictionary)
+            {
+                throw new LightyCoreException($"Dictionary key type '{keyDescriptor.RawType}' is not supported. Dictionary keys must use scalar types.");
+            }
+
+            ValidateTypeDescriptor(keyDescriptor, workspace, currentWorkbookName);
             ValidateTypeDescriptor(LightyColumnTypeDescriptor.Parse(descriptor.GenericArguments[1]), workspace, currentWorkbookName);
             return;
         }
@@ -99,7 +96,7 @@ public static class LightySheetColumnValidator
             throw new LightyCoreException($"Generic type '{descriptor.RawType}' is not supported.");
         }
 
-        if (!SupportedScalarTypes.Contains(descriptor.RawType))
+        if (!LightyTypeMetadataProvider.IsSupportedScalarType(descriptor.RawType))
         {
             throw new LightyCoreException($"Scalar type '{descriptor.RawType}' is not supported.");
         }

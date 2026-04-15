@@ -33,6 +33,7 @@ public class HeaderEditingTests
                 Assert.Equal("field", type.BindingSource);
                 Assert.Equal("type", type.BindingKey);
                 Assert.True(type.Required);
+                Assert.Equal("int / string / List<int> / Ref:Workbook.Sheet", type.Placeholder);
             },
             custom =>
             {
@@ -112,6 +113,58 @@ public class HeaderEditingTests
         Assert.True(descriptor.IsReference);
         Assert.Equal("Item", descriptor.ReferenceTarget?.WorkbookName);
         Assert.Equal("Consumable", descriptor.ReferenceTarget?.SheetName);
+    }
+
+    [Fact]
+    public void SheetColumnValidator_ShouldRejectDictionaryReferenceKey()
+    {
+        var exception = Assert.Throws<LightyCoreException>(() =>
+            LightySheetColumnValidator.ValidateType("Dictionary<Ref:Item.Consumable,string>"));
+
+        Assert.Contains("Dictionary key type", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("scalar types", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SheetColumnValidator_ShouldRejectDictionaryContainerKey()
+    {
+        var exception = Assert.Throws<LightyCoreException>(() =>
+            LightySheetColumnValidator.ValidateType("Dictionary<List<int>,string>"));
+
+        Assert.Contains("Dictionary key type", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("scalar types", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TypeMetadataProvider_ShouldReturnSupportedTypesAndReferenceTargets()
+    {
+        var workspace = CreateWorkspace();
+
+        var metadata = LightyTypeMetadataProvider.GetMetadata(workspace);
+
+        Assert.Equal(new[] { "string", "int", "long", "float", "double", "bool" }, metadata.ScalarTypes);
+        Assert.Collection(
+            metadata.ContainerTypes,
+            listType =>
+            {
+                Assert.Equal("List", listType.TypeName);
+                Assert.Single(listType.Slots);
+                Assert.Equal(new[] { "scalar", "reference", "container" }, listType.Slots[0].AllowedKinds);
+            },
+            dictionaryType =>
+            {
+                Assert.Equal("Dictionary", dictionaryType.TypeName);
+                Assert.Equal(2, dictionaryType.Slots.Count);
+                Assert.Equal(new[] { "scalar" }, dictionaryType.Slots[0].AllowedKinds);
+                Assert.Equal(new[] { "scalar", "reference", "container" }, dictionaryType.Slots[1].AllowedKinds);
+            });
+
+        Assert.Equal("Ref:", metadata.ReferenceType.Prefix);
+        Assert.Equal("Ref:Workbook.Sheet", metadata.ReferenceType.Format);
+
+        var workbook = Assert.Single(metadata.ReferenceTargets);
+        Assert.Equal("Item", workbook.WorkbookName);
+        Assert.Equal(new[] { "Consumable" }, workbook.SheetNames);
     }
 
     [Fact]

@@ -252,6 +252,7 @@ function App() {
     workspacePath,
     workspace,
     headerPropertySchemas,
+    typeMetadata,
     workspaceStatus,
     workspaceError,
     workspaceSearch,
@@ -1345,7 +1346,11 @@ function App() {
 
     try {
       const response = await fetch(`${hostInfo.desktopHostUrl}/api/workspace/type-validation?${query.toString()}`);
-      const payload = await response.json() as { error?: string; normalizedType?: string };
+      const payload = await response.json() as {
+        error?: string;
+        normalizedType?: string;
+        descriptor?: import("./types/desktopApp").TypeDescriptorResponse;
+      };
 
       if (!response.ok) {
         return {
@@ -1357,6 +1362,7 @@ function App() {
       return {
         ok: true,
         normalizedType: payload.normalizedType,
+        descriptor: payload.descriptor,
       };
     } catch (error) {
       return {
@@ -3778,6 +3784,7 @@ function App() {
                   onSave={handleSaveColumnDefinition}
                   onValidateType={handleValidateColumnType}
                   propertySchemas={headerPropertySchemas}
+                  typeMetadata={typeMetadata}
                 />
               </>
             ) : null}

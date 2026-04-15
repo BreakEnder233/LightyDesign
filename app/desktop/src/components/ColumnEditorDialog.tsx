@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 
 import { DialogBackdrop } from "./DialogBackdrop";
+import { TypeComposerDialog } from "./TypeComposerDialog";
 
 import {
   applyHeaderPropertyInputValue,
@@ -8,6 +9,8 @@ import {
   getHeaderPropertyInputValue,
   type HeaderPropertySchema,
   type SheetColumn,
+  type TypeMetadataResponse,
+  type TypeValidationResponse,
 } from "../types/desktopApp";
 
 type ColumnEditorDialogProps = {
@@ -15,9 +18,10 @@ type ColumnEditorDialogProps = {
   columnIndex: number | null;
   isOpen: boolean;
   propertySchemas: HeaderPropertySchema[];
+  typeMetadata: TypeMetadataResponse | null;
   onClose: () => void;
   onSave: (columnIndex: number, nextColumn: SheetColumn) => void;
-  onValidateType: (type: string) => Promise<{ ok: boolean; message?: string; normalizedType?: string }>;
+  onValidateType: (type: string) => Promise<TypeValidationResponse>;
 };
 
 export function ColumnEditorDialog({
@@ -25,6 +29,7 @@ export function ColumnEditorDialog({
   columnIndex,
   isOpen,
   propertySchemas,
+  typeMetadata,
   onClose,
   onSave,
   onValidateType,
@@ -34,6 +39,7 @@ export function ColumnEditorDialog({
   const [typeValidationState, setTypeValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
   const [typeValidationMessage, setTypeValidationMessage] = useState<string | null>(null);
   const [typeValidationTarget, setTypeValidationTarget] = useState<string | null>(null);
+  const [isTypeComposerOpen, setIsTypeComposerOpen] = useState(false);
 
   const dialogTitle = useMemo(() => {
     if (!column) {
@@ -57,6 +63,7 @@ export function ColumnEditorDialog({
     setTypeValidationState("idle");
     setTypeValidationMessage(null);
     setTypeValidationTarget(null);
+    setIsTypeComposerOpen(false);
   }, [column, isOpen, propertySchemas]);
 
   const typeSchema = useMemo(
@@ -199,15 +206,39 @@ export function ColumnEditorDialog({
                   ) : null}
 
                   {editorKind === "text" ? (
-                    <input
-                      className="dialog-field-input"
-                      onChange={(event) => {
-                        updateDraftValue(schema.headerType, event.target.value);
-                      }}
-                      placeholder={schema.placeholder ?? undefined}
-                      type="text"
-                      value={currentValue}
-                    />
+                    schema.headerType === typeSchema?.headerType ? (
+                      <div className="type-input-row">
+                        <input
+                          className="dialog-field-input"
+                          onChange={(event) => {
+                            updateDraftValue(schema.headerType, event.target.value);
+                          }}
+                          placeholder={schema.placeholder ?? undefined}
+                          type="text"
+                          value={currentValue}
+                        />
+                        <button
+                          className="secondary-button type-input-helper"
+                          disabled={!typeMetadata}
+                          onClick={() => {
+                            setIsTypeComposerOpen(true);
+                          }}
+                          type="button"
+                        >
+                          快速填写
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        className="dialog-field-input"
+                        onChange={(event) => {
+                          updateDraftValue(schema.headerType, event.target.value);
+                        }}
+                        placeholder={schema.placeholder ?? undefined}
+                        type="text"
+                        value={currentValue}
+                      />
+                    )
                   ) : null}
 
                   {editorKind === "json" ? (
@@ -243,6 +274,23 @@ export function ColumnEditorDialog({
             应用到当前列
           </button>
         </div>
+
+        <TypeComposerDialog
+          currentType={typeSchema ? (draftValues[typeSchema.headerType] ?? "") : ""}
+          isOpen={isTypeComposerOpen}
+          onApply={(nextType) => {
+            if (!typeSchema) {
+              return;
+            }
+
+            updateDraftValue(typeSchema.headerType, nextType);
+          }}
+          onClose={() => {
+            setIsTypeComposerOpen(false);
+          }}
+          onResolveType={onValidateType}
+          typeMetadata={typeMetadata}
+        />
       </div>
     </DialogBackdrop>
   );

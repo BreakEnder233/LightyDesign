@@ -58,6 +58,8 @@ type VirtualSheetTableProps = {
   onCutSelection: () => void;
   onClearSelection: () => void;
   onPasteSelection: (rowIndex: number, columnIndex: number, clipboardText: string) => void;
+  onPasteSelectionFromClipboard: (rowIndex: number, columnIndex: number) => void;
+  onPasteIntoCurrentSelectionFromClipboard: () => void;
   onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
   onScrollSnapshotChange?: (snapshot: { scrollLeft: number; scrollTop: number }) => void;
 };
@@ -97,6 +99,13 @@ type HeaderContextMenuState =
     }
   | {
       kind: "corner";
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "cell";
+      rowIndex: number;
+      columnIndex: number;
       x: number;
       y: number;
     };
@@ -222,6 +231,8 @@ export function VirtualSheetTable({
   onCutSelection,
   onClearSelection,
   onPasteSelection,
+  onPasteSelectionFromClipboard,
+  onPasteIntoCurrentSelectionFromClipboard,
   onEditCell,
   onScrollSnapshotChange,
 }: VirtualSheetTableProps) {
@@ -988,6 +999,11 @@ export function VirtualSheetTable({
       onCutSelection();
       return;
     }
+
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "v") {
+      event.preventDefault();
+      onPasteSelectionFromClipboard(rowIndex, columnIndex);
+    }
   }
 
   function isCellInRange(rowIndex: number, columnIndex: number) {
@@ -1190,10 +1206,26 @@ export function VirtualSheetTable({
 
           onSelectCell(rowEntry.rowIndex, columnIndex, { extendSelection: true });
         }}
+        onContextMenu={(event) => {
+          if (event.shiftKey || !isInRange) {
+            onSelectCell(rowEntry.rowIndex, columnIndex, { extendSelection: event.shiftKey });
+          }
+          openContextMenu(event, {
+            kind: "cell",
+            rowIndex: rowEntry.rowIndex,
+            columnIndex,
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }}
         ref={(element) => registerCellRef(cellKey, element)}
         role="gridcell"
         tabIndex={isSelected && !isEditing ? 0 : -1}
         onKeyDown={(event) => handleCellShellKeyDown(event, rowEntry.rowIndex, columnIndex, editorKind)}
+        onPaste={(event) => {
+          event.preventDefault();
+          onPasteSelection(rowEntry.rowIndex, columnIndex, event.clipboardData.getData("text/plain"));
+        }}
       >
         {editorKind === "boolean" && isEditing ? (
           <select
@@ -1505,6 +1537,32 @@ export function VirtualSheetTable({
           ref={contextMenuRef}
           style={{ left: contextMenuState.x, top: contextMenuState.y }}
         >
+          {contextMenuState.kind === "cell" ? (
+            <>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onPasteIntoCurrentSelectionFromClipboard())} type="button">
+                粘贴到当前选区
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCopySelectionToClipboard)} type="button">
+                复制选区
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCutSelection)} type="button">
+                剪切选区
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onClearSelection)} type="button">
+                清空选区
+              </button>
+              {canInsertCopiedCellsDown ? (
+                <button
+                  className="sheet-context-menu-item"
+                  onClick={() => runContextMenuAction(() => onInsertCopiedCellsDown(contextMenuState.rowIndex, contextMenuState.columnIndex))}
+                  type="button"
+                >
+                  从当前单元格向下插入复制内容
+                </button>
+              ) : null}
+            </>
+          ) : null}
+
           {contextMenuState.kind === "row" ? (
             <>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onSelectRow(contextMenuState.rowIndex))} type="button">
@@ -1538,6 +1596,9 @@ export function VirtualSheetTable({
               </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCopySelectionToClipboard)} type="button">
                 复制选区
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onPasteIntoCurrentSelectionFromClipboard())} type="button">
+                粘贴到当前选区
               </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCutSelection)} type="button">
                 剪切选区
@@ -1584,6 +1645,9 @@ export function VirtualSheetTable({
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCopySelectionToClipboard)} type="button">
                 复制选区
               </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onPasteIntoCurrentSelectionFromClipboard())} type="button">
+                粘贴到当前选区
+              </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCutSelection)} type="button">
                 剪切选区
               </button>
@@ -1600,6 +1664,9 @@ export function VirtualSheetTable({
               </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCopySelectionToClipboard)} type="button">
                 复制选区
+              </button>
+              <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onPasteIntoCurrentSelectionFromClipboard())} type="button">
+                粘贴到当前选区
               </button>
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(onCutSelection)} type="button">
                 剪切选区

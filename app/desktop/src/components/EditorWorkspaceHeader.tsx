@@ -136,7 +136,10 @@ export function EditorWorkspaceHeader({
                       onContextMenu={(event) => onOpenSheetContextMenu(event, sheet.workbookName, sheet.sheetName)}
                       type="button"
                     >
-                      <span className="sheet-selector-name">{sheet.alias ?? sheet.sheetName}</span>
+                      <div className="sheet-selector-name">
+                        <div className="sheet-selector-label">{sheet.alias ?? sheet.sheetName}</div>
+                        {sheet.alias ? <small className="sheet-selector-alias">{sheet.sheetName}</small> : null}
+                      </div>
                     </button>
                   );
                 })}

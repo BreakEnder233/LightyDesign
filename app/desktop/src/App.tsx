@@ -838,6 +838,22 @@ function App() {
     }
   }
 
+  async function readClipboardText() {
+    try {
+      return await navigator.clipboard.readText();
+    } catch (error) {
+      pushToastNotification({
+        title: "剪贴板读取失败",
+        detail: error instanceof Error ? error.message : "无法从系统剪贴板读取文本。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return null;
+    }
+  }
+
   function handleSelectRow(rowIndex: number, options?: { extendSelection?: boolean }) {
     if (!activeSheetData || activeSheetColumns.length === 0) {
       return;
@@ -2171,6 +2187,29 @@ function App() {
     } catch {
       // Ignore clipboard cleanup failures after paste.
     }
+  }
+
+  async function handlePasteSelectionFromClipboard(startRowIndex: number, startColumnIndex: number) {
+    const clipboardText = await readClipboardText();
+    if (clipboardText === null) {
+      return;
+    }
+
+    await handlePasteSelection(startRowIndex, startColumnIndex, clipboardText);
+  }
+
+  async function handlePasteCurrentSelectionFromClipboard() {
+    const targetSelection = selectedRangeBounds
+      ? {
+          rowIndex: selectedRangeBounds.startRowIndex,
+          columnIndex: selectedRangeBounds.startColumnIndex,
+        }
+      : selectedCell;
+    if (!targetSelection) {
+      return;
+    }
+
+    await handlePasteSelectionFromClipboard(targetSelection.rowIndex, targetSelection.columnIndex);
   }
 
   function handleFormulaBarChange(nextValue: string) {
@@ -3759,6 +3798,8 @@ function App() {
                   onInsertRow={handleInsertRow}
                   onInsertRowAbove={handleInsertRowAbove}
                   onPasteSelection={handlePasteSelection}
+                  onPasteSelectionFromClipboard={handlePasteSelectionFromClipboard}
+                  onPasteIntoCurrentSelectionFromClipboard={handlePasteCurrentSelectionFromClipboard}
                   onResizeColumn={handleResizeColumn}
                   onDeleteColumn={handleDeleteColumn}
                   onDeleteRow={handleDeleteRow}

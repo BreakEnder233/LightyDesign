@@ -15,14 +15,6 @@ function isEditableElement(target: EventTarget | null): target is HTMLElement {
   return tagName === "input" || tagName === "textarea" || tagName === "select" || target.isContentEditable;
 }
 
-function isVirtualCellEditableTarget(target: EventTarget | null) {
-  return (
-    target instanceof HTMLElement &&
-    target.classList.contains("virtual-cell-input") &&
-    Boolean(target.closest('[role="gridcell"]'))
-  );
-}
-
 function isNativeEditingShortcut(event: KeyboardEvent) {
   if (!isShortcutModifierPressed(event) || event.altKey) {
     return false;
@@ -33,11 +25,7 @@ function isNativeEditingShortcut(event: KeyboardEvent) {
 }
 
 function shouldPreserveNativeEditing(event: KeyboardEvent) {
-  if (!isEditableElement(event.target) || !isNativeEditingShortcut(event)) {
-    return false;
-  }
-
-  return !isVirtualCellEditableTarget(event.target);
+  return isEditableElement(event.target) && isNativeEditingShortcut(event);
 }
 
 function shouldSuppressBrowserSelectAll(event: KeyboardEvent) {
@@ -57,7 +45,7 @@ function isShortcutTargetAllowed(target: EventTarget | null) {
 
   const tagName = target.tagName.toLowerCase();
   if (tagName === "input" || tagName === "textarea" || tagName === "select") {
-    return isVirtualCellEditableTarget(target);
+    return false;
   }
 
   if (target.isContentEditable) {

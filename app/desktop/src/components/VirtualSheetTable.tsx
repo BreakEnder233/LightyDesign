@@ -1231,10 +1231,6 @@ export function VirtualSheetTable({
           <select
             className="virtual-cell-input virtual-cell-select"
             onChange={(event) => onEditCell(rowEntry.rowIndex, columnIndex, event.target.value)}
-            onCopy={(event) => {
-              event.preventDefault();
-              event.clipboardData.setData("text/plain", onCopySelection());
-            }}
             onFocus={() => {
               logIme("editor.focus", {
                 cellKey,
@@ -1250,10 +1246,6 @@ export function VirtualSheetTable({
               stopEditingCell();
             }}
             onKeyDown={(event) => handleCellKeyDown(event, rowEntry.rowIndex, columnIndex)}
-            onPaste={(event) => {
-              event.preventDefault();
-              onPasteSelection(rowEntry.rowIndex, columnIndex, event.clipboardData.getData("text/plain"));
-            }}
             ref={(element) => registerInputRef(cellKey, element)}
             value={cellValue}
           >
@@ -1268,10 +1260,6 @@ export function VirtualSheetTable({
             className={`virtual-cell-input${editorKind === "reference" || editorKind === "list" ? " is-code" : ""}`}
             inputMode={editorKind === "number" ? "decimal" : "text"}
             onChange={(event) => onEditCell(rowEntry.rowIndex, columnIndex, event.target.value)}
-            onCopy={(event) => {
-              event.preventDefault();
-              event.clipboardData.setData("text/plain", onCopySelection());
-            }}
             onFocus={() => {
               logIme("editor.focus", {
                 cellKey,
@@ -1317,10 +1305,6 @@ export function VirtualSheetTable({
                 inputType: nativeEvent.inputType ?? null,
                 isComposing: nativeEvent.isComposing ?? false,
               });
-            }}
-            onPaste={(event) => {
-              event.preventDefault();
-              onPasteSelection(rowEntry.rowIndex, columnIndex, event.clipboardData.getData("text/plain"));
             }}
             placeholder={
               editorKind === "reference"

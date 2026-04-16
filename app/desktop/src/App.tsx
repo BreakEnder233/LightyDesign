@@ -2179,14 +2179,6 @@ function App() {
 
     setSelectionAnchor({ rowIndex: startRowIndex, columnIndex: startColumnIndex });
     setSelectedCell({ rowIndex: lastVisibleRow.rowIndex, columnIndex: lastColumnIndex });
-
-    setCopiedSelectionSnapshot(null);
-
-    try {
-      await navigator.clipboard.writeText("");
-    } catch {
-      // Ignore clipboard cleanup failures after paste.
-    }
   }
 
   async function handlePasteSelectionFromClipboard(startRowIndex: number, startColumnIndex: number) {

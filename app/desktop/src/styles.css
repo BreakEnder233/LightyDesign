@@ -667,6 +667,12 @@ button {
   padding: 2px 8px;
 }
 
+.compact-sheet-selector-action {
+  flex: 0 0 auto;
+  min-width: 84px;
+  white-space: nowrap;
+}
+
 .freeze-summary {
   display: inline-flex;
   align-items: center;
@@ -867,6 +873,8 @@ button {
 }
 
 .compact-sheet-selector-search {
+  flex: 1 1 220px;
+  min-width: 0;
   width: min(220px, 100%);
   margin-top: 0;
 }
@@ -1590,19 +1598,25 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+  --validation-editor-pane-height: 220px;
 }
 
 .validation-editor-textarea {
-  min-height: 220px;
+  height: var(--validation-editor-pane-height);
+  min-height: var(--validation-editor-pane-height);
+  max-height: var(--validation-editor-pane-height);
+  resize: none;
+  overflow: auto;
 }
 
 .validation-editor-sidebar {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: var(--validation-editor-pane-height);
   min-height: 0;
-  max-height: min(52vh, 560px);
+  max-height: var(--validation-editor-pane-height);
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1614,6 +1628,15 @@ button {
   padding: 12px;
   border: 1px solid #333333;
   background: #161616;
+}
+
+/* Override .search-field span so schema text keeps original casing. */
+.validation-editor-sidebar span,
+.validation-editor-sidebar .badge,
+.validation-schema-panel,
+.validation-schema-panel * {
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .validation-schema-panel--nested {

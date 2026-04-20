@@ -531,6 +531,7 @@ export function ColumnEditorDialog({
                           }}
                           placeholder={schema.placeholder ?? undefined}
                           rows={10}
+                          spellCheck={false}
                           value={currentValue}
                         />
 
@@ -551,6 +552,7 @@ export function ColumnEditorDialog({
                         }}
                         placeholder={schema.placeholder ?? undefined}
                         rows={5}
+                        spellCheck={false}
                         value={currentValue}
                       />
                     )

@@ -68,6 +68,42 @@ export type TypeValidationResponse = {
   descriptor?: TypeDescriptorResponse;
 };
 
+export type ValidationRulePropertySchema = {
+  name: string;
+  valueType: string;
+  description: string;
+  required: boolean;
+  defaultValue?: unknown;
+  example?: unknown;
+  deprecated: boolean;
+  aliasOf?: string | null;
+};
+
+export type ValidationRuleSchema = {
+  mainTypeKey: string;
+  typeDisplayName: string;
+  description: string;
+  properties: ValidationRulePropertySchema[];
+  nestedSchemas: Array<{
+    propertyName: string;
+    label: string;
+    description: string;
+    schema: ValidationRuleSchema;
+  }>;
+};
+
+export type ValidationSchemaResolveResponse = {
+  ok: boolean;
+  message?: string;
+  descriptor?: TypeDescriptorResponse;
+  schema?: ValidationRuleSchema;
+};
+
+export type ValidationRuleValidationResponse = {
+  ok: boolean;
+  message?: string;
+};
+
 export function getHeaderPropertyEditorKind(schema: HeaderPropertySchema): HeaderPropertyEditorKind {
   if (schema.editorKind === "json") {
     return "json";
@@ -173,6 +209,11 @@ export type WorkbookCodegenExportResponse = {
   fileCount: number;
   files: string[];
   workbookCount?: number;
+};
+
+export type WorkbookValidationResponse = {
+  workbookName: string;
+  errorCount: number;
 };
 
 export type SheetTab = {

@@ -283,6 +283,110 @@ app.MapGet("/api/workspace/type-metadata", (string? workspacePath) =>
     }
 });
 
+app.MapGet("/api/workspace/validation-schema", (string type, string? workspacePath) =>
+{
+    if (string.IsNullOrWhiteSpace(type))
+    {
+        return Results.BadRequest(new
+        {
+            error = "type is required.",
+        });
+    }
+
+    try
+    {
+        if (!string.IsNullOrWhiteSpace(workspacePath))
+        {
+            _ = LightyWorkspaceLoader.Load(workspacePath);
+        }
+
+        var descriptor = LightyColumnTypeDescriptor.Parse(type);
+        var schema = LightyValidationSchemaProvider.GetSchema(descriptor);
+        return Results.Ok(new
+        {
+            descriptor = ToTypeDescriptorResponse(descriptor),
+            schema = ToValidationRuleSchemaResponse(schema),
+        });
+    }
+    catch (Exception exception) when (exception is ArgumentException or LightyCoreException)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/validation-rules/validate", (ValidateValidationRuleRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Type))
+    {
+        return Results.BadRequest(new
+        {
+            error = "type is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(request.WorkspacePath);
+        LightyWorkbookValidationService.ValidateValidationRule(request.Type, request.Validation, workspace);
+
+        return Results.Ok(new
+        {
+            ok = true,
+        });
+    }
+    catch (Exception exception) when (exception is ArgumentException or LightyCoreException or JsonException)
+    {
+        return Results.BadRequest(new
+        {
+            ok = false,
+            error = exception.Message,
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            ok = false,
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            ok = false,
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapPost("/api/workspace/create", (CreateWorkspaceRequest request) =>
 {
     if (string.IsNullOrWhiteSpace(request.ParentDirectoryPath))
@@ -1165,6 +1269,80 @@ app.MapPost("/api/workspace/workbooks/codegen/export", (ExportWorkbookCodegenReq
     }
 });
 
+app.MapPost("/api/workspace/workbooks/codegen/validate", (ExportWorkbookCodegenRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.WorkbookName))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workbookName is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var workbookName = request.WorkbookName.Trim();
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+        {
+            return Results.NotFound(new
+            {
+                error = $"Workbook '{workbookName}' was not found.",
+                workspacePath,
+            });
+        }
+
+        var report = LightyWorkbookValidationService.ValidateWorkbook(workspace, workbook);
+        if (!report.IsSuccess)
+        {
+            return Results.BadRequest(new
+            {
+                error = report.ToDisplayString(),
+                errorCount = report.ErrorCount,
+                workbookName,
+            });
+        }
+
+        return Results.Ok(new
+        {
+            workbookName,
+            errorCount = 0,
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapPost("/api/workspace/workbooks/codegen/export-all", (ExportAllWorkbookCodegenRequest request) =>
 {
     if (string.IsNullOrWhiteSpace(request.WorkspacePath))
@@ -1188,6 +1366,8 @@ app.MapPost("/api/workspace/workbooks/codegen/export-all", (ExportAllWorkbookCod
                 workspacePath,
             });
         }
+
+        LightyWorkbookValidationService.ValidateWorkbooksOrThrow(workspace, workspace.Workbooks);
 
         var generator = new LightyWorkbookCodeGenerator();
         var workbookPackages = workspace.Workbooks
@@ -1805,6 +1985,34 @@ object ToTypeDescriptorResponse(LightyColumnTypeDescriptor descriptor)
     };
 }
 
+object ToValidationRuleSchemaResponse(LightyValidationRuleSchema schema)
+{
+    return new
+    {
+        schema.MainTypeKey,
+        schema.TypeDisplayName,
+        schema.Description,
+        properties = schema.Properties.Select(property => new
+        {
+            property.Name,
+            property.ValueType,
+            property.Description,
+            property.Required,
+            defaultValue = property.DefaultValue,
+            example = property.Example,
+            property.Deprecated,
+            property.AliasOf,
+        }),
+        nestedSchemas = schema.NestedSchemas.Select(nested => new
+        {
+            nested.PropertyName,
+            nested.Label,
+            nested.Description,
+            schema = ToValidationRuleSchemaResponse(nested.Schema),
+        }),
+    };
+}
+
 bool ContainsSheetName(LightyWorkbook workbook, string candidateSheetName, string? excludedSheetName = null)
 {
     return workbook.Sheets.Any(sheet =>
@@ -1983,6 +2191,15 @@ sealed class ExportWorkbookCodegenRequest
 sealed class ExportAllWorkbookCodegenRequest
 {
     public string WorkspacePath { get; set; } = string.Empty;
+}
+
+sealed class ValidateValidationRuleRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string Type { get; set; } = string.Empty;
+
+    public JsonElement? Validation { get; set; }
 }
 
 sealed class WorkbookPayload

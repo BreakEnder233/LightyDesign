@@ -228,6 +228,13 @@ function clampContextMenuPosition(
   };
 }
 
+function cloneSheetColumnSnapshot(column: SheetColumn): SheetColumn {
+  return {
+    ...column,
+    attributes: { ...column.attributes },
+  };
+}
+
 function App() {
   const appShellRef = useRef<HTMLDivElement | null>(null);
   const workbookContextMenuRef = useRef<HTMLDivElement | null>(null);
@@ -282,6 +289,7 @@ function App() {
     renameSheet,
     saveWorkspaceCodegenOptions,
     exportWorkbookCode,
+    validateWorkbookCode,
     exportAllWorkbookCode,
     chooseWorkspaceDirectory,
     closeWorkspace,
@@ -404,6 +412,7 @@ function App() {
   const [freezeDialogRowCount, setFreezeDialogRowCount] = useState(0);
   const [freezeDialogColumnCount, setFreezeDialogColumnCount] = useState(0);
   const [editingColumnIndex, setEditingColumnIndex] = useState<number | null>(null);
+  const [editingColumnSnapshot, setEditingColumnSnapshot] = useState<SheetColumn | null>(null);
   const [openToolbarMenu, setOpenToolbarMenu] = useState<ToolbarMenuId | null>(null);
   const [focusedWorkbookName, setFocusedWorkbookName] = useState<string | null>(null);
   const [workbookContextMenu, setWorkbookContextMenu] = useState<{
@@ -438,7 +447,7 @@ function App() {
     }
   }, [hostHealth]);
 
-  const editingColumn = editingColumnIndex !== null ? (activeSheetColumns[editingColumnIndex] ?? null) : null;
+  const editingColumn = editingColumnSnapshot;
   const focusedWorkbook = useMemo(
     () => workbookTree.find((workbook) => workbook.name === focusedWorkbookName) ?? null,
     [focusedWorkbookName, workbookTree],
@@ -1078,10 +1087,12 @@ function App() {
     }
 
     setEditingColumnIndex(columnIndex);
+    setEditingColumnSnapshot(cloneSheetColumnSnapshot(activeSheetColumns[columnIndex]));
   }
 
   function handleCloseColumnEditor() {
     setEditingColumnIndex(null);
+    setEditingColumnSnapshot(null);
   }
 
   function handleSaveColumnDefinition(columnIndex: number, nextColumn: SheetColumn) {
@@ -1384,6 +1395,87 @@ function App() {
       return {
         ok: false,
         message: error instanceof Error ? error.message : "Type 校验失败。",
+      };
+    }
+  }
+
+  async function handleResolveValidationSchema(type: string) {
+    if (!hostInfo || !workspacePath) {
+      return {
+        ok: false,
+        message: "工作区未连接，无法获取 validation schema。",
+      };
+    }
+
+    const query = new URLSearchParams({
+      type,
+      workspacePath,
+    });
+
+    try {
+      const response = await fetch(`${hostInfo.desktopHostUrl}/api/workspace/validation-schema?${query.toString()}`);
+      const payload = await response.json() as {
+        error?: string;
+        descriptor?: import("./types/desktopApp").TypeDescriptorResponse;
+        schema?: import("./types/desktopApp").ValidationRuleSchema;
+      };
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: payload.error ?? `validation schema 获取失败: ${response.status}`,
+        };
+      }
+
+      return {
+        ok: true,
+        descriptor: payload.descriptor,
+        schema: payload.schema,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "validation schema 获取失败。",
+      };
+    }
+  }
+
+  async function handleValidateColumnValidationRule(type: string, validation: unknown) {
+    if (!hostInfo || !workspacePath) {
+      return {
+        ok: false,
+        message: "工作区未连接，无法校验 validation 规则。",
+      };
+    }
+
+    try {
+      const response = await fetch(`${hostInfo.desktopHostUrl}/api/workspace/validation-rules/validate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspacePath,
+          type,
+          validation,
+        }),
+      });
+      const payload = await response.json() as { ok?: boolean; error?: string };
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: payload.error ?? `validation 规则校验失败: ${response.status}`,
+        };
+      }
+
+      return {
+        ok: true,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "validation 规则校验失败。",
       };
     }
   }
@@ -2405,6 +2497,7 @@ function App() {
 
   useEffect(() => {
     setEditingColumnIndex(null);
+    setEditingColumnSnapshot(null);
   }, [activeTabId]);
 
   useEffect(() => {
@@ -3300,6 +3393,16 @@ function App() {
                     },
                   })}
                   {renderToolbarMenuItem({
+                    label: "校验当前工作簿",
+                    disabled: !focusedWorkbookName,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      if (focusedWorkbookName) {
+                        void validateWorkbookCode(focusedWorkbookName);
+                      }
+                    },
+                  })}
+                  {renderToolbarMenuItem({
                     label: "导出当前工作簿代码",
                     disabled: !focusedWorkbookName,
                     onClick: () => {
@@ -3809,18 +3912,21 @@ function App() {
                   selectionRange={selectionRange}
                 />
 
-                <ColumnEditorDialog
-                  column={editingColumn}
-                  columnIndex={editingColumnIndex}
-                  isOpen={editingColumnIndex !== null}
-                  onClose={handleCloseColumnEditor}
-                  onSave={handleSaveColumnDefinition}
-                  onValidateType={handleValidateColumnType}
-                  propertySchemas={headerPropertySchemas}
-                  typeMetadata={typeMetadata}
-                />
               </>
             ) : null}
+
+            <ColumnEditorDialog
+              column={editingColumn}
+              columnIndex={editingColumnIndex}
+              isOpen={editingColumnIndex !== null}
+              onClose={handleCloseColumnEditor}
+              onResolveValidationSchema={handleResolveValidationSchema}
+              onSave={handleSaveColumnDefinition}
+              onValidateType={handleValidateColumnType}
+              onValidateValidationRule={handleValidateColumnValidationRule}
+              propertySchemas={headerPropertySchemas}
+              typeMetadata={typeMetadata}
+            />
 
           </div>
         </section>

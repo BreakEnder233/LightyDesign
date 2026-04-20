@@ -36,6 +36,14 @@ public sealed class LightyColumnTypeDescriptor
 
     public bool IsReference => ReferenceTarget is not null;
 
+    public string MainTypeKey => IsList
+        ? "List"
+        : IsDictionary
+            ? "Dictionary"
+            : IsReference
+                ? "Reference"
+                : RawType;
+
     public string? DictionaryKeyType => IsDictionary ? GenericArguments[0] : null;
 
     public string? DictionaryValueType => IsDictionary ? GenericArguments[1] : null;

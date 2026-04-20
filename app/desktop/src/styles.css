@@ -1586,6 +1586,116 @@ button {
   font-family: "Cascadia Mono", "Consolas", monospace;
 }
 
+.validation-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.validation-editor-textarea {
+  min-height: 220px;
+}
+
+.validation-editor-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  max-height: min(52vh, 560px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.validation-schema-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #333333;
+  background: #161616;
+}
+
+.validation-schema-panel--nested {
+  background: #121212;
+}
+
+.validation-schema-panel-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.validation-schema-panel-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f3f4f6;
+}
+
+.validation-schema-panel-description {
+  margin: 4px 0 0;
+  color: #a8adb4;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.validation-schema-panel-action {
+  white-space: nowrap;
+}
+
+.validation-schema-property-list,
+.validation-schema-nested-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.validation-schema-property,
+.validation-schema-nested-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #2b2b2b;
+  background: #1d1d1d;
+}
+
+.validation-schema-property-heading,
+.validation-schema-nested-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.validation-schema-property-name {
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  color: #d7dbe0;
+  word-break: break-all;
+}
+
+.validation-schema-property-type {
+  color: #8fc0ff;
+  font-size: 12px;
+}
+
+.validation-schema-property-description {
+  margin: 0;
+  color: #afb4bb;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.validation-schema-property-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #8f959c;
+  font-size: 11px;
+}
+
 .column-editor-field .dialog-field-select {
   background-color: #1f1f1f;
 }
@@ -1621,6 +1731,12 @@ button {
   border-color: #5a1d1d;
   background: #341313;
   color: #f2b8b5;
+}
+
+@media (max-width: 1080px) {
+  .validation-editor-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .type-composer-body {

@@ -19,6 +19,7 @@ import {
   type SheetResponse,
   type SheetTab,
   type WorkbookCodegenExportResponse,
+  type WorkbookValidationResponse,
   type WorkbookResponse,
   type WorkbookSaveState,
   type WorkspaceNavigationResponse,
@@ -1566,6 +1567,57 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     }
   }
 
+  async function validateWorkbookCode(workbookName: string) {
+    if (!hostInfo || !workspacePath) {
+      emitToast({
+        title: "无法校验工作簿",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+        durationMs: 8000,
+      });
+      return false;
+    }
+
+    try {
+      const result = await fetchJson<WorkbookValidationResponse>(
+        `${hostInfo.desktopHostUrl}/api/workspace/workbooks/codegen/validate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+            workbookName,
+          }),
+        },
+      );
+
+      emitToast({
+        title: `校验通过: ${result.workbookName}`,
+        detail: "当前工作簿未发现校验错误。",
+        source: "save",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4000,
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "校验工作簿失败。";
+      emitToast({
+        title: "校验工作簿失败",
+        detail: errorMessage,
+        source: "save",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+      return false;
+    }
+  }
+
   async function exportAllWorkbookCode() {
     if (!hostInfo || !workspacePath || !workspace) {
       emitToast({
@@ -2615,6 +2667,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     renameSheet,
     saveWorkspaceCodegenOptions,
     exportWorkbookCode,
+    validateWorkbookCode,
     exportAllWorkbookCode,
     chooseWorkspaceDirectory,
     closeWorkspace,

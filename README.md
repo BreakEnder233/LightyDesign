@@ -151,8 +151,9 @@ LightyDesign/
 1. Core 已实现工作区、工作簿、表、列定义、引用模型与惰性值解析。
 2. Core 已支持工作区扫描、Sheet header 读写和 workbook 写回。
 3. FileProcess 已支持 xlsx 与 `LightyWorkbook` 双向转换。
-4. DesktopHost 已提供健康检查、工作区读取、sheet 元信息、Excel 导入导出和 workbook 保存接口。
-5. Electron 已能在开发模式和部署目录中自动拉起 DesktopHost。
+4. Core 已支持 validation 规则执行、validation schema 查询和规则结构预校验。
+5. DesktopHost 已提供健康检查、工作区读取、sheet 元信息、Excel 导入导出、workbook 保存、validation schema 和代码导出/校验接口。
+6. Electron 已能在开发模式和部署目录中自动拉起 DesktopHost，并在表头编辑器中显示 validation 侧边说明区与规则预校验结果。
 
 ## 前端维护约定
 
@@ -173,3 +174,7 @@ LightyDesign/
 2. [Spec/Core/README.md](Spec/Core/README.md)：Core 当前能力与边界。
 3. [Spec/DesktopHost/README.md](Spec/DesktopHost/README.md)：宿主接口与职责。
 4. [Spec/Tooling/README.md](Spec/Tooling/README.md)：脚本与交付方式。
+
+## AI 助手技能
+
+- 项目根目录包含一份 `SKILL.md`，用于指导 AI 通过 MCP/宿主 API 理解并编辑策划表（planning sheet），包含工作流、决策点、示例 prompts 与 patch 模板。参见： [SKILL.md](SKILL.md)

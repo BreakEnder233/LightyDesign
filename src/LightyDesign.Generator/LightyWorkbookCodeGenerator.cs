@@ -38,6 +38,8 @@ public sealed class LightyWorkbookCodeGenerator
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(workbook);
 
+        LightyWorkbookValidationService.ValidateWorkbookOrThrow(workspace, workbook);
+
         if (string.IsNullOrWhiteSpace(workspace.CodegenOptions.OutputRelativePath))
         {
             throw new LightyCoreException($"Workbook '{workbook.Name}' does not define a code generation output path.");

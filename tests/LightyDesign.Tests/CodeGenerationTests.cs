@@ -214,6 +214,55 @@ public class CodeGenerationTests
         Assert.Contains("public bool EditByKey(string key, Action<LocalizationRow> editAction)", tableFile.Content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WorkbookCodeGenerator_ShouldBlockExportWhenValidationFails()
+    {
+        var workbookDirectory = @"D:\Workspace\Config";
+        var workbook = new LightyWorkbook(
+            "Config",
+            workbookDirectory,
+            new[]
+            {
+                new LightySheet(
+                    "FeatureFlag",
+                    Path.Combine(workbookDirectory, "FeatureFlag.txt"),
+                    Path.Combine(workbookDirectory, "FeatureFlag_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("ID", "int", attributes: CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine(
+                            "Level",
+                            "int",
+                            attributes: CreateAttributes(
+                                LightyHeaderTypes.Validation,
+                                new { range = new { min = 1, max = 10 } },
+                                (LightyHeaderTypes.ExportScope, "All"))),
+                    }),
+                    new[]
+                    {
+                        new LightySheetRow(0, new[] { "1", "0" }),
+                    }),
+            },
+            new LightyWorkbookCodegenOptions("Generated/Config"),
+            Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        var workspace = new LightyWorkspace(
+            @"D:\Workspace",
+            @"D:\Workspace\config.json",
+            @"D:\Workspace\headers.json",
+            WorkspaceHeaderLayout.CreateDefault(),
+            new[] { workbook },
+            new LightyWorkbookCodegenOptions("Generated/Config"),
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        var generator = new LightyWorkbookCodeGenerator();
+
+        var exception = Assert.Throws<LightyCoreException>(() => generator.Generate(workspace, workbook));
+
+        Assert.Contains("validation failed", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("greater than or equal to 1", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static LightyWorkspace CreateWorkspace(LightyWorkbookCodegenOptions codegenOptions)
     {
         var workbookDirectory = @"D:\Workspace\Item";
@@ -493,6 +542,21 @@ public class CodeGenerationTests
         {
             [key] = JsonSerializer.SerializeToElement(value),
         };
+    }
+
+    private static IReadOnlyDictionary<string, JsonElement> CreateAttributes(string key, object value, params (string Key, object Value)[] additional)
+    {
+        var attributes = new Dictionary<string, JsonElement>
+        {
+            [key] = JsonSerializer.SerializeToElement(value),
+        };
+
+        foreach (var item in additional)
+        {
+            attributes[item.Key] = JsonSerializer.SerializeToElement(item.Value);
+        }
+
+        return attributes;
     }
 
     private static string NormalizeNewlines(string value)

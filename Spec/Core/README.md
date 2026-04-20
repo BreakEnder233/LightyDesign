@@ -13,15 +13,17 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 5. 已实现 ColumnDefine 的类型描述与已知属性访问器，包括 ExportScope、Validation 和引用目标读取。
 6. 已实现第一版惰性值解析层，支持按需解析与单元格级缓存失效。
 7. 已实现 `LightyWorkbook` 写回能力，可将工作簿保存为工作区目录下的 `.txt` 和 `_header.json` 文件。
-8. 已补充覆盖核心模型、协议读取、写回和值解析行为的单元测试，并验证解决方案构建与测试通过。
+8. 已实现第一版 validation 执行层，支持按主要类型分发规则、导出前校验、手动校验和错误收集。
+9. 已实现 validation schema provider，可按 Type 返回字段说明、默认值、示例和嵌套规则结构。
+10. 已补充覆盖核心模型、协议读取、写回、值解析和 validation 行为的单元测试，并验证解决方案构建与测试通过。
 
 ## 当前尚未实现的业务能力
 
 1. 更完整的复杂值解析协议，例如更严格的 CSV 字符串规则和更丰富的嵌套泛型支持。
-2. 基于惰性解析结果的验证层与错误收集模型。
+2. 更完整的 validation schema 分组、正式版本化与表单化描述能力。
 3. 面向 Generator 的更高层字段语义与导出辅助模型。
 4. 面向 DesktopHost 的工作区编辑、保存与增量更新接口。
-5. 跨表引用存在性验证和更完整的引用解析上下文。
+5. 更完整的引用解析上下文与更细的诊断模型。
 
 ## 当前已落地的模型与协议
 
@@ -40,6 +42,8 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 
 1. `ExportScope` 当前支持 `Client`、`Server`、`All`、`None`。
 2. `ExportScope.None` 表示该列在代码导出阶段应被忽略，而不是导出到任一目标端。
+3. `Validation` 当前按主要类型分发到标量、List、Dictionary 和 Reference 校验器，并在未填写参数时使用默认值。
+4. `Validation` 当前支持 schema 查询与规则结构预校验，供宿主和桌面端编辑器复用。
 
 ## 当前已落地的加载与解析能力
 
@@ -63,4 +67,4 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 
 ## 当前状态结论
 
-Core 已经从“工程骨架”进入“协议层可用”的状态，当前已经具备工作区读取、表头建模、txt 协议处理、引用结构化、workbook 写回和惰性值解析等基础能力。后续所有文件协议、值语义和验证逻辑仍应继续优先沉淀在这里，而不是直接写进 UI 或宿主层。
+Core 已经从“工程骨架”进入“协议层与首版 validation 可用”的状态，当前已经具备工作区读取、表头建模、txt 协议处理、引用结构化、workbook 写回、惰性值解析和 validation/schema 基础能力。后续所有文件协议、值语义和验证逻辑仍应继续优先沉淀在这里，而不是直接写进 UI 或宿主层。

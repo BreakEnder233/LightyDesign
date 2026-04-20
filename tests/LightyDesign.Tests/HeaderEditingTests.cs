@@ -193,6 +193,37 @@ public class HeaderEditingTests
         Assert.Contains("must define export scope", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void ValidationSchemaProvider_ShouldExposeRegexAndPatternForString()
+    {
+        var schema = LightyValidationSchemaProvider.GetSchema("string");
+
+        Assert.Equal("string", schema.MainTypeKey);
+        Assert.Contains(schema.Properties, property => property.Name == "regex" && property.ValueType == "string" && !property.Deprecated);
+        Assert.Contains(schema.Properties, property => property.Name == "pattern" && property.Deprecated && property.AliasOf == "regex");
+    }
+
+    [Fact]
+    public void ValidationSchemaProvider_ShouldExposeNestedElementSchemaForList()
+    {
+        var schema = LightyValidationSchemaProvider.GetSchema("List<string>");
+
+        Assert.Equal("List", schema.MainTypeKey);
+        var nested = Assert.Single(schema.NestedSchemas, entry => entry.PropertyName == "elementValidation");
+        Assert.Equal("string", nested.Schema.MainTypeKey);
+        Assert.Contains(nested.Schema.Properties, property => property.Name == "regex");
+    }
+
+    [Fact]
+    public void ValidationSchemaProvider_ShouldExposeKeyAndValueSchemaForDictionary()
+    {
+        var schema = LightyValidationSchemaProvider.GetSchema("Dictionary<int,string>");
+
+        Assert.Equal("Dictionary", schema.MainTypeKey);
+        Assert.Contains(schema.NestedSchemas, entry => entry.PropertyName == "keyValidation" && entry.Schema.MainTypeKey == "int");
+        Assert.Contains(schema.NestedSchemas, entry => entry.PropertyName == "valueValidation" && entry.Schema.MainTypeKey == "string");
+    }
+
     private static IReadOnlyDictionary<string, JsonElement> CreateAttributes(string key, string value)
     {
         return new Dictionary<string, JsonElement>

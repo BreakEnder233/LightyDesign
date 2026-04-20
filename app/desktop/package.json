@@ -1,7 +1,7 @@
 {
     "name": "lightydesign-desktop",
     "private": true,
-    "version": "0.2.6",
+    "version": "0.2.7",
     "description": "LightyDesign desktop shell built with Electron and Vite",
     "author": "BreakEnder233",
     "homepage": "https://github.com/BreakEnder233/LightyDesign/releases/latest",

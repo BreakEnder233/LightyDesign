@@ -2084,7 +2084,7 @@ static object ToSheetMetadataResponse(string? workbookName, LightySheet sheet)
     };
 }
 
-static object ToSheetNavigationResponse(string workbookName, string workbookDirectoryPath, LightySheet sheet)
+static object ToSheetNavigationResponse(string workbookName, string workbookDirectory, LightySheet sheet)
 {
     return new
     {
@@ -2094,7 +2094,7 @@ static object ToSheetNavigationResponse(string workbookName, string workbookDire
         sheet.HeaderFilePath,
         rowCount = sheet.RowCount,
         columnCount = sheet.Header.Count,
-        alias = ReadAliasFromConfig(Path.Combine(workbookDirectoryPath, $"{sheet.Name}_config.json")),
+        alias = ReadAliasFromConfig(Path.Combine(workbookDirectory, $"{sheet.Name}_config.json")),
     };
 }
 

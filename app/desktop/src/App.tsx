@@ -1,8 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ColumnEditorDialog } from "./components/ColumnEditorDialog";
+import { CodegenDialog } from "./components/CodegenDialog";
 import { DialogBackdrop } from "./components/DialogBackdrop";
 import { EditorWorkspaceHeader } from "./components/EditorWorkspaceHeader";
+import { FreezeDialog } from "./components/FreezeDialog";
+import { McpConfigDialog } from "./components/McpConfigDialog";
+import { NameInputDialog } from "./components/NameInputDialog";
 import { ToastCenter } from "./components/ToastCenter";
 import { VirtualSheetTable } from "./components/VirtualSheetTable";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
@@ -13,6 +17,19 @@ import { useToastCenter } from "./hooks/useToastCenter";
 import { useWorkspaceEditor } from "./hooks/useWorkspaceEditor";
 import { buildWorkspaceScopedStorageKey, cloneColumns, getSelectionBounds, type SheetColumn, type SheetSelection, type SheetSelectionRange, type ShortcutBinding } from "./types/desktopApp";
 import { buildAutoFillSeriesGenerator } from "./utils/autoFill";
+import {
+  buildRepeatedFillValue,
+  buildVsCodeMcpConfigJson,
+  clampContextMenuPosition,
+  cloneSheetColumnSnapshot,
+  formatByteSize,
+  formatSelectionAddress,
+  getMcpRuntimeStatusLabel,
+  measureTextWidth,
+  normalizeMcpConfigPath,
+  parseClipboardMatrix,
+  tryGetWorkspaceRelativePath,
+} from "./utils/appHelpers";
 
 type CopiedSelectionSnapshot = {
   matrix: string[][];
@@ -30,51 +47,6 @@ type ToolbarMenuId = "file" | "edit" | "table" | "ai" | "help";
 type CodegenDialogMode = "single" | "all";
 type McpConfigTargetClient = "vscode";
 
-function normalizeMcpConfigPath(pathValue: string) {
-  const trimmedValue = pathValue.trim();
-  if (!trimmedValue) {
-    return "/mcp";
-  }
-
-  return trimmedValue.startsWith("/") ? trimmedValue : `/${trimmedValue}`;
-}
-
-function buildVsCodeMcpConfigJson(serverUrl: string) {
-  return JSON.stringify(
-    {
-      servers: {
-        lightydesign: {
-          type: "http",
-          url: serverUrl,
-        },
-      },
-    },
-    null,
-    2,
-  );
-}
-
-function getMcpRuntimeStatusLabel(mcpPreferences: McpPreferences | null) {
-  if (!mcpPreferences) {
-    return "状态未知";
-  }
-
-  if (!mcpPreferences.enabled) {
-    return "已关闭";
-  }
-
-  switch (mcpPreferences.runtimeStatus) {
-    case "running":
-      return "运行中";
-    case "starting":
-      return "启动中";
-    case "error":
-      return "启动失败";
-    default:
-      return "已关闭";
-  }
-}
-
 const defaultColumnWidth = 140;
 const minColumnWidth = 88;
 const maxColumnWidth = 520;
@@ -82,158 +54,6 @@ const columnWidthSampleLimit = 200;
 const contextMenuViewportMargin = 8;
 const selectionContextRowPreviewLimit = 50;
 const selectionContextColumnPreviewLimit = 20;
-
-let textMeasureCanvas: HTMLCanvasElement | null = null;
-
-function measureTextWidth(text: string, font = '12px "Segoe UI Variable Text", "Microsoft YaHei UI", sans-serif') {
-  if (typeof document === "undefined") {
-    return text.length * 8;
-  }
-
-  if (!textMeasureCanvas) {
-    textMeasureCanvas = document.createElement("canvas");
-  }
-
-  const context = textMeasureCanvas.getContext("2d");
-  if (!context) {
-    return text.length * 8;
-  }
-
-  context.font = font;
-  return context.measureText(text).width;
-}
-
-function getExcelColumnName(columnIndex: number) {
-  let current = columnIndex + 1;
-  let label = "";
-
-  while (current > 0) {
-    const remainder = (current - 1) % 26;
-    label = String.fromCharCode(65 + remainder) + label;
-    current = Math.floor((current - 1) / 26);
-  }
-
-  return label;
-}
-
-function formatSelectionAddress(range: SheetSelectionRange) {
-  const bounds = getSelectionBounds(range);
-  const startAddress = `${getExcelColumnName(bounds.startColumnIndex)}${bounds.startRowIndex + 1}`;
-  const endAddress = `${getExcelColumnName(bounds.endColumnIndex)}${bounds.endRowIndex + 1}`;
-
-  return startAddress === endAddress ? startAddress : `${startAddress}:${endAddress}`;
-}
-
-function parseClipboardMatrix(clipboardText: string) {
-  const normalizedText = clipboardText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const rows = normalizedText.split("\n");
-
-  if (rows.at(-1) === "") {
-    rows.pop();
-  }
-
-  return rows.map((row) => row.split("\t"));
-}
-
-function getPositiveModulo(value: number, divisor: number) {
-  return ((value % divisor) + divisor) % divisor;
-}
-
-function buildRepeatedFillValue(sourceMatrix: string[][], sourceStartVisibleIndex: number, visibleRowIndex: number, startColumnIndex: number, columnIndex: number) {
-  const sourceRowCount = sourceMatrix.length;
-  const sourceColumnCount = sourceMatrix[0]?.length ?? 0;
-  if (sourceRowCount <= 0 || sourceColumnCount <= 0) {
-    return "";
-  }
-
-  const sourceRowOffset = getPositiveModulo(visibleRowIndex - sourceStartVisibleIndex, sourceRowCount);
-  const sourceColumnOffset = getPositiveModulo(columnIndex - startColumnIndex, sourceColumnCount);
-  return sourceMatrix[sourceRowOffset]?.[sourceColumnOffset] ?? "";
-}
-
-function normalizeDirectoryPath(path: string) {
-  return path.replace(/[\\/]+/g, "\\").replace(/[\\/]+$/, "");
-}
-
-function tryGetWorkspaceRelativePath(workspaceRoot: string, absolutePath: string) {
-  const normalizedWorkspaceRoot = normalizeDirectoryPath(workspaceRoot);
-  const normalizedAbsolutePath = normalizeDirectoryPath(absolutePath);
-  const workspaceRootSegments = normalizedWorkspaceRoot.split("\\").filter((segment) => segment.length > 0);
-  const absolutePathSegments = normalizedAbsolutePath.split("\\").filter((segment) => segment.length > 0);
-
-  if (workspaceRootSegments.length === 0 || absolutePathSegments.length === 0) {
-    return null;
-  }
-
-  if (workspaceRootSegments[0]?.toLowerCase() !== absolutePathSegments[0]?.toLowerCase()) {
-    return null;
-  }
-
-  if (normalizedAbsolutePath.toLowerCase() === normalizedWorkspaceRoot.toLowerCase()) {
-    return "";
-  }
-
-  let sharedLength = 0;
-  const maxSharedLength = Math.min(workspaceRootSegments.length, absolutePathSegments.length);
-
-  while (
-    sharedLength < maxSharedLength &&
-    workspaceRootSegments[sharedLength]?.toLowerCase() === absolutePathSegments[sharedLength]?.toLowerCase()
-  ) {
-    sharedLength += 1;
-  }
-
-  const upwardSegments = Array.from({ length: workspaceRootSegments.length - sharedLength }, () => "..");
-  const downwardSegments = absolutePathSegments.slice(sharedLength);
-  return [...upwardSegments, ...downwardSegments].join("/");
-}
-
-function formatByteSize(byteCount: number | null | undefined) {
-  if (!byteCount || byteCount <= 0) {
-    return null;
-  }
-
-  const units = ["B", "KB", "MB", "GB"];
-  let value = byteCount;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  const digits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(digits)} ${units[unitIndex]}`;
-}
-
-function clampContextMenuPosition(
-  x: number,
-  y: number,
-  menuWidth: number,
-  menuHeight: number,
-  containerRect?: DOMRect | null,
-) {
-  const boundsLeft = containerRect?.left ?? 0;
-  const boundsTop = containerRect?.top ?? 0;
-  const boundsRight = containerRect?.right ?? window.innerWidth;
-  const boundsBottom = containerRect?.bottom ?? window.innerHeight;
-  const minLeft = boundsLeft + contextMenuViewportMargin;
-  const minTop = boundsTop + contextMenuViewportMargin;
-  const maxLeft = Math.max(minLeft, boundsRight - menuWidth - contextMenuViewportMargin);
-  const maxTop = Math.max(minTop, boundsBottom - menuHeight - contextMenuViewportMargin);
-
-  return {
-    x: Math.min(Math.max(x, minLeft), maxLeft),
-    y: Math.min(Math.max(y, minTop), maxTop),
-  };
-}
-
-function cloneSheetColumnSnapshot(column: SheetColumn): SheetColumn {
-  return {
-    ...column,
-    attributes: { ...column.attributes },
-  };
-}
 
 function App() {
   const appShellRef = useRef<HTMLDivElement | null>(null);
@@ -2700,245 +2520,80 @@ function App() {
 
   return (
     <div className="app-shell" ref={appShellRef}>
-      {isCreateWorkspaceDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateWorkspaceDialog}>
-          <div
-            aria-label="新建工作区"
-            aria-modal="true"
-            className="workspace-create-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">新建工作区</p>
-              </div>
-            </div>
+      <NameInputDialog
+        ariaLabel="新建工作区"
+        inputLabel="工作区文件夹名称"
+        isOpen={isCreateWorkspaceDialogOpen}
+        onChange={setNewWorkspaceName}
+        onClose={handleCloseCreateWorkspaceDialog}
+        onSubmit={handleConfirmCreateWorkspace}
+        pathLabel="父目录"
+        pathValue={createWorkspaceParentDirectoryPath}
+        placeholder="例如 GameData"
+        submitLabel="创建并打开"
+        title="新建工作区"
+        value={newWorkspaceName}
+      />
 
-            <div className="workspace-create-body">
-              <p className="workspace-create-path-label">父目录</p>
-              <p className="workspace-create-path-value">{createWorkspaceParentDirectoryPath}</p>
+      <NameInputDialog
+        ariaLabel="新建工作簿"
+        inputLabel="工作簿名称"
+        isOpen={isCreateWorkbookDialogOpen}
+        onChange={setNewWorkbookName}
+        onClose={handleCloseCreateWorkbookDialog}
+        onSubmit={handleConfirmCreateWorkbook}
+        pathLabel="当前工作区"
+        pathValue={workspacePath || "尚未选择工作区"}
+        placeholder="例如 Item"
+        submitLabel="创建并打开"
+        title="新建工作簿"
+        value={newWorkbookName}
+      />
 
-              <label className="search-field workspace-create-name-field">
-                <span>工作区文件夹名称</span>
-                <input
-                  autoFocus
-                  onChange={(event) => setNewWorkspaceName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleConfirmCreateWorkspace();
-                    }
-                  }}
-                  placeholder="例如 GameData"
-                  type="text"
-                  value={newWorkspaceName}
-                />
-              </label>
-            </div>
+      <NameInputDialog
+        ariaLabel="编辑工作簿别名"
+        inputLabel="别名（留空可移除）"
+        isOpen={isEditWorkbookAliasDialogOpen}
+        onChange={setEditWorkbookAliasValue}
+        onClose={handleCloseEditWorkbookAliasDialog}
+        onSubmit={handleConfirmEditWorkbookAlias}
+        pathLabel="工作簿"
+        pathValue={editWorkbookAliasTarget ?? ""}
+        placeholder="例如 Items"
+        submitLabel="保存"
+        title="编辑工作簿别名"
+        value={editWorkbookAliasValue}
+      />
 
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseCreateWorkspaceDialog} type="button">
-                取消
-              </button>
-              <button className="primary-button" onClick={() => void handleConfirmCreateWorkspace()} type="button">
-                创建并打开
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
+      <NameInputDialog
+        ariaLabel="新建表格"
+        inputLabel="表格名称"
+        isOpen={isCreateSheetDialogOpen}
+        onChange={setNewSheetName}
+        onClose={handleCloseCreateSheetDialog}
+        onSubmit={handleConfirmCreateSheet}
+        pathLabel="所属工作簿"
+        pathValue={sheetDialogWorkbookName ?? "未选择工作簿"}
+        placeholder="例如 Consumable"
+        submitLabel="创建并打开"
+        title="新建表格"
+        value={newSheetName}
+      />
 
-      {isCreateWorkbookDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateWorkbookDialog}>
-          <div
-            aria-label="新建工作簿"
-            aria-modal="true"
-            className="workspace-create-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">新建工作簿</p>
-              </div>
-            </div>
-
-            <div className="workspace-create-body">
-              <p className="workspace-create-path-label">当前工作区</p>
-              <p className="workspace-create-path-value">{workspacePath || "尚未选择工作区"}</p>
-
-              <label className="search-field workspace-create-name-field">
-                <span>工作簿名称</span>
-                <input
-                  autoFocus
-                  onChange={(event) => setNewWorkbookName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleConfirmCreateWorkbook();
-                    }
-                  }}
-                  placeholder="例如 Item"
-                  type="text"
-                  value={newWorkbookName}
-                />
-              </label>
-            </div>
-
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseCreateWorkbookDialog} type="button">
-                取消
-              </button>
-              <button className="primary-button" onClick={() => void handleConfirmCreateWorkbook()} type="button">
-                创建并打开
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
-
-      {isEditWorkbookAliasDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseEditWorkbookAliasDialog}>
-          <div
-            aria-label="编辑工作簿别名"
-            aria-modal="true"
-            className="workspace-create-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">编辑工作簿别名</p>
-              </div>
-            </div>
-
-            <div className="workspace-create-body">
-              <p className="workspace-create-path-label">工作簿</p>
-              <p className="workspace-create-path-value">{editWorkbookAliasTarget ?? ""}</p>
-
-              <label className="search-field workspace-create-name-field">
-                <span>别名（留空可移除）</span>
-                <input
-                  autoFocus
-                  onChange={(event) => setEditWorkbookAliasValue(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleConfirmEditWorkbookAlias();
-                    }
-                  }}
-                  placeholder="例如 Items"
-                  type="text"
-                  value={editWorkbookAliasValue}
-                />
-              </label>
-            </div>
-
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseEditWorkbookAliasDialog} type="button">
-                取消
-              </button>
-              <button className="primary-button" onClick={() => void handleConfirmEditWorkbookAlias()} type="button">
-                保存
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
-
-      {isCreateSheetDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCreateSheetDialog}>
-          <div
-            aria-label="新建表格"
-            aria-modal="true"
-            className="workspace-create-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">新建表格</p>
-              </div>
-            </div>
-
-            <div className="workspace-create-body">
-              <p className="workspace-create-path-label">所属工作簿</p>
-              <p className="workspace-create-path-value">{sheetDialogWorkbookName ?? "未选择工作簿"}</p>
-
-              <label className="search-field workspace-create-name-field">
-                <span>表格名称</span>
-                <input
-                  autoFocus
-                  onChange={(event) => setNewSheetName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleConfirmCreateSheet();
-                    }
-                  }}
-                  placeholder="例如 Consumable"
-                  type="text"
-                  value={newSheetName}
-                />
-              </label>
-            </div>
-
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseCreateSheetDialog} type="button">
-                取消
-              </button>
-              <button className="primary-button" onClick={() => void handleConfirmCreateSheet()} type="button">
-                创建并打开
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
-
-      {isEditSheetAliasDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseEditSheetAliasDialog}>
-          <div
-            aria-label="编辑表格别名"
-            aria-modal="true"
-            className="workspace-create-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">编辑表格别名</p>
-              </div>
-            </div>
-
-            <div className="workspace-create-body">
-              <p className="workspace-create-path-label">表格</p>
-              <p className="workspace-create-path-value">{editSheetAliasTarget ? `${editSheetAliasTarget.workbookName} / ${editSheetAliasTarget.sheetName}` : ""}</p>
-
-              <label className="search-field workspace-create-name-field">
-                <span>别名（留空可移除）</span>
-                <input
-                  autoFocus
-                  onChange={(event) => setEditSheetAliasValue(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleConfirmEditSheetAlias();
-                    }
-                  }}
-                  placeholder="例如 Consumables"
-                  type="text"
-                  value={editSheetAliasValue}
-                />
-              </label>
-            </div>
-
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseEditSheetAliasDialog} type="button">
-                取消
-              </button>
-              <button className="primary-button" onClick={() => void handleConfirmEditSheetAlias()} type="button">
-                保存
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
+      <NameInputDialog
+        ariaLabel="编辑表格别名"
+        inputLabel="别名（留空可移除）"
+        isOpen={isEditSheetAliasDialogOpen}
+        onChange={setEditSheetAliasValue}
+        onClose={handleCloseEditSheetAliasDialog}
+        onSubmit={handleConfirmEditSheetAlias}
+        pathLabel="表格"
+        pathValue={editSheetAliasTarget ? `${editSheetAliasTarget.workbookName} / ${editSheetAliasTarget.sheetName}` : ""}
+        placeholder="例如 Consumables"
+        submitLabel="保存"
+        title="编辑表格别名"
+        value={editSheetAliasValue}
+      />
 
       {isDotnetMissingModalOpen ? (
         <DialogBackdrop className="workspace-create-backdrop" onClose={() => setIsDotnetMissingModalOpen(false)}>
@@ -2990,328 +2645,81 @@ function App() {
         </DialogBackdrop>
       ) : null}
 
-      {isRenameSheetDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseRenameSheetDialog}>
-          <div
-            aria-label="重命名表格"
-            aria-modal="true"
-            className="workspace-create-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">重命名表格</p>
-              </div>
-            </div>
+      <NameInputDialog
+        ariaLabel="重命名表格"
+        inputLabel="新名称"
+        inputRef={renameSheetInputRef}
+        isOpen={isRenameSheetDialogOpen}
+        onChange={setRenameSheetName}
+        onClose={handleCloseRenameSheetDialog}
+        onSubmit={handleConfirmRenameSheet}
+        pathLabel="目标"
+        pathValue={renameSheetTarget ? `${renameSheetTarget.workbookName} / ${renameSheetTarget.sheetName}` : "未选择表格"}
+        placeholder="例如 Consumable"
+        selectOnFocus
+        submitLabel="应用重命名"
+        title="重命名表格"
+        value={renameSheetName}
+      />
 
-            <div className="workspace-create-body">
-              <p className="workspace-create-path-label">目标</p>
-              <p className="workspace-create-path-value">
-                {renameSheetTarget ? `${renameSheetTarget.workbookName} / ${renameSheetTarget.sheetName}` : "未选择表格"}
-              </p>
+      <CodegenDialog
+        bridgeError={bridgeError}
+        canChooseWorkspaceDirectory={canChooseWorkspaceDirectory}
+        inputRef={codegenOutputInputRef}
+        isOpen={isCodegenDialogOpen}
+        mode={codegenDialogMode}
+        onChooseOutputDirectory={handleChooseCodegenOutputDirectory}
+        onClose={handleCloseCodegenDialog}
+        onExportAll={handleConfirmExportAllWorkbookCode}
+        onExportSingle={handleExportWorkbookCode}
+        onOutputPathChange={setCodegenOutputRelativePath}
+        onSaveConfig={handleSaveWorkspaceCodegenConfig}
+        outputRelativePath={codegenOutputRelativePath}
+        workspacePath={workspacePath ?? ""}
+      />
 
-              <label className="search-field workspace-create-name-field">
-                <span>新名称</span>
-                <input
-                  autoFocus
-                  ref={renameSheetInputRef}
-                  onChange={(event) => setRenameSheetName(event.target.value)}
-                  onFocus={(event) => event.currentTarget.select()}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleConfirmRenameSheet();
-                    }
-                  }}
-                  placeholder="例如 Consumable"
-                  type="text"
-                  value={renameSheetName}
-                />
-              </label>
-            </div>
+      <FreezeDialog
+        activeSheetLabel={activeTab ? `${activeTab.workbookName} / ${activeTab.sheetName}` : "尚未打开表格"}
+        freezeColumnCount={freezeDialogColumnCount}
+        freezeRowCount={freezeDialogRowCount}
+        isOpen={isFreezeDialogOpen}
+        onClose={handleCloseFreezeDialog}
+        onConfirm={handleConfirmFreezeDialog}
+        onFreezeColumnCountChange={setFreezeDialogColumnCount}
+        onFreezeRowCountChange={setFreezeDialogRowCount}
+        onReset={() => {
+          setFreezeDialogRowCount(0);
+          setFreezeDialogColumnCount(0);
+        }}
+        visibleColumnCount={activeSheetColumns.length}
+        visibleRowCount={filteredRowEntries.length}
+      />
 
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseRenameSheetDialog} type="button">
-                取消
-              </button>
-              <button className="primary-button" onClick={() => void handleConfirmRenameSheet()} type="button">
-                应用重命名
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
-
-      {isCodegenDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseCodegenDialog}>
-          <div
-            aria-label={codegenDialogMode === "all" ? "导出全部工作簿代码" : "导出工作簿代码"}
-            aria-modal="true"
-            className="workspace-create-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">{codegenDialogMode === "all" ? "导出全部工作簿代码" : "导出工作簿代码"}</p>
-              </div>
-            </div>
-
-            <div className="workspace-create-body">
-              <label className="search-field workspace-create-name-field">
-                <span>输出相对路径</span>
-                <input
-                  ref={codegenOutputInputRef}
-                  onChange={(event) => setCodegenOutputRelativePath(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void (codegenDialogMode === "all" ? handleConfirmExportAllWorkbookCode() : handleExportWorkbookCode());
-                    }
-                  }}
-                  placeholder="例如 Generated/Config 或 ../Shared/Generated"
-                  type="text"
-                  value={codegenOutputRelativePath}
-                />
-              </label>
-
-              <div className="action-grid compact-grid codegen-dialog-actions">
-                <button
-                  className="secondary-button"
-                  disabled={!canChooseWorkspaceDirectory || !workspacePath}
-                  onClick={() => void handleChooseCodegenOutputDirectory()}
-                  title={canChooseWorkspaceDirectory ? "选择与工作区同盘符的输出目录" : bridgeError ?? "当前环境不支持原生目录选择"}
-                  type="button"
-                >
-                  选择文件夹
-                </button>
-              </div>
-
-              <p className="workspace-create-path-label codegen-dialog-caption">
-                路径相对于工作区根目录，可以使用 ../ 输出到工作区外；点击导出时会先保存工作区级配置，再执行导出。
-              </p>
-            </div>
-
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseCodegenDialog} type="button">
-                取消
-              </button>
-              <button className="secondary-button" onClick={() => void handleSaveWorkspaceCodegenConfig()} type="button">
-                保存配置
-              </button>
-              <button
-                className="primary-button"
-                onClick={() => void (codegenDialogMode === "all" ? handleConfirmExportAllWorkbookCode() : handleExportWorkbookCode())}
-                type="button"
-              >
-                {codegenDialogMode === "all" ? "导出全部代码" : "导出代码"}
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
-
-      {isFreezeDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseFreezeDialog}>
-          <div
-            aria-label="设置冻结行列"
-            aria-modal="true"
-            className="workspace-create-dialog freeze-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">设置冻结行列</p>
-              </div>
-            </div>
-
-            <div className="workspace-create-body freeze-dialog-body">
-              <p className="workspace-create-path-label">当前表格</p>
-              <p className="workspace-create-path-value">{activeTab ? `${activeTab.workbookName} / ${activeTab.sheetName}` : "尚未打开表格"}</p>
-
-              <div className="freeze-dialog-grid">
-                <label className="search-field freeze-dialog-field">
-                  <span>冻结行数</span>
-                  <input
-                    max={filteredRowEntries.length}
-                    min={0}
-                    onChange={(event) => setFreezeDialogRowCount(Math.max(0, Number.parseInt(event.target.value || "0", 10) || 0))}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        handleConfirmFreezeDialog();
-                      }
-                    }}
-                    type="number"
-                    value={freezeDialogRowCount}
-                  />
-                </label>
-
-                <label className="search-field freeze-dialog-field">
-                  <span>冻结列数</span>
-                  <input
-                    max={activeSheetColumns.length}
-                    min={0}
-                    onChange={(event) => setFreezeDialogColumnCount(Math.max(0, Number.parseInt(event.target.value || "0", 10) || 0))}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        handleConfirmFreezeDialog();
-                      }
-                    }}
-                    type="number"
-                    value={freezeDialogColumnCount}
-                  />
-                </label>
-              </div>
-
-              <p className="workspace-create-path-label codegen-dialog-caption">
-                当前可见数据共有 {filteredRowEntries.length} 行、{activeSheetColumns.length} 列。输入 0 表示不冻结对应方向。
-              </p>
-            </div>
-
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseFreezeDialog} type="button">
-                取消
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => {
-                  setFreezeDialogRowCount(0);
-                  setFreezeDialogColumnCount(0);
-                }}
-                type="button"
-              >
-                清空
-              </button>
-              <button className="primary-button" onClick={handleConfirmFreezeDialog} type="button">
-                应用冻结
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
-
-      {isMcpConfigDialogOpen ? (
-        <DialogBackdrop className="workspace-create-backdrop" onClose={handleCloseMcpConfigDialog}>
-          <div
-            aria-label="MCP 服务配置"
-            aria-modal="true"
-            className="workspace-create-dialog mcp-config-dialog"
-            role="dialog"
-          >
-            <div className="workspace-create-header">
-              <div>
-                <p className="eyebrow">MCP 服务配置</p>
-              </div>
-            </div>
-
-            <div className="workspace-create-body mcp-config-body">
-              <p className="workspace-create-path-label">当前状态</p>
-              <p className="workspace-create-path-value">{mcpStatusLabel}</p>
-
-              <p className="workspace-create-path-label">服务地址</p>
-              <p className="workspace-create-path-value">{mcpConfigPreviewUrl || "请输入有效端口"}</p>
-
-              <div className="mcp-config-settings-grid">
-                <label className="search-field mcp-config-field">
-                  <span>监听主机</span>
-                  <input readOnly type="text" value={mcpPreferences?.serverHost ?? "127.0.0.1"} />
-                </label>
-
-                <label className="search-field mcp-config-field">
-                  <span>监听端口</span>
-                  <input
-                    inputMode="numeric"
-                    onChange={(event) => setMcpConfigPortInput(event.target.value)}
-                    placeholder="39231"
-                    type="text"
-                    value={mcpConfigPortInput}
-                  />
-                </label>
-              </div>
-
-              <label className="search-field mcp-config-field">
-                <span>HTTP 路径</span>
-                <input
-                  onChange={(event) => setMcpConfigPathInput(event.target.value)}
-                  placeholder="/mcp"
-                  type="text"
-                  value={mcpConfigPathInput}
-                />
-              </label>
-
-              <div className="action-grid compact-grid mcp-config-action-grid">
-                <button className="secondary-button" onClick={() => void handleAutoFindAvailableMcpPort()} type="button">
-                  自动查找可用端口
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={isSavingMcpConfiguration || isStartingMcpFromDialog}
-                  onClick={() => void handleSaveMcpConfiguration()}
-                  type="button"
-                >
-                  保存配置
-                </button>
-              </div>
-
-              {mcpConfigErrorMessage || mcpPreferences?.lastStartError ? (
-                <p className="column-editor-error">
-                  {mcpConfigErrorMessage ?? mcpPreferences?.lastStartError}
-                </p>
-              ) : null}
-
-              <p className="workspace-create-path-label">目标客户端</p>
-              <div className="action-grid compact-grid mcp-config-client-grid">
-                <button
-                  className={`secondary-button mcp-config-client-button${mcpConfigTargetClient === "vscode" ? " is-active" : ""}`}
-                  onClick={() => handleSelectMcpConfigTargetClient("vscode")}
-                  type="button"
-                >
-                  VS Code
-                </button>
-              </div>
-
-              <p className="workspace-create-path-label codegen-dialog-caption">
-                当前仅支持 VS Code。配置保存后会写入用户偏好；正常关闭 Electron 时，LightyDesign 会一并关闭本地 MCP HTTP 服务。
-              </p>
-
-              {mcpConfigTargetClient ? (
-                <label className="search-field mcp-config-field">
-                  <span>配置 JSON</span>
-                  <textarea
-                    className="dialog-field-textarea column-editor-textarea mcp-config-textarea"
-                    readOnly
-                    ref={mcpConfigTextareaRef}
-                    value={mcpConfigPreviewJson}
-                  />
-                </label>
-              ) : null}
-            </div>
-
-            <div className="workspace-create-actions">
-              <button className="secondary-button" onClick={handleCloseMcpConfigDialog} type="button">
-                关闭
-              </button>
-              <button
-                className="secondary-button"
-                disabled={isSavingMcpConfiguration || isStartingMcpFromDialog || !hasValidMcpConfigPort}
-                onClick={() => void handleStartMcpFromConfigurationDialog()}
-                type="button"
-              >
-                {mcpPreferences?.enabled ? "按当前配置重启" : "保存并尝试启动"}
-              </button>
-              <button
-                className="primary-button"
-                disabled={!mcpConfigPreviewJson}
-                onClick={() => void handleCopyMcpConfigJson()}
-                type="button"
-              >
-                复制 JSON
-              </button>
-            </div>
-          </div>
-        </DialogBackdrop>
-      ) : null}
+      <McpConfigDialog
+        errorMessage={mcpConfigErrorMessage}
+        hasValidPort={hasValidMcpConfigPort}
+        isEnabled={mcpPreferences?.enabled ?? false}
+        isOpen={isMcpConfigDialogOpen}
+        isSaving={isSavingMcpConfiguration}
+        isStarting={isStartingMcpFromDialog}
+        lastStartError={mcpPreferences?.lastStartError ?? null}
+        onAutoFindPort={handleAutoFindAvailableMcpPort}
+        onClose={handleCloseMcpConfigDialog}
+        onCopyJson={handleCopyMcpConfigJson}
+        onPathInputChange={setMcpConfigPathInput}
+        onPortInputChange={setMcpConfigPortInput}
+        onSave={handleSaveMcpConfiguration}
+        onSelectTargetClient={handleSelectMcpConfigTargetClient}
+        onStart={handleStartMcpFromConfigurationDialog}
+        pathInput={mcpConfigPathInput}
+        portInput={mcpConfigPortInput}
+        previewJson={mcpConfigPreviewJson}
+        previewUrl={mcpConfigPreviewUrl}
+        serverHost={mcpPreferences?.serverHost ?? "127.0.0.1"}
+        statusLabel={mcpStatusLabel}
+        targetClient={mcpConfigTargetClient}
+        textareaRef={mcpConfigTextareaRef}
+      />
 
       <ToastCenter
         onCloseSelectedToast={() => setSelectedErrorToastId(null)}

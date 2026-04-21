@@ -22,7 +22,7 @@ public static class LightyWorkbookScaffolder
         }
 
         var trimmedWorkbookName = workbookName.Trim();
-        var workbookDirectoryPath = Path.Combine(workspacePath, trimmedWorkbookName);
+        var workbookDirectoryPath = LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspacePath, trimmedWorkbookName);
         if (Directory.Exists(workbookDirectoryPath) || File.Exists(workbookDirectoryPath))
         {
             throw new LightyCoreException($"Workbook '{trimmedWorkbookName}' already exists.");
@@ -86,7 +86,7 @@ public static class LightyWorkbookScaffolder
             throw new LightyCoreException("Workbook name cannot be empty.");
         }
 
-        var workbookDirectoryPath = Path.Combine(workspacePath, workbookName.Trim());
+        var workbookDirectoryPath = LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspacePath, workbookName.Trim());
         if (!Directory.Exists(workbookDirectoryPath))
         {
             throw new LightyCoreException($"Workbook '{workbookName.Trim()}' was not found.");

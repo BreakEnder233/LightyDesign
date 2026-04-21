@@ -194,7 +194,12 @@ public class UnitTest1
             Assert.True(Directory.Exists(workspaceRoot));
             Assert.True(File.Exists(Path.Combine(workspaceRoot, "config.json")));
             Assert.True(File.Exists(Path.Combine(workspaceRoot, "headers.json")));
+            Assert.True(Directory.Exists(Path.Combine(workspaceRoot, LightyWorkspacePathLayout.WorkbooksDirectoryName)));
+            Assert.True(Directory.Exists(Path.Combine(workspaceRoot, LightyWorkspacePathLayout.FlowChartsDirectoryName, LightyWorkspacePathLayout.FlowChartNodesDirectoryName)));
+            Assert.True(Directory.Exists(Path.Combine(workspaceRoot, LightyWorkspacePathLayout.FlowChartsDirectoryName, LightyWorkspacePathLayout.FlowChartFilesDirectoryName)));
             Assert.Empty(workspace.Workbooks);
+            Assert.Empty(workspace.FlowChartNodeDefinitions);
+            Assert.Empty(workspace.FlowChartFiles);
             Assert.Equal(LightyHeaderTypes.DefaultWorkspaceHeaderTypes, workspace.HeaderLayout.Rows.Select(row => row.HeaderType).ToArray());
         }
         finally
@@ -226,7 +231,7 @@ public class UnitTest1
                 }
                 """);
 
-            var workbookPath = Path.Combine(workspaceRoot, "Item");
+            var workbookPath = LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item");
             Directory.CreateDirectory(workbookPath);
 
             File.WriteAllText(

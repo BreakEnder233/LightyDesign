@@ -14,8 +14,10 @@ public static class LightyWorkbookWriter
         ArgumentNullException.ThrowIfNull(workbook);
 
         Directory.CreateDirectory(workspacePath);
+        var workbooksRootPath = LightyWorkspacePathLayout.GetWorkbooksRootPath(workspacePath);
+        Directory.CreateDirectory(workbooksRootPath);
 
-        var workbookDirectory = Path.Combine(workspacePath, workbook.Name);
+        var workbookDirectory = LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspacePath, workbook.Name);
         Directory.CreateDirectory(workbookDirectory);
 
         var codegenConfigFilePath = string.IsNullOrWhiteSpace(workspaceCodegenConfigFilePath)

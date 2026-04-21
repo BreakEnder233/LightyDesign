@@ -24,13 +24,27 @@ public static class LightyWorkspaceLoader
         var codegenOptions = File.Exists(codegenConfigFilePath)
             ? LightyWorkbookCodegenOptionsSerializer.LoadFromFile(codegenConfigFilePath)
             : new LightyWorkbookCodegenOptions();
-        var workbooks = Directory
-            .EnumerateDirectories(rootPath)
-            .Select(workbookDirectory => LoadWorkbook(workbookDirectory, codegenOptions, codegenConfigFilePath))
-            .OrderBy(workbook => workbook.Name, StringComparer.Ordinal)
-            .ToList();
+        var workbooksRootPath = LightyWorkspacePathLayout.GetWorkbooksRootPath(rootPath);
+        var workbooks = Directory.Exists(workbooksRootPath)
+            ? Directory
+                .EnumerateDirectories(workbooksRootPath)
+                .Select(workbookDirectory => LoadWorkbook(workbookDirectory, codegenOptions, codegenConfigFilePath))
+                .OrderBy(workbook => workbook.Name, StringComparer.Ordinal)
+                .ToList()
+            : new List<LightyWorkbook>();
+        var flowChartNodeDefinitions = LightyFlowChartAssetLoader.LoadNodeDefinitions(rootPath);
+        var flowChartFiles = LightyFlowChartAssetLoader.LoadFiles(rootPath);
 
-        return new LightyWorkspace(rootPath, configFilePath, headersFilePath, headerLayout, workbooks, codegenOptions, codegenConfigFilePath);
+        return new LightyWorkspace(
+            rootPath,
+            configFilePath,
+            headersFilePath,
+            headerLayout,
+            workbooks,
+            codegenOptions,
+            codegenConfigFilePath,
+            flowChartNodeDefinitions,
+            flowChartFiles);
     }
 
     private static LightyWorkbook LoadWorkbook(

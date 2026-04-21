@@ -2015,16 +2015,7 @@ static object ToWorkspaceNavigationResponse(LightyWorkspace workspace)
             alias = ReadAliasFromConfig(Path.Combine(workbook.DirectoryPath, "config.json")),
             codegen = ToWorkbookCodegenResponse(workbook),
             sheetCount = workbook.Sheets.Count,
-            sheets = workbook.Sheets.Select(sheet => new
-            {
-                workbookName = workbook.Name,
-                sheet.Name,
-                sheet.DataFilePath,
-                sheet.HeaderFilePath,
-                rowCount = sheet.RowCount,
-                columnCount = sheet.Header.Count,
-                alias = ReadAliasFromConfig(Path.Combine(workbook.DirectoryPath, $"{sheet.Name}_config.json")),
-            }),
+            sheets = workbook.Sheets.Select(sheet => ToSheetNavigationResponse(workbook.Name, workbook.DirectoryPath, sheet)),
         }),
         flowCharts = ToFlowChartCatalogResponse(workspace, includeDocument: false),
     };
@@ -2093,7 +2084,7 @@ static object ToSheetMetadataResponse(string? workbookName, LightySheet sheet)
     };
 }
 
-static object ToSheetNavigationResponse(string workbookName, LightySheet sheet)
+static object ToSheetNavigationResponse(string workbookName, string workbookDirectoryPath, LightySheet sheet)
 {
     return new
     {
@@ -2103,6 +2094,7 @@ static object ToSheetNavigationResponse(string workbookName, LightySheet sheet)
         sheet.HeaderFilePath,
         rowCount = sheet.RowCount,
         columnCount = sheet.Header.Count,
+        alias = ReadAliasFromConfig(Path.Combine(workbookDirectoryPath, $"{sheet.Name}_config.json")),
     };
 }
 
@@ -2128,7 +2120,7 @@ static object ToFlowChartNodeDefinitionResponse(LightyFlowChartAssetDocument doc
         document.Name,
         alias = ReadJsonStringProperty(document.Document, "alias"),
         nodeKind = ReadJsonStringProperty(document.Document, "nodeKind"),
-        document = includeDocument ? document.Document : null,
+        document = includeDocument ? document.Document : (JsonElement?)null,
     };
 }
 
@@ -2141,7 +2133,7 @@ static object ToFlowChartFileResponse(LightyFlowChartAssetDocument document, boo
         document.FilePath,
         name = ReadJsonStringProperty(document.Document, "name") ?? document.Name,
         alias = ReadJsonStringProperty(document.Document, "alias"),
-        document = includeDocument ? document.Document : null,
+        document = includeDocument ? document.Document : (JsonElement?)null,
     };
 }
 

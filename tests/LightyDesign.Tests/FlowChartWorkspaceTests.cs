@@ -129,8 +129,6 @@ public class FlowChartWorkspaceTests
 
     private static string CreateWorkspaceDirectory()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");
-        Directory.CreateDirectory(root);
-        return root;
+        return Path.Combine(Path.GetTempPath(), $"LightyDesign.Tests.{Guid.NewGuid():N}");
     }
 }

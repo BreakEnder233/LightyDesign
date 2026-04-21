@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 
-import { DialogBackdrop } from "./DialogBackdrop";
+import { DialogBackdrop } from "../../components/DialogBackdrop";
 
 type CodegenDialogMode = "single" | "all";
 

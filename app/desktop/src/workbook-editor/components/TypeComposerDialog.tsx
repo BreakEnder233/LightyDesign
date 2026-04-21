@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { DialogBackdrop } from "./DialogBackdrop";
+import { DialogBackdrop } from "../../components/DialogBackdrop";
 
 import type {
   TypeDescriptorResponse,

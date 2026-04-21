@@ -1,4 +1,4 @@
-import type { ToastNotification } from "../types/desktopApp";
+import type { ToastNotification } from "../workbook-editor/types/desktopApp";
 import { DialogBackdrop } from "./DialogBackdrop";
 
 type ToastCenterProps = {

@@ -1,4 +1,4 @@
-import { getSelectionBounds, type SheetColumn, type SheetSelectionRange } from "../types/desktopApp";
+import { getSelectionBounds, type SheetColumn, type SheetSelectionRange } from "../workbook-editor/types/desktopApp";
 
 const contextMenuViewportMargin = 8;
 

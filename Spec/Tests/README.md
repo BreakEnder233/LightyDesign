@@ -18,6 +18,9 @@ Tests 子系统对应 tests/LightyDesign.Tests。它负责验证 Core、Generato
 2. DesktopHost 接口集成测试。
 3. 更完整的复杂值解析测试，例如更严格的 CSV 字符串、复杂字典格式和嵌套泛型场景。
 4. 工作区编辑、保存和增量更新相关测试。
+5. 新工作区目录协议测试，包括 `Workbooks` 与 `FlowCharts` 双根目录。
+6. 流程图节点定义、流程图实例、端口基数和计算回路校验测试。
+7. FlowChart 代码生成与桌面端模式切换相关测试。
 
 ## 当前已覆盖的测试范围
 

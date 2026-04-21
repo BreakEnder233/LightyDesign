@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import type { ShortcutBinding } from "../types/desktopApp";
+import type { ShortcutBinding } from "../workbook-editor/types/desktopApp";
 
 function isShortcutModifierPressed(event: KeyboardEvent) {
   return event.ctrlKey || event.metaKey;

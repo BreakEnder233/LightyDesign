@@ -1,4 +1,4 @@
-import { DialogBackdrop } from "./DialogBackdrop";
+import { DialogBackdrop } from "../../components/DialogBackdrop";
 
 interface FreezeDialogProps {
   isOpen: boolean;

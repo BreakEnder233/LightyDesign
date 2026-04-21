@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { ToastNotification } from "../types/desktopApp";
+import type { ToastNotification } from "../workbook-editor/types/desktopApp";
 
 type AppUpdateState = {
   status: "idle" | "checking" | "available" | "up-to-date" | "unconfigured" | "error";

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ToastNotification } from "../types/desktopApp";
+import type { ToastNotification } from "../workbook-editor/types/desktopApp";
 
 type PushToastInput = Omit<ToastNotification, "id" | "summary" | "timestamp"> & {
   summary?: string;

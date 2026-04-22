@@ -11,6 +11,7 @@ Tests 子系统对应 tests/LightyDesign.Tests。它负责验证 Core、Generato
 3. 已建立对 Core 和 Generator 的引用。
 4. 已完成基础测试运行验证，当前测试项目可被发现并执行。
 5. 已补充 Core 协议层测试，包括表头读取、txt 转义/反转义、引用语法、工作区加载和值解析测试。
+6. 已补充 `Workbooks` / `FlowCharts` 双根目录扫描、工作区初始化目录创建和 FlowChart JSON 写回测试。
 
 ## 当前尚未实现的业务能力
 
@@ -18,9 +19,8 @@ Tests 子系统对应 tests/LightyDesign.Tests。它负责验证 Core、Generato
 2. DesktopHost 接口集成测试。
 3. 更完整的复杂值解析测试，例如更严格的 CSV 字符串、复杂字典格式和嵌套泛型场景。
 4. 工作区编辑、保存和增量更新相关测试。
-5. 新工作区目录协议测试，包括 `Workbooks` 与 `FlowCharts` 双根目录。
-6. 流程图节点定义、流程图实例、端口基数和计算回路校验测试。
-7. FlowChart 代码生成与桌面端模式切换相关测试。
+5. 流程图节点定义、流程图实例、端口基数和计算回路校验测试。
+6. FlowChart 代码生成与桌面端模式切换相关测试。
 
 ## 当前已覆盖的测试范围
 
@@ -32,6 +32,7 @@ Tests 子系统对应 tests/LightyDesign.Tests。它负责验证 Core、Generato
 4. 工作区目录扫描、Sheet 加载和 txt 数据读取。
 5. ColumnDefine 的已知属性访问器和类型描述能力。
 6. 惰性值解析、缓存命中、单元格修改后缓存失效、List/Dictionary/Ref 解析与非法值失败结果。
+7. `Workbooks` / `FlowCharts` 双根目录工作区协议，以及 FlowChart JSON 资产写回与重载。
 
 ## 当前状态结论
 

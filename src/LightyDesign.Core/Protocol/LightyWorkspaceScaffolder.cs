@@ -17,6 +17,9 @@ public static class LightyWorkspaceScaffolder
         var configFilePath = Path.Combine(workspaceRootPath, "config.json");
         var headersFilePath = Path.Combine(workspaceRootPath, "headers.json");
         var codegenConfigFilePath = Path.Combine(workspaceRootPath, LightyWorkbookCodegenOptionsSerializer.DefaultFileName);
+        Directory.CreateDirectory(LightyWorkspacePathLayout.GetWorkbooksRootPath(workspaceRootPath));
+        Directory.CreateDirectory(LightyWorkspacePathLayout.GetFlowChartNodesRootPath(workspaceRootPath));
+        Directory.CreateDirectory(LightyWorkspacePathLayout.GetFlowChartFilesRootPath(workspaceRootPath));
 
         File.WriteAllText(configFilePath, "{}\n");
         WorkspaceHeaderLayoutSerializer.SaveToFile(headersFilePath, resolvedHeaderLayout);

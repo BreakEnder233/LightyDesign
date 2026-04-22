@@ -30,13 +30,13 @@ public class WorkspaceWriteTests
 
             var workbook = new LightyWorkbook(
                 "Item",
-                Path.Combine(workspaceRoot, "Item"),
+                LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item"),
                 new[]
                 {
                     new LightySheet(
                         "Consumable",
-                        Path.Combine(workspaceRoot, "Item", "Consumable.txt"),
-                        Path.Combine(workspaceRoot, "Item", "Consumable_header.json"),
+                        Path.Combine(LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item"), "Consumable.txt"),
+                        Path.Combine(LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item"), "Consumable_header.json"),
                         new LightySheetHeader(new[]
                         {
                             new ColumnDefine(
@@ -58,14 +58,15 @@ public class WorkspaceWriteTests
 
             var headerLayout = WorkspaceHeaderLayoutSerializer.LoadFromFile(Path.Combine(workspaceRoot, "headers.json"));
 
-            Directory.CreateDirectory(Path.Combine(workspaceRoot, "Item"));
-            File.WriteAllText(Path.Combine(workspaceRoot, "Item", "Stale.txt"), "obsolete");
-            File.WriteAllText(Path.Combine(workspaceRoot, "Item", "Stale_header.json"), "{}");
+            var workbookDirectoryPath = LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item");
+            Directory.CreateDirectory(workbookDirectoryPath);
+            File.WriteAllText(Path.Combine(workbookDirectoryPath, "Stale.txt"), "obsolete");
+            File.WriteAllText(Path.Combine(workbookDirectoryPath, "Stale_header.json"), "{}");
 
             LightyWorkbookWriter.Save(workspaceRoot, headerLayout, workbook);
 
-            Assert.False(File.Exists(Path.Combine(workspaceRoot, "Item", "Stale.txt")));
-            Assert.False(File.Exists(Path.Combine(workspaceRoot, "Item", "Stale_header.json")));
+            Assert.False(File.Exists(Path.Combine(workbookDirectoryPath, "Stale.txt")));
+            Assert.False(File.Exists(Path.Combine(workbookDirectoryPath, "Stale_header.json")));
 
             var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
             var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks);
@@ -147,7 +148,7 @@ public class WorkspaceWriteTests
 
             LightyWorkbookScaffolder.Delete(workspaceRoot, "Item");
 
-            Assert.False(Directory.Exists(Path.Combine(workspaceRoot, "Item")));
+            Assert.False(Directory.Exists(LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item")));
             var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
             Assert.Empty(reloadedWorkspace.Workbooks);
         }
@@ -183,24 +184,25 @@ public class WorkspaceWriteTests
         try
         {
             var workspace = LightyWorkspaceScaffolder.Create(workspaceRoot);
+            var workbookDirectory = LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item");
             var workbook = new LightyWorkbook(
                 "Item",
-                Path.Combine(workspaceRoot, "Item"),
-                new[] { LightyWorkbookScaffolder.CreateDefaultSheet(Path.Combine(workspaceRoot, "Item"), "Sheet1") });
+                workbookDirectory,
+                new[] { LightyWorkbookScaffolder.CreateDefaultSheet(workbookDirectory, "Sheet1") });
 
             LightyWorkbookWriter.Save(workspaceRoot, workspace.HeaderLayout, workbook);
 
             var renamedWorkbook = new LightyWorkbook(
                 "Item",
-                Path.Combine(workspaceRoot, "Item"),
-                new[] { LightyWorkbookScaffolder.CreateDefaultSheet(Path.Combine(workspaceRoot, "Item"), "RenamedSheet") });
+                workbookDirectory,
+                new[] { LightyWorkbookScaffolder.CreateDefaultSheet(workbookDirectory, "RenamedSheet") });
 
             LightyWorkbookWriter.Save(workspaceRoot, workspace.HeaderLayout, renamedWorkbook);
 
-            Assert.False(File.Exists(Path.Combine(workspaceRoot, "Item", "Sheet1.txt")));
-            Assert.False(File.Exists(Path.Combine(workspaceRoot, "Item", "Sheet1_header.json")));
-            Assert.True(File.Exists(Path.Combine(workspaceRoot, "Item", "RenamedSheet.txt")));
-            Assert.True(File.Exists(Path.Combine(workspaceRoot, "Item", "RenamedSheet_header.json")));
+            Assert.False(File.Exists(Path.Combine(workbookDirectory, "Sheet1.txt")));
+            Assert.False(File.Exists(Path.Combine(workbookDirectory, "Sheet1_header.json")));
+            Assert.True(File.Exists(Path.Combine(workbookDirectory, "RenamedSheet.txt")));
+            Assert.True(File.Exists(Path.Combine(workbookDirectory, "RenamedSheet_header.json")));
         }
         finally
         {
@@ -219,7 +221,7 @@ public class WorkspaceWriteTests
         try
         {
             var workspace = LightyWorkspaceScaffolder.Create(workspaceRoot);
-            var workbookDirectory = Path.Combine(workspaceRoot, "Item");
+            var workbookDirectory = LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item");
             var workbook = new LightyWorkbook(
                 "Item",
                 workbookDirectory,
@@ -233,6 +235,7 @@ public class WorkspaceWriteTests
             var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks);
 
             Assert.True(File.Exists(Path.Combine(workspaceRoot, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)));
+            Assert.True(Directory.Exists(LightyWorkspacePathLayout.GetWorkbooksRootPath(workspaceRoot)));
             Assert.False(File.Exists(Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)));
             Assert.Equal("Generated/Config", reloadedWorkbook.CodegenOptions.OutputRelativePath);
             Assert.Equal("Generated/Config", reloadedWorkspace.CodegenOptions.OutputRelativePath);

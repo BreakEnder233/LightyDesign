@@ -16,6 +16,7 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 8. 已实现第一版 validation 执行层，支持按主要类型分发规则、导出前校验、手动校验和错误收集。
 9. 已实现 validation schema provider，可按 Type 返回字段说明、默认值、示例和嵌套规则结构。
 10. 已补充覆盖核心模型、协议读取、写回、值解析和 validation 行为的单元测试，并验证解决方案构建与测试通过。
+11. 已落地 `Workbooks` / `FlowCharts` 双根目录路径模型，并支持 FlowChart 节点定义与流程图文件的 JSON 级加载、保存和工作区扫描。
 
 ## 当前尚未实现的业务能力
 
@@ -25,20 +26,20 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 4. 面向 Generator 的更高层字段语义与导出辅助模型。
 5. 面向 DesktopHost 的工作区编辑、保存与增量更新接口。
 6. 更完整的引用解析上下文与更细的诊断模型。
-7. 基于新工作区协议的 `Workbooks` 与 `FlowCharts` 双根目录加载与保存链路。
 
 ## 当前已落地的模型与协议
 
 当前 Core 中已经落地的第一批主干对象包括：
 
-1. `LightyWorkspace`：工作区根模型，持有工作区路径、全局 headers 配置和多个工作簿。
+1. `LightyWorkspace`：工作区根模型，持有工作区路径、全局 headers 配置、工作簿集合和 FlowChart 资产集合。
 2. `LightyWorkbook`：工作簿目录模型，管理多个 `LightySheet`。
 3. `LightySheet`：表模型，持有 `.txt` 数据文件、`_header.json` 表头文件、表头对象和数据行集合。
 4. `LightySheetHeader` 与 `ColumnDefine`：以列定义为中心的 Sheet 表头模型。
 5. `WorkspaceHeaderLayout` 与 `WorkspaceHeaderRowDefinition`：工作区级 headers.json 模型，用于描述表头行语义和全局配置。
 6. `LightyTextCodec`：负责 txt 协议中的转义、反转义、行拆分和列拆分。
 7. `LightyReferenceValue`：负责 `[[...]]` 引用语法的结构化表示。
-8. `LightyWorkbookWriter`：负责把内存中的 workbook 写回工作区文件结构。
+8. `LightyWorkbookWriter`：负责把内存中的 workbook 写回工作区 `Workbooks` 目录结构。
+9. `LightyFlowChartAssetLoader` / `LightyFlowChartAssetWriter`：负责扫描和写回 `FlowCharts/Nodes` 与 `FlowCharts/Files` 下的 JSON 资产。
 
 ## 当前已落地的已知语义
 
@@ -51,12 +52,13 @@ Core 子系统对应 src/LightyDesign.Core。它用于承载 LightyDesign 的核
 
 当前 Core 已具备以下协议能力：
 
-1. 可从磁盘根目录加载一个完整工作区，并自动扫描工作簿和 Sheet。
+1. 可从磁盘根目录加载一个完整工作区，并自动扫描 `Workbooks` 下的工作簿、Sheet 与 `FlowCharts` 下的 JSON 资产。
 2. 可读取工作区级 headers.json。
 3. 可读取 Sheet 级 _header.json，并兼容“列定义格式”和“按语义行描述再投影为列定义”的两种输入形式。
 4. 可读取 txt 数据文件并完成反转义，生成 `LightySheetRow`。
 5. 可按需解析单元格值，当前支持基础标量、List、Dictionary、单引用和引用列表。
-6. 可将 `LightyWorkbook` 写回为工作区目录结构，并清理当前工作簿目录下过期的 sheet 文件。
+6. 可将 `LightyWorkbook` 写回为 `Workbooks` 目录结构，并清理当前工作簿目录下过期的 sheet 文件。
+7. 可按相对路径读取与写回 `FlowCharts/Nodes`、`FlowCharts/Files` 下的 JSON 资产，并阻止目录穿越路径。
 
 ## 当前值解析边界
 

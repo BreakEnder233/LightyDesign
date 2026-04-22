@@ -141,6 +141,196 @@ app.MapGet("/api/workspace/navigation", (string workspacePath) =>
     }
 });
 
+app.MapGet("/api/workspace/flowcharts/navigation", (string workspacePath) =>
+{
+    if (string.IsNullOrWhiteSpace(workspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToFlowChartCatalogResponse(workspace, includeDocument: false));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapGet("/api/workspace/flowcharts/nodes/{**relativePath}", (string relativePath, string workspacePath) =>
+{
+    if (string.IsNullOrWhiteSpace(workspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(relativePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "relativePath is required.",
+        });
+    }
+
+    try
+    {
+        var document = LightyFlowChartAssetLoader.LoadNodeDefinition(workspacePath, relativePath);
+        return Results.Ok(ToFlowChartNodeDefinitionResponse(document, includeDocument: true));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapGet("/api/workspace/flowcharts/files/{**relativePath}", (string relativePath, string workspacePath) =>
+{
+    if (string.IsNullOrWhiteSpace(workspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(relativePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "relativePath is required.",
+        });
+    }
+
+    try
+    {
+        var document = LightyFlowChartAssetLoader.LoadFile(workspacePath, relativePath);
+        return Results.Ok(ToFlowChartFileResponse(document, includeDocument: true));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapGet("/api/workspace/assets/{assetKind}/{**assetPath}", (string assetKind, string assetPath, string workspacePath) =>
+{
+    if (string.IsNullOrWhiteSpace(workspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(assetPath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "assetPath is required.",
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        return assetKind switch
+        {
+            "workbook" => TryReadWorkbookAsset(workspace, assetPath),
+            "sheet" => TryReadSheetAsset(workspace, assetPath),
+            "flowchart-node" => Results.Ok(ToFlowChartNodeDefinitionResponse(LightyFlowChartAssetLoader.LoadNodeDefinition(workspacePath, assetPath), includeDocument: true)),
+            "flowchart-file" => Results.Ok(ToFlowChartFileResponse(LightyFlowChartAssetLoader.LoadFile(workspacePath, assetPath), includeDocument: true)),
+            _ => Results.BadRequest(new
+            {
+                error = $"Unsupported assetKind '{assetKind}'.",
+            }),
+        };
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapGet("/api/workspace/header-properties", (string workspacePath) =>
 {
     if (string.IsNullOrWhiteSpace(workspacePath))
@@ -1632,6 +1822,22 @@ app.MapPost("/api/workspace/workbooks/save", (SaveWorkbookRequest request) =>
     }
 });
 
+app.MapPost("/api/workspace/flowcharts/nodes/save", (SaveFlowChartAssetRequest request) =>
+{
+    return SaveFlowChartAsset(
+        request,
+        (workspacePath, relativePath, document) => LightyFlowChartAssetWriter.SaveNodeDefinition(workspacePath, relativePath, document),
+        ToFlowChartNodeDefinitionResponse);
+});
+
+app.MapPost("/api/workspace/flowcharts/files/save", (SaveFlowChartAssetRequest request) =>
+{
+    return SaveFlowChartAsset(
+        request,
+        (workspacePath, relativePath, document) => LightyFlowChartAssetWriter.SaveFile(workspacePath, relativePath, document),
+        ToFlowChartFileResponse);
+});
+
 app.MapPost("/api/file-process/workbooks/import-excel", async (HttpRequest request) =>
 {
     if (!request.HasFormContentType)
@@ -1681,7 +1887,11 @@ app.MapPost("/api/file-process/workbooks/import-excel", async (HttpRequest reque
         var importer = new LightyWorkbookExcelImporter();
 
         await using var stream = file.OpenReadStream();
-        var workbook = importer.Import(stream, resolvedWorkbookName, headerLayout, Path.Combine(workspacePath, resolvedWorkbookName));
+        var workbook = importer.Import(
+            stream,
+            resolvedWorkbookName,
+            headerLayout,
+            LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspacePath, resolvedWorkbookName));
 
         return Results.Ok(ToWorkbookResponse(workbook, previewOnly: true));
     }
@@ -1759,6 +1969,11 @@ static object ToWorkspaceResponse(LightyWorkspace workspace)
         workspace.RootPath,
         workspace.ConfigFilePath,
         workspace.HeadersFilePath,
+        workspace.WorkbooksRootPath,
+        workspace.FlowChartsRootPath,
+        workspace.FlowChartNodesRootPath,
+        workspace.FlowChartFilesRootPath,
+        codegen = ToWorkspaceCodegenResponse(workspace),
         headerLayout = new
         {
             count = workspace.HeaderLayout.Count,
@@ -1769,6 +1984,7 @@ static object ToWorkspaceResponse(LightyWorkspace workspace)
             }),
         },
         workbooks = workspace.Workbooks.Select(workbook => ToWorkbookResponse(workbook, previewOnly: false)),
+        flowCharts = ToFlowChartCatalogResponse(workspace, includeDocument: true),
     };
 }
 
@@ -1779,6 +1995,10 @@ static object ToWorkspaceNavigationResponse(LightyWorkspace workspace)
         workspace.RootPath,
         workspace.ConfigFilePath,
         workspace.HeadersFilePath,
+        workspace.WorkbooksRootPath,
+        workspace.FlowChartsRootPath,
+        workspace.FlowChartNodesRootPath,
+        workspace.FlowChartFilesRootPath,
         codegen = ToWorkspaceCodegenResponse(workspace),
         headerLayout = new
         {
@@ -1795,17 +2015,9 @@ static object ToWorkspaceNavigationResponse(LightyWorkspace workspace)
             alias = ReadAliasFromConfig(Path.Combine(workbook.DirectoryPath, "config.json")),
             codegen = ToWorkbookCodegenResponse(workbook),
             sheetCount = workbook.Sheets.Count,
-            sheets = workbook.Sheets.Select(sheet => new
-            {
-                workbookName = workbook.Name,
-                sheet.Name,
-                sheet.DataFilePath,
-                sheet.HeaderFilePath,
-                rowCount = sheet.RowCount,
-                columnCount = sheet.Header.Count,
-                alias = ReadAliasFromConfig(Path.Combine(workbook.DirectoryPath, $"{sheet.Name}_config.json")),
-            }),
+            sheets = workbook.Sheets.Select(sheet => ToSheetNavigationResponse(workbook.Name, workbook.DirectoryPath, sheet)),
         }),
+        flowCharts = ToFlowChartCatalogResponse(workspace, includeDocument: false),
     };
 }
 
@@ -1872,7 +2084,7 @@ static object ToSheetMetadataResponse(string? workbookName, LightySheet sheet)
     };
 }
 
-static object ToSheetNavigationResponse(string workbookName, LightySheet sheet)
+static object ToSheetNavigationResponse(string workbookName, string workbookDirectory, LightySheet sheet)
 {
     return new
     {
@@ -1882,6 +2094,46 @@ static object ToSheetNavigationResponse(string workbookName, LightySheet sheet)
         sheet.HeaderFilePath,
         rowCount = sheet.RowCount,
         columnCount = sheet.Header.Count,
+        alias = ReadAliasFromConfig(Path.Combine(workbookDirectory, $"{sheet.Name}_config.json")),
+    };
+}
+
+static object ToFlowChartCatalogResponse(LightyWorkspace workspace, bool includeDocument)
+{
+    return new
+    {
+        workspace.FlowChartsRootPath,
+        workspace.FlowChartNodesRootPath,
+        workspace.FlowChartFilesRootPath,
+        nodeDefinitions = workspace.FlowChartNodeDefinitions.Select(document => ToFlowChartNodeDefinitionResponse(document, includeDocument)),
+        files = workspace.FlowChartFiles.Select(document => ToFlowChartFileResponse(document, includeDocument)),
+    };
+}
+
+static object ToFlowChartNodeDefinitionResponse(LightyFlowChartAssetDocument document, bool includeDocument)
+{
+    return new
+    {
+        kind = "flowchart-node",
+        document.RelativePath,
+        document.FilePath,
+        document.Name,
+        alias = ReadJsonStringProperty(document.Document, "alias"),
+        nodeKind = ReadJsonStringProperty(document.Document, "nodeKind"),
+        document = includeDocument ? document.Document : (JsonElement?)null,
+    };
+}
+
+static object ToFlowChartFileResponse(LightyFlowChartAssetDocument document, bool includeDocument)
+{
+    return new
+    {
+        kind = "flowchart-file",
+        document.RelativePath,
+        document.FilePath,
+        name = ReadJsonStringProperty(document.Document, "name") ?? document.Name,
+        alias = ReadJsonStringProperty(document.Document, "alias"),
+        document = includeDocument ? document.Document : (JsonElement?)null,
     };
 }
 
@@ -2053,6 +2305,151 @@ static object? JsonElementToObject(System.Text.Json.JsonElement element)
     };
 }
 
+static string? ReadJsonStringProperty(JsonElement element, string propertyName)
+{
+    if (element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(propertyName, out var property)
+        && property.ValueKind == JsonValueKind.String)
+    {
+        return property.GetString();
+    }
+
+    return null;
+}
+
+static IResult TryReadWorkbookAsset(LightyWorkspace workspace, string workbookName)
+{
+    if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+    {
+        return Results.NotFound(new
+        {
+            error = $"Workbook '{workbookName}' was not found.",
+            workspace.RootPath,
+        });
+    }
+
+    return Results.Ok(new
+    {
+        kind = "workbook",
+        assetPath = workbookName,
+        payload = ToWorkbookResponse(workbook, previewOnly: false),
+    });
+}
+
+static IResult TryReadSheetAsset(LightyWorkspace workspace, string assetPath)
+{
+    var segments = assetPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (segments.Length != 2)
+    {
+        return Results.BadRequest(new
+        {
+            error = "Sheet assetPath must use 'WorkbookName/SheetName'.",
+            assetPath,
+        });
+    }
+
+    var workbookName = segments[0];
+    var sheetName = segments[1];
+
+    if (!workspace.TryGetWorkbook(workbookName, out var workbook) || workbook is null)
+    {
+        return Results.NotFound(new
+        {
+            error = $"Workbook '{workbookName}' was not found.",
+            workspace.RootPath,
+        });
+    }
+
+    if (!workbook.TryGetSheet(sheetName, out var sheet) || sheet is null)
+    {
+        return Results.NotFound(new
+        {
+            error = $"Sheet '{sheetName}' was not found in workbook '{workbookName}'.",
+            workspace.RootPath,
+        });
+    }
+
+    return Results.Ok(new
+    {
+        kind = "sheet",
+        assetPath,
+        payload = ToSheetResponse(sheet, workbook.DirectoryPath, workbook.Name),
+    });
+}
+
+static IResult SaveFlowChartAsset(
+    SaveFlowChartAssetRequest request,
+    Func<string, string, JsonElement, LightyFlowChartAssetDocument> saveAction,
+    Func<LightyFlowChartAssetDocument, bool, object> responseFactory)
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.RelativePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "relativePath is required.",
+        });
+    }
+
+    if (request.Document is null)
+    {
+        return Results.BadRequest(new
+        {
+            error = "document is required.",
+        });
+    }
+
+    try
+    {
+        LightyWorkspaceLoader.Load(request.WorkspacePath);
+        var savedDocument = saveAction(request.WorkspacePath, request.RelativePath, request.Document.Value);
+        return Results.Ok(responseFactory(savedDocument, true));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+}
+
 static LightyWorkbook MapToWorkbook(WorkbookPayload payload, string workspacePath)
 {
     if (string.IsNullOrWhiteSpace(payload.Name))
@@ -2060,7 +2457,7 @@ static LightyWorkbook MapToWorkbook(WorkbookPayload payload, string workspacePat
         throw new LightyCoreException("Workbook name cannot be empty.");
     }
 
-    var workbookDirectory = Path.Combine(workspacePath, payload.Name);
+    var workbookDirectory = LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspacePath, payload.Name);
     var workspace = LightyWorkspaceLoader.Load(workspacePath);
     var sheets = payload.Sheets.Select(sheet => MapToSheet(sheet, workbookDirectory, workspace, payload.Name)).ToList();
     var existingWorkbook = workspace.TryGetWorkbook(payload.Name, out var loadedWorkbook) ? loadedWorkbook : null;
@@ -2191,6 +2588,15 @@ sealed class ExportWorkbookCodegenRequest
 sealed class ExportAllWorkbookCodegenRequest
 {
     public string WorkspacePath { get; set; } = string.Empty;
+}
+
+sealed class SaveFlowChartAssetRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string RelativePath { get; set; } = string.Empty;
+
+    public JsonElement? Document { get; set; }
 }
 
 sealed class ValidateValidationRuleRequest

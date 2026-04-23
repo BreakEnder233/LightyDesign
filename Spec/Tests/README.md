@@ -21,6 +21,7 @@ Tests 子系统对应 tests/LightyDesign.Tests。它负责验证 Core、Generato
 4. 工作区编辑、保存和增量更新相关测试。
 5. 流程图节点定义、流程图实例、端口基数和计算回路校验测试。
 6. FlowChart 代码生成与桌面端模式切换相关测试。
+7. 泛型节点类型参数推断、重载候选收敛、未定型诊断和导出阻断测试。
 
 ## 当前已覆盖的测试范围
 
@@ -33,6 +34,14 @@ Tests 子系统对应 tests/LightyDesign.Tests。它负责验证 Core、Generato
 5. ColumnDefine 的已知属性访问器和类型描述能力。
 6. 惰性值解析、缓存命中、单元格修改后缓存失效、List/Dictionary/Ref 解析与非法值失败结果。
 7. `Workbooks` / `FlowCharts` 双根目录工作区协议，以及 FlowChart JSON 资产写回与重载。
+
+## 未来 FlowChart 泛型节点测试建议
+
+1. `List.Add<T>`、`Dictionary.Set<TKey, TValue>` 等标准节点的类型参数解析测试。
+2. `Add`、比较、相等等重载族节点的候选签名筛选与歧义报错测试。
+3. 显式 `typeArguments` 与连线推断一致 / 冲突场景测试。
+4. 保存期结构错误、保存期语义错误、保存期未定型诊断、导出期阻断四类行为测试。
+5. 生成代码是否选择到了预期 helper / overload 的结果测试。
 
 ## 当前状态结论
 

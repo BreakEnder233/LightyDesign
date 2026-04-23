@@ -32,32 +32,38 @@ Event/Player/OnEnterScene
 
 ```json
 {
-  "formatVersion": "1.0",
+   "formatVersion": "1.0",
   "name": "OnEnterScene",
   "alias": "进入场景",
   "nodeKind": "event",
+   "typeParameters": [],
   "properties": [],
   "computePorts": [],
-  "flowPorts": []
+   "flowPorts": [],
+   "codegenBinding": null
 }
 ```
 
 ## 顶层字段
 
 1. `formatVersion`
-   协议版本号。首版固定为 `1.0`。
+   协议版本号。当前固定为 `1.0`。
 2. `name`
    节点标准名称，用于生成类名。必须是稳定英文标识符。
 3. `alias`
    节点别名，用于展示和检索。可为空或省略。
 4. `nodeKind`
    节点种类。当前固定为 `event`、`flow`、`compute` 三种。
-5. `properties`
+5. `typeParameters`
+   可选。节点类型参数列表。对非参数化节点可省略或为空数组。
+6. `properties`
    节点属性定义列表。字段必须存在，可为空数组。
-6. `computePorts`
+7. `computePorts`
    计算端口定义列表。字段必须存在，可为空数组。
-7. `flowPorts`
+8. `flowPorts`
    流程端口定义列表。字段必须存在，可为空数组。
+9. `codegenBinding`
+   可选。标准节点的稳定生成绑定信息，用于把节点定义映射到生成器中的实现族。
 
 ## 类型引用 TypeRef
 
@@ -108,6 +114,37 @@ Dictionary 类型示例：
    }
 }
 ```
+
+类型参数示例：
+
+```json
+{
+   "kind": "typeParameter",
+   "name": "TValue"
+}
+```
+
+## 节点类型参数定义
+
+```json
+{
+   "name": "TValue",
+   "constraint": "numeric"
+}
+```
+
+字段约定：
+
+1. `name`
+    类型参数稳定名称，必须在同一节点定义内唯一。
+2. `constraint`
+    可选。约束名，建议使用 `any`、`numeric`、`comparable`、`hashableKey` 之一。
+
+补充约定：
+
+1. `typeParameters` 仅声明节点内部可复用的类型形状，不直接代表最终生成代码中的完整类型。
+2. 节点属性与计算端口可通过 `TypeRef.kind = typeParameter` 引用这些参数。
+3. 事件节点通常不需要类型参数，但协议不强制禁止。
 
 ## 节点属性定义
 
@@ -193,6 +230,31 @@ Dictionary 类型示例：
 4. `direction`
    当前固定为 `input` 或 `output`。
 
+## 代码生成绑定
+
+```json
+{
+   "provider": "standard",
+  "operation": "List.Add",
+  "resolutionMode": "generic"
+}
+```
+
+字段约定：
+
+1. `provider`
+   当前建议使用 `standard`，表示该节点对应标准节点族。
+2. `operation`
+   稳定绑定名，例如 `List.Add`、`Dictionary.Set`、`Arithmetic.Add`。
+3. `resolutionMode`
+   绑定解析模式。当前建议支持 `generic` 与 `overload`。
+
+补充约定：
+
+1. `generic` 适用于 `List<T>`、`Dictionary<TKey, TValue>` 这类可直接映射到泛型 helper 的节点。
+2. `overload` 适用于 `Add`、比较、相等等需要从有限签名集合中选路的节点。
+3. 绑定名对应的候选签名表属于标准节点库契约的一部分，不应要求生成器靠节点别名或文件路径猜语义。
+
 ## 结构约束
 
 1. 同一节点定义内，`propertyId` 必须唯一。
@@ -203,15 +265,20 @@ Dictionary 类型示例：
 6. `flow` 节点视为中间流程节点，必须恰好有一个流程输入端口，且至少有一个流程输出端口。
 7. `compute` 节点不允许有流程端口，且至少有一个计算输出端口。
 8. `List<T>` 和 `Dictionary<TKey, TValue>` 是正式支持的类型形状。
+9. 同一节点定义内，`typeParameters.name` 必须唯一。
+10. 若端口或属性使用了 `typeParameter`，其 `name` 必须能在 `typeParameters` 中找到声明。
+11. `hashableKey` 约束的类型参数只应用于字典键位置，不应用于任意值位置。
+12. 对标准复用节点，建议填写 `codegenBinding`；业务侧自定义节点可留空并由 partial class 自行实现。
 
 ## 完整示例
 
 ```json
 {
-  "formatVersion": "1.0",
+   "formatVersion": "1.0",
   "name": "OnEnterScene",
   "alias": "进入场景",
   "nodeKind": "event",
+   "typeParameters": [],
   "properties": [
     {
       "propertyId": 1,
@@ -244,6 +311,7 @@ Dictionary 类型示例：
       "alias": "进入后",
       "direction": "output"
     }
-  ]
+   ],
+   "codegenBinding": null
 }
 ```

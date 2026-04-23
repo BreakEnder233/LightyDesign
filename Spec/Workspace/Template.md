@@ -32,6 +32,7 @@ WorkspaceTemplate/
           Add.json
           GetAt.json
           ForEach.json
+          Count.json
         Dictionary/
           TryGetValue.json
           Set.json
@@ -40,6 +41,7 @@ WorkspaceTemplate/
         Arithmetic/
           AddInt32.json
           CompareInt32.json
+          AddFloat.json
           EqualString.json
     Files/
       Samples/

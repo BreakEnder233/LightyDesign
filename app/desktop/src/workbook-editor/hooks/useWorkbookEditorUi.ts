@@ -55,6 +55,7 @@ type UseWorkbookEditorUiArgs = {
   bridgeError: string | null;
   hostInfo: DesktopHostInfo | null;
   onToast: (toast: PushToastInput) => void;
+  shortcutScopeActive?: boolean;
   workspaceEditor: ReturnType<typeof useWorkspaceEditor>;
 };
 
@@ -70,6 +71,7 @@ export function useWorkbookEditorUi({
   bridgeError,
   hostInfo,
   onToast,
+  shortcutScopeActive = true,
   workspaceEditor,
 }: UseWorkbookEditorUiArgs) {
   const {
@@ -1234,7 +1236,7 @@ export function useWorkbookEditorUi({
         id: "save-active-workbook",
         label: "保存当前工作簿",
         hint: "Ctrl+S",
-        enabled: canSaveActiveWorkbook,
+        enabled: shortcutScopeActive && canSaveActiveWorkbook,
         allowInEditableTarget: true,
         matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "s",
         run: () => {
@@ -1245,7 +1247,7 @@ export function useWorkbookEditorUi({
         id: "undo-sheet-edit",
         label: "撤销当前 Sheet 编辑",
         hint: "Ctrl+Z",
-        enabled: canUndoActiveSheet,
+        enabled: shortcutScopeActive && canUndoActiveSheet,
         matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "z",
         run: undoActiveSheetEdit,
       },
@@ -1253,7 +1255,7 @@ export function useWorkbookEditorUi({
         id: "redo-sheet-edit",
         label: "恢复当前 Sheet 编辑",
         hint: "Ctrl+Y / Ctrl+Shift+Z",
-        enabled: canRedoActiveSheet,
+        enabled: shortcutScopeActive && canRedoActiveSheet,
         matches: (event) =>
           isShortcutModifierPressed(event) &&
           ((event.key.toLowerCase() === "y" && !event.shiftKey) || (event.key.toLowerCase() === "z" && event.shiftKey)),
@@ -1263,7 +1265,7 @@ export function useWorkbookEditorUi({
         id: "select-all-cells",
         label: "选择当前 Sheet 可见区域",
         hint: "Ctrl+A",
-        enabled: Boolean(activeSheetData && filteredRowEntries.length > 0),
+        enabled: shortcutScopeActive && Boolean(activeSheetData && filteredRowEntries.length > 0),
         allowInEditableTarget: true,
         matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "a",
         run: handleSelectAll,
@@ -1272,7 +1274,7 @@ export function useWorkbookEditorUi({
         id: "copy-selected-cells",
         label: "复制选区",
         hint: "Ctrl+C",
-        enabled: Boolean(selectedCell),
+        enabled: shortcutScopeActive && Boolean(selectedCell),
         allowInEditableTarget: true,
         matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "c",
         run: () => {
@@ -1283,7 +1285,7 @@ export function useWorkbookEditorUi({
         id: "cut-selected-cells",
         label: "剪切选区",
         hint: "Ctrl+X",
-        enabled: Boolean(selectedCell),
+        enabled: shortcutScopeActive && Boolean(selectedCell),
         matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "x",
         run: () => {
           void handleCutSelection();
@@ -1293,12 +1295,12 @@ export function useWorkbookEditorUi({
         id: "clear-selected-cells",
         label: "清空选区",
         hint: "Delete",
-        enabled: Boolean(selectedCell),
+        enabled: shortcutScopeActive && Boolean(selectedCell),
         matches: (event) => !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete",
         run: handleClearSelectionContents,
       },
     ],
-    [activeSheetData, canRedoActiveSheet, canSaveActiveWorkbook, canUndoActiveSheet, filteredRowEntries.length, redoActiveSheetEdit, saveActiveWorkbook, selectedCell, undoActiveSheetEdit],
+    [activeSheetData, canRedoActiveSheet, canSaveActiveWorkbook, canUndoActiveSheet, filteredRowEntries.length, redoActiveSheetEdit, saveActiveWorkbook, selectedCell, shortcutScopeActive, undoActiveSheetEdit],
   );
 
   useEditorShortcuts(shortcutBindings);

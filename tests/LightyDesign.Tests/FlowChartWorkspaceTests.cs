@@ -67,6 +67,33 @@ public class FlowChartWorkspaceTests
     }
 
     [Fact]
+    public void WorkspaceLoader_ShouldAllowMissingFlowChartDirectories()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            LightyWorkspaceScaffolder.Create(workspaceRoot);
+            Directory.Delete(LightyWorkspacePathLayout.GetFlowChartsRootPath(workspaceRoot), recursive: true);
+
+            var workspace = LightyWorkspaceLoader.Load(workspaceRoot);
+
+            Assert.Empty(workspace.FlowChartNodeDefinitions);
+            Assert.Empty(workspace.FlowChartFiles);
+            Assert.Equal(LightyWorkspacePathLayout.GetFlowChartsRootPath(workspaceRoot), workspace.FlowChartsRootPath);
+            Assert.Equal(LightyWorkspacePathLayout.GetFlowChartNodesRootPath(workspaceRoot), workspace.FlowChartNodesRootPath);
+            Assert.Equal(LightyWorkspacePathLayout.GetFlowChartFilesRootPath(workspaceRoot), workspace.FlowChartFilesRootPath);
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void FlowChartAssetWriter_ShouldPersistNodeDefinitionsAndFlowChartFiles()
     {
         var workspaceRoot = CreateWorkspaceDirectory();
@@ -117,6 +144,54 @@ public class FlowChartWorkspaceTests
 
             Assert.Equal("event", reloadedNodeDefinition.Document.GetProperty("nodeKind").GetString());
             Assert.Equal("LoginFlow", reloadedFlowChartFile.Document.GetProperty("name").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void FlowChartAssetManager_ShouldManageFlowChartDirectoriesAndFiles()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            LightyWorkspaceScaffolder.Create(workspaceRoot);
+
+            using var flowChartFileDocument = JsonDocument.Parse(
+                """
+                {
+                  "formatVersion": "1.0",
+                  "name": "IntroFlow",
+                  "alias": "开场流程",
+                  "nodes": [],
+                  "flowConnections": [],
+                  "computeConnections": []
+                }
+                """);
+
+            LightyFlowChartAssetWriter.SaveFile(workspaceRoot, "Quest/Start/IntroFlow", flowChartFileDocument.RootElement);
+            LightyFlowChartAssetManager.CreateDirectory(workspaceRoot, LightyFlowChartAssetScope.Files, "Quest/Optional");
+
+            LightyFlowChartAssetManager.RenameDirectory(
+                workspaceRoot,
+                LightyFlowChartAssetScope.Files,
+                "Quest",
+                "Gameplay/Quest");
+
+            var renamedFlowChart = LightyFlowChartAssetLoader.LoadFile(workspaceRoot, "Gameplay/Quest/Start/IntroFlow");
+            Assert.Equal("Gameplay/Quest/Start/IntroFlow", renamedFlowChart.RelativePath);
+            Assert.True(Directory.Exists(Path.Combine(LightyWorkspacePathLayout.GetFlowChartFilesRootPath(workspaceRoot), "Gameplay", "Quest", "Optional")));
+
+            LightyFlowChartAssetManager.DeleteFile(workspaceRoot, LightyFlowChartAssetScope.Files, "Gameplay/Quest/Start/IntroFlow");
+            LightyFlowChartAssetManager.DeleteDirectory(workspaceRoot, LightyFlowChartAssetScope.Files, "Gameplay/Quest/Optional");
+
+            Assert.False(Directory.Exists(Path.Combine(LightyWorkspacePathLayout.GetFlowChartFilesRootPath(workspaceRoot), "Gameplay")));
         }
         finally
         {

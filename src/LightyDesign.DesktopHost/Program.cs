@@ -1838,6 +1838,53 @@ app.MapPost("/api/workspace/flowcharts/files/save", (SaveFlowChartAssetRequest r
         ToFlowChartFileResponse);
 });
 
+app.MapPost("/api/workspace/flowcharts/assets/directories/create", (FlowChartAssetPathRequest request) =>
+{
+    return MutateFlowChartCatalog(request, (workspacePath, scope, relativePath) =>
+    {
+        LightyFlowChartAssetManager.CreateDirectory(workspacePath, scope, relativePath);
+    });
+});
+
+app.MapPost("/api/workspace/flowcharts/assets/directories/rename", (RenameFlowChartAssetPathRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.NewRelativePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "newRelativePath is required.",
+        });
+    }
+
+    return MutateFlowChartCatalog(
+        new FlowChartAssetPathRequest
+        {
+            WorkspacePath = request.WorkspacePath,
+            Scope = request.Scope,
+            RelativePath = request.RelativePath,
+        },
+        (workspacePath, scope, relativePath) =>
+        {
+            LightyFlowChartAssetManager.RenameDirectory(workspacePath, scope, relativePath, request.NewRelativePath);
+        });
+});
+
+app.MapPost("/api/workspace/flowcharts/assets/directories/delete", (FlowChartAssetPathRequest request) =>
+{
+    return MutateFlowChartCatalog(request, (workspacePath, scope, relativePath) =>
+    {
+        LightyFlowChartAssetManager.DeleteDirectory(workspacePath, scope, relativePath);
+    });
+});
+
+app.MapPost("/api/workspace/flowcharts/assets/files/delete", (FlowChartAssetPathRequest request) =>
+{
+    return MutateFlowChartCatalog(request, (workspacePath, scope, relativePath) =>
+    {
+        LightyFlowChartAssetManager.DeleteFile(workspacePath, scope, relativePath);
+    });
+});
+
 app.MapPost("/api/file-process/workbooks/import-excel", async (HttpRequest request) =>
 {
     if (!request.HasFormContentType)
@@ -2105,9 +2152,26 @@ static object ToFlowChartCatalogResponse(LightyWorkspace workspace, bool include
         workspace.FlowChartsRootPath,
         workspace.FlowChartNodesRootPath,
         workspace.FlowChartFilesRootPath,
+        nodeDirectories = GetFlowChartDirectoryPaths(workspace.FlowChartNodesRootPath),
+        fileDirectories = GetFlowChartDirectoryPaths(workspace.FlowChartFilesRootPath),
         nodeDefinitions = workspace.FlowChartNodeDefinitions.Select(document => ToFlowChartNodeDefinitionResponse(document, includeDocument)),
         files = workspace.FlowChartFiles.Select(document => ToFlowChartFileResponse(document, includeDocument)),
     };
+}
+
+static IReadOnlyList<string> GetFlowChartDirectoryPaths(string rootDirectoryPath)
+{
+    if (!Directory.Exists(rootDirectoryPath))
+    {
+        return Array.Empty<string>();
+    }
+
+    return Directory
+        .EnumerateDirectories(rootDirectoryPath, "*", SearchOption.AllDirectories)
+        .Select(directoryPath => Path.GetRelativePath(rootDirectoryPath, directoryPath).Replace('\\', '/'))
+        .Where(relativePath => !string.IsNullOrWhiteSpace(relativePath))
+        .OrderBy(relativePath => relativePath, StringComparer.Ordinal)
+        .ToArray();
 }
 
 static object ToFlowChartNodeDefinitionResponse(LightyFlowChartAssetDocument document, bool includeDocument)
@@ -2450,6 +2514,108 @@ static IResult SaveFlowChartAsset(
     }
 }
 
+static IResult MutateFlowChartCatalog(
+    FlowChartAssetPathRequest request,
+    Action<string, LightyFlowChartAssetScope, string> mutation)
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.Scope))
+    {
+        return Results.BadRequest(new
+        {
+            error = "scope is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.RelativePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "relativePath is required.",
+        });
+    }
+
+    if (!TryParseFlowChartAssetScope(request.Scope, out var scope))
+    {
+        return Results.BadRequest(new
+        {
+            error = $"Unsupported flowchart asset scope '{request.Scope}'.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var relativePath = request.RelativePath.Trim();
+
+    try
+    {
+        mutation(workspacePath, scope, relativePath);
+
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        return Results.Ok(ToFlowChartCatalogResponse(workspace, includeDocument: false));
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+}
+
+static bool TryParseFlowChartAssetScope(string scope, out LightyFlowChartAssetScope result)
+{
+    if (string.Equals(scope, "nodes", StringComparison.OrdinalIgnoreCase))
+    {
+        result = LightyFlowChartAssetScope.Nodes;
+        return true;
+    }
+
+    if (string.Equals(scope, "files", StringComparison.OrdinalIgnoreCase))
+    {
+        result = LightyFlowChartAssetScope.Files;
+        return true;
+    }
+
+    result = default;
+    return false;
+}
+
 static LightyWorkbook MapToWorkbook(WorkbookPayload payload, string workspacePath)
 {
     if (string.IsNullOrWhiteSpace(payload.Name))
@@ -2597,6 +2763,26 @@ sealed class SaveFlowChartAssetRequest
     public string RelativePath { get; set; } = string.Empty;
 
     public JsonElement? Document { get; set; }
+}
+
+sealed class FlowChartAssetPathRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string Scope { get; set; } = string.Empty;
+
+    public string RelativePath { get; set; } = string.Empty;
+}
+
+sealed class RenameFlowChartAssetPathRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string Scope { get; set; } = string.Empty;
+
+    public string RelativePath { get; set; } = string.Empty;
+
+    public string NewRelativePath { get; set; } = string.Empty;
 }
 
 sealed class ValidateValidationRuleRequest

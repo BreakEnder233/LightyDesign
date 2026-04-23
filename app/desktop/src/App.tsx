@@ -1,16 +1,20 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { DialogBackdrop } from "./components/DialogBackdrop";
 import { McpConfigDialog } from "./components/McpConfigDialog";
 import { NameInputDialog } from "./components/NameInputDialog";
 import { ToastCenter } from "./components/ToastCenter";
+import { FlowChartEditorView } from "./flowchart-editor/components/FlowChartEditorView";
+import { useFlowChartEditor } from "./flowchart-editor/hooks/useFlowChartEditor";
 import { useAppUpdates } from "./hooks/useAppUpdates";
 import { useDesktopHostConnection } from "./hooks/useDesktopHostConnection";
+import { isShortcutModifierPressed, useEditorShortcuts } from "./hooks/useEditorShortcuts";
 import { useToastCenter } from "./hooks/useToastCenter";
 import { WorkbookEditorOverlays } from "./workbook-editor/components/WorkbookEditorOverlays";
 import { WorkbookEditorView } from "./workbook-editor/components/WorkbookEditorView";
 import { useWorkbookEditorUi } from "./workbook-editor/hooks/useWorkbookEditorUi";
 import { useWorkspaceEditor } from "./workbook-editor/hooks/useWorkspaceEditor";
+import type { ShortcutBinding } from "./workbook-editor/types/desktopApp";
 import {
   buildVsCodeMcpConfigJson,
   formatByteSize,
@@ -20,6 +24,7 @@ import {
 
 type ToolbarMenuId = "file" | "edit" | "table" | "ai" | "help";
 type McpConfigTargetClient = "vscode";
+type EditorMode = "workbook" | "flowchart";
 
 function App() {
   const appShellRef = useRef<HTMLDivElement | null>(null);
@@ -83,6 +88,9 @@ function App() {
   const hostStatusLabel = bridgeStatus === "unavailable" ? "桥接不可用" : hostHealth?.ok ? "已连接" : "连接中";
   const hostStatusClassName = bridgeStatus === "unavailable" ? "status-chip is-error" : hostHealth?.ok ? "status-chip is-ok" : "status-chip is-warn";
   const canChooseWorkspaceDirectory = bridgeStatus === "ready";
+  const [editorMode, setEditorMode] = useState<EditorMode>("workbook");
+  const isWorkbookMode = editorMode === "workbook";
+  const isFlowChartMode = editorMode === "flowchart";
   const isUpdateInstallInProgress =
     updateDownloadState?.status === "preparing" ||
     updateDownloadState?.status === "downloading" ||
@@ -141,6 +149,11 @@ function App() {
   const mcpConfigTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [openToolbarMenu, setOpenToolbarMenu] = useState<ToolbarMenuId | null>(null);
   const [mcpPreferences, setMcpPreferences] = useState<McpPreferences | null>(null);
+  const flowChartEditor = useFlowChartEditor({
+    hostInfo,
+    workspacePath,
+    onToast: pushToastNotification,
+  });
   const {
     activeColumnWidths,
     activeEditorContext,
@@ -275,8 +288,103 @@ function App() {
     bridgeError,
     hostInfo,
     onToast: pushToastNotification,
+    shortcutScopeActive: editorMode === "workbook",
     workspaceEditor,
   });
+
+  const flowChartShortcutBindings = useMemo<ShortcutBinding[]>(() => {
+    if (editorMode !== "flowchart") {
+      return [];
+    }
+
+    return [
+      {
+        id: "save-active-flowchart",
+        label: "保存当前流程图",
+        hint: "Ctrl+S",
+        enabled: flowChartEditor.canSaveActiveFlowChart,
+        allowInEditableTarget: true,
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "s",
+        run: () => {
+          void flowChartEditor.saveActiveFlowChart();
+        },
+      },
+      {
+        id: "select-all-flowchart-nodes",
+        label: "选择当前流程图所有节点",
+        hint: "Ctrl+A",
+        enabled: Boolean(flowChartEditor.activeDocument && flowChartEditor.activeDocument.nodes.length > 0),
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "a",
+        run: flowChartEditor.selectAll,
+      },
+      {
+        id: "copy-flowchart-selection",
+        label: "复制当前流程图选择",
+        hint: "Ctrl+C",
+        enabled: flowChartEditor.hasSelection,
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "c",
+        run: flowChartEditor.copySelection,
+      },
+      {
+        id: "cut-flowchart-selection",
+        label: "剪切当前流程图选择",
+        hint: "Ctrl+X",
+        enabled: flowChartEditor.hasSelection,
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "x",
+        run: flowChartEditor.cutSelection,
+      },
+      {
+        id: "paste-flowchart-selection",
+        label: "粘贴流程图节点副本",
+        hint: "Ctrl+V",
+        enabled: flowChartEditor.canPasteClipboard,
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "v",
+        run: flowChartEditor.pasteClipboard,
+      },
+      {
+        id: "delete-selected-flowchart-item",
+        label: "删除当前流程图选择",
+        hint: "Delete",
+        enabled: flowChartEditor.hasSelection,
+        matches: (event) => !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete",
+        run: flowChartEditor.deleteSelection,
+      },
+      {
+        id: "cancel-pending-flowchart-connection",
+        label: "取消当前连线草稿",
+        hint: "Escape",
+        enabled: Boolean(flowChartEditor.pendingConnection || flowChartEditor.hasSelection),
+        matches: (event) => event.key === "Escape",
+        run: () => {
+          if (flowChartEditor.pendingConnection) {
+            flowChartEditor.cancelPendingConnection();
+            return;
+          }
+
+          flowChartEditor.clearSelection();
+        },
+      },
+    ];
+  }, [editorMode, flowChartEditor]);
+
+  useEditorShortcuts(flowChartShortcutBindings);
+  const flowChartSelectionText = flowChartEditor.selectedNodeCount > 1
+    ? `${flowChartEditor.selectedNodeCount} 个节点`
+    : flowChartEditor.selectedConnectionCount > 1
+      ? `${flowChartEditor.selectedConnectionCount} 条连线`
+      : flowChartEditor.selectedNode
+    ? `节点 #${flowChartEditor.selectedNode.nodeId}`
+    : flowChartEditor.selectedConnection
+      ? "已选中连线"
+      : "无选择";
+  const flowChartStructureText = flowChartEditor.pendingConnection
+    ? "连线草稿进行中"
+    : flowChartEditor.validationIssues.length > 0
+      ? `${flowChartEditor.validationIssues.length} 个阻断问题`
+      : "结构校验通过";
+  const flowChartDirtyText = flowChartEditor.activeFlowChartState.status === "ready" && flowChartEditor.activeFlowChartState.dirty
+    ? "存在未保存更改"
+    : "无未保存更改";
 
   useEffect(() => {
     if (!hostHealth) {
@@ -900,7 +1008,8 @@ function App() {
         </DialogBackdrop>
       ) : null}
 
-      <WorkbookEditorOverlays
+      {isWorkbookMode ? (
+        <WorkbookEditorOverlays
         activeSheetLabel={activeTab ? `${activeTab.workbookName} / ${activeTab.sheetName}` : "尚未打开表格"}
         bridgeError={bridgeError}
         canChooseWorkspaceDirectory={canChooseWorkspaceDirectory}
@@ -972,7 +1081,8 @@ function App() {
         workbookContextMenu={workbookContextMenu}
         workbookContextMenuRef={workbookContextMenuRef}
         workspacePath={workspacePath ?? ""}
-      />
+        />
+      ) : null}
 
       <McpConfigDialog
         errorMessage={mcpConfigErrorMessage}
@@ -1115,13 +1225,22 @@ function App() {
             <button
               aria-expanded={openToolbarMenu === "edit"}
               className={`toolbar-menu-trigger${openToolbarMenu === "edit" ? " is-open" : ""}`}
-              onMouseEnter={() => handleToolbarMenuHover("edit")}
-              onClick={() => toggleToolbarMenu("edit")}
+              disabled={!isWorkbookMode}
+              onMouseEnter={() => {
+                if (isWorkbookMode) {
+                  handleToolbarMenuHover("edit");
+                }
+              }}
+              onClick={() => {
+                if (isWorkbookMode) {
+                  toggleToolbarMenu("edit");
+                }
+              }}
               type="button"
             >
               编辑
             </button>
-            {openToolbarMenu === "edit" ? (
+            {isWorkbookMode && openToolbarMenu === "edit" ? (
               <div className="toolbar-menu-dropdown" role="menu">
                 {renderToolbarMenuSection("历史记录", <>
                   {renderToolbarMenuItem({
@@ -1204,13 +1323,22 @@ function App() {
             <button
               aria-expanded={openToolbarMenu === "table"}
               className={`toolbar-menu-trigger${openToolbarMenu === "table" ? " is-open" : ""}`}
-              onMouseEnter={() => handleToolbarMenuHover("table")}
-              onClick={() => toggleToolbarMenu("table")}
+              disabled={!isWorkbookMode}
+              onMouseEnter={() => {
+                if (isWorkbookMode) {
+                  handleToolbarMenuHover("table");
+                }
+              }}
+              onClick={() => {
+                if (isWorkbookMode) {
+                  toggleToolbarMenu("table");
+                }
+              }}
               type="button"
             >
               表格
             </button>
-            {openToolbarMenu === "table" ? (
+            {isWorkbookMode && openToolbarMenu === "table" ? (
               <div className="toolbar-menu-dropdown" role="menu">
                 {renderToolbarMenuSection("表格状态", <>
                   {renderToolbarMenuItem({
@@ -1403,6 +1531,27 @@ function App() {
           </div>
         </div>
 
+        <div aria-label="编辑模式" className="toolbar-mode-switch toolbar-no-drag" role="tablist">
+          <button
+            aria-selected={isWorkbookMode}
+            className={`toolbar-mode-button${isWorkbookMode ? " is-active" : ""}`}
+            onClick={() => setEditorMode("workbook")}
+            role="tab"
+            type="button"
+          >
+            工作簿
+          </button>
+          <button
+            aria-selected={isFlowChartMode}
+            className={`toolbar-mode-button${isFlowChartMode ? " is-active" : ""}`}
+            onClick={() => setEditorMode("flowchart")}
+            role="tab"
+            type="button"
+          >
+            流程图
+          </button>
+        </div>
+
         <div aria-hidden="true" className="app-toolbar-drag-region" />
 
         <div aria-hidden="true" className="app-toolbar-title toolbar-no-drag">Lighty Design</div>
@@ -1440,116 +1589,120 @@ function App() {
         ) : null}
       </header>
 
-      <WorkbookEditorView
-        activeSheetColumns={activeSheetColumns}
-        activeSheetData={activeSheetData ?? null}
-        activeSheetRows={activeSheetRows}
-        activeSheetState={activeSheetState}
-        activeTab={activeTab}
-        activeTabId={activeTabId}
-        activeWorkbookDirtyTabCount={activeWorkbookDirtyTabs.length}
-        appliedFreezeColumnCount={appliedFreezeColumnCount}
-        appliedFreezeRowCount={appliedFreezeRowCount}
-        canCreateSheet={canCreateSheet}
-        canEditActiveSheet={canEditActiveSheet}
-        canInsertCopiedCellsDown={Boolean(copiedSelectionSnapshot)}
-        canInsertCopiedColumns={Boolean(copiedSelectionSnapshot?.canInsertColumns)}
-        canInsertCopiedRows={Boolean(copiedSelectionSnapshot?.canInsertRows)}
-        canRedoActiveSheet={canRedoActiveSheet}
-        canSaveActiveWorkbook={canSaveActiveWorkbook}
-        canUndoActiveSheet={canUndoActiveSheet}
-        columnWidths={activeColumnWidths}
-        editingColumn={editingColumn}
-        editingColumnIndex={editingColumnIndex}
-        filteredRowEntries={filteredRowEntries}
-        focusedWorkbook={focusedWorkbook}
-        focusedWorkbookName={focusedWorkbookName}
-        freezeStatusText={freezeStatusText}
-        onAppendColumn={handleAppendColumn}
-        onAppendRow={handleAppendRow}
-        onAutoFillSelection={handleAutoFillSelection}
-        onAutoSizeColumn={handleAutoSizeColumn}
-        onClearSelection={handleClearSelectionContents}
-        onCloseColumnEditor={handleCloseColumnEditor}
-        onCopySelection={handleCopySelection}
-        onCopySelectionToClipboard={() => {
-          void handleCopySelectionToClipboard();
-        }}
-        onCreateSheet={handleOpenCreateSheetDialog}
-        onCreateWorkbook={handleOpenCreateWorkbookDialog}
-        onCutSelection={() => {
-          void handleCutSelection();
-        }}
-        onDeleteColumn={handleDeleteColumn}
-        onDeleteRow={handleDeleteRow}
-        onEditCell={updateCellValue}
-        onFocusWorkbook={handleFocusWorkbook}
-        onFormulaBarChange={handleFormulaBarChange}
-        onFreezeColumns={setFreezeColumnCount}
-        onFreezeRows={setFreezeRowCount}
-        onInsertColumn={handleInsertColumn}
-        onInsertColumnBefore={handleInsertColumnBefore}
-        onInsertCopiedCellsDown={handleInsertCopiedCellsDown}
-        onInsertCopiedColumnsAfter={(columnIndex) => handleInsertCopiedColumns(columnIndex + 1)}
-        onInsertCopiedColumnsBefore={handleInsertCopiedColumns}
-        onInsertCopiedRowsAbove={handleInsertCopiedRows}
-        onInsertCopiedRowsBelow={(rowIndex) => handleInsertCopiedRows(rowIndex + 1)}
-        onInsertRow={handleInsertRow}
-        onInsertRowAbove={handleInsertRowAbove}
-        onOpenColumnEditor={handleOpenColumnEditor}
-        onOpenFreezeDialog={handleOpenFreezeDialog}
-        onOpenSheet={openSheet}
-        onOpenSheetContextMenu={handleOpenSheetContextMenu}
-        onOpenWorkbookContextMenu={handleOpenWorkbookContextMenu}
-        onPasteIntoCurrentSelectionFromClipboard={handlePasteCurrentSelectionFromClipboard}
-        onPasteSelection={handlePasteSelection}
-        onPasteSelectionFromClipboard={handlePasteSelectionFromClipboard}
-        onRedoActiveSheetEdit={redoActiveSheetEdit}
-        onResizeColumn={handleResizeColumn}
-        onResolveValidationSchema={handleResolveValidationSchema}
-        onRetryActiveSheetLoad={retryActiveSheetLoad}
-        onRetryWorkspaceLoad={retryWorkspaceLoad}
-        onSaveActiveWorkbook={() => {
-          void saveActiveWorkbook();
-        }}
-        onSaveColumnDefinition={handleSaveColumnDefinition}
-        onSelectAll={handleSelectAll}
-        onSelectCell={handleSelectCell}
-        onSelectColumn={handleSelectColumn}
-        onSelectRow={handleSelectRow}
-        onSheetFilterChange={setSheetFilter}
-        onSheetScrollSnapshotChange={(snapshot) => {
-          if (!activeTabId) {
-            return;
-          }
+      {isWorkbookMode ? (
+        <WorkbookEditorView
+          activeSheetColumns={activeSheetColumns}
+          activeSheetData={activeSheetData ?? null}
+          activeSheetRows={activeSheetRows}
+          activeSheetState={activeSheetState}
+          activeTab={activeTab}
+          activeTabId={activeTabId}
+          activeWorkbookDirtyTabCount={activeWorkbookDirtyTabs.length}
+          appliedFreezeColumnCount={appliedFreezeColumnCount}
+          appliedFreezeRowCount={appliedFreezeRowCount}
+          canCreateSheet={canCreateSheet}
+          canEditActiveSheet={canEditActiveSheet}
+          canInsertCopiedCellsDown={Boolean(copiedSelectionSnapshot)}
+          canInsertCopiedColumns={Boolean(copiedSelectionSnapshot?.canInsertColumns)}
+          canInsertCopiedRows={Boolean(copiedSelectionSnapshot?.canInsertRows)}
+          canRedoActiveSheet={canRedoActiveSheet}
+          canSaveActiveWorkbook={canSaveActiveWorkbook}
+          canUndoActiveSheet={canUndoActiveSheet}
+          columnWidths={activeColumnWidths}
+          editingColumn={editingColumn}
+          editingColumnIndex={editingColumnIndex}
+          filteredRowEntries={filteredRowEntries}
+          focusedWorkbook={focusedWorkbook}
+          focusedWorkbookName={focusedWorkbookName}
+          freezeStatusText={freezeStatusText}
+          onAppendColumn={handleAppendColumn}
+          onAppendRow={handleAppendRow}
+          onAutoFillSelection={handleAutoFillSelection}
+          onAutoSizeColumn={handleAutoSizeColumn}
+          onClearSelection={handleClearSelectionContents}
+          onCloseColumnEditor={handleCloseColumnEditor}
+          onCopySelection={handleCopySelection}
+          onCopySelectionToClipboard={() => {
+            void handleCopySelectionToClipboard();
+          }}
+          onCreateSheet={handleOpenCreateSheetDialog}
+          onCreateWorkbook={handleOpenCreateWorkbookDialog}
+          onCutSelection={() => {
+            void handleCutSelection();
+          }}
+          onDeleteColumn={handleDeleteColumn}
+          onDeleteRow={handleDeleteRow}
+          onEditCell={updateCellValue}
+          onFocusWorkbook={handleFocusWorkbook}
+          onFormulaBarChange={handleFormulaBarChange}
+          onFreezeColumns={setFreezeColumnCount}
+          onFreezeRows={setFreezeRowCount}
+          onInsertColumn={handleInsertColumn}
+          onInsertColumnBefore={handleInsertColumnBefore}
+          onInsertCopiedCellsDown={handleInsertCopiedCellsDown}
+          onInsertCopiedColumnsAfter={(columnIndex) => handleInsertCopiedColumns(columnIndex + 1)}
+          onInsertCopiedColumnsBefore={handleInsertCopiedColumns}
+          onInsertCopiedRowsAbove={handleInsertCopiedRows}
+          onInsertCopiedRowsBelow={(rowIndex) => handleInsertCopiedRows(rowIndex + 1)}
+          onInsertRow={handleInsertRow}
+          onInsertRowAbove={handleInsertRowAbove}
+          onOpenColumnEditor={handleOpenColumnEditor}
+          onOpenFreezeDialog={handleOpenFreezeDialog}
+          onOpenSheet={openSheet}
+          onOpenSheetContextMenu={handleOpenSheetContextMenu}
+          onOpenWorkbookContextMenu={handleOpenWorkbookContextMenu}
+          onPasteIntoCurrentSelectionFromClipboard={handlePasteCurrentSelectionFromClipboard}
+          onPasteSelection={handlePasteSelection}
+          onPasteSelectionFromClipboard={handlePasteSelectionFromClipboard}
+          onRedoActiveSheetEdit={redoActiveSheetEdit}
+          onResizeColumn={handleResizeColumn}
+          onResolveValidationSchema={handleResolveValidationSchema}
+          onRetryActiveSheetLoad={retryActiveSheetLoad}
+          onRetryWorkspaceLoad={retryWorkspaceLoad}
+          onSaveActiveWorkbook={() => {
+            void saveActiveWorkbook();
+          }}
+          onSaveColumnDefinition={handleSaveColumnDefinition}
+          onSelectAll={handleSelectAll}
+          onSelectCell={handleSelectCell}
+          onSelectColumn={handleSelectColumn}
+          onSelectRow={handleSelectRow}
+          onSheetFilterChange={setSheetFilter}
+          onSheetScrollSnapshotChange={(snapshot) => {
+            if (!activeTabId) {
+              return;
+            }
 
-          sheetScrollSnapshotsRef.current[activeTabId] = snapshot;
-        }}
-        onUndoActiveSheetEdit={undoActiveSheetEdit}
-        onValidateColumnType={handleValidateColumnType}
-        onValidateColumnValidationRule={handleValidateColumnValidationRule}
-        propertySchemas={headerPropertySchemas}
-        restoreScrollRequest={
-          scrollRestoreRequest && activeTabId === scrollRestoreRequest.tabId
-            ? scrollRestoreRequest
-            : null
-        }
-        saveStatusText={saveStatusText}
-        selectedCell={selectedCell}
-        selectedCellAddress={selectedCellAddress}
-        selectedCellCount={selectedCellCount}
-        selectedCellDescription={selectedCellDescription}
-        selectedCellValue={selectedCellValue}
-        selectionRange={selectionRange}
-        selectionStatusText={selectionStatusText}
-        sheetFilter={sheetFilter}
-        typeMetadata={typeMetadata}
-        workbookTree={workbookTree}
-        workspaceError={workspaceError}
-        workspaceSearch={workspaceSearch}
-        workspaceStatus={workspaceStatus}
-        onWorkspaceSearchChange={setWorkspaceSearch}
-      />
+            sheetScrollSnapshotsRef.current[activeTabId] = snapshot;
+          }}
+          onUndoActiveSheetEdit={undoActiveSheetEdit}
+          onValidateColumnType={handleValidateColumnType}
+          onValidateColumnValidationRule={handleValidateColumnValidationRule}
+          propertySchemas={headerPropertySchemas}
+          restoreScrollRequest={
+            scrollRestoreRequest && activeTabId === scrollRestoreRequest.tabId
+              ? scrollRestoreRequest
+              : null
+          }
+          saveStatusText={saveStatusText}
+          selectedCell={selectedCell}
+          selectedCellAddress={selectedCellAddress}
+          selectedCellCount={selectedCellCount}
+          selectedCellDescription={selectedCellDescription}
+          selectedCellValue={selectedCellValue}
+          selectionRange={selectionRange}
+          selectionStatusText={selectionStatusText}
+          sheetFilter={sheetFilter}
+          typeMetadata={typeMetadata}
+          workbookTree={workbookTree}
+          workspaceError={workspaceError}
+          workspaceSearch={workspaceSearch}
+          workspaceStatus={workspaceStatus}
+          onWorkspaceSearchChange={setWorkspaceSearch}
+        />
+      ) : (
+        <FlowChartEditorView editor={flowChartEditor} workspacePath={workspacePath} />
+      )}
 
       <footer className="status-bar">
         <div className="status-segment">
@@ -1557,16 +1710,16 @@ function App() {
           <strong className={hostStatusClassName}>{hostStatusLabel}</strong>
         </div>
         <div className="status-segment">
-          <span className="status-label">选区</span>
-          <strong>{selectionStatusText}</strong>
+          <span className="status-label">{isWorkbookMode ? "选区" : "对象"}</span>
+          <strong>{isWorkbookMode ? selectionStatusText : flowChartSelectionText}</strong>
         </div>
         <div className="status-segment">
-          <span className="status-label">冻结</span>
-          <strong>{freezeStatusText}</strong>
+          <span className="status-label">{isWorkbookMode ? "冻结" : "结构"}</span>
+          <strong>{isWorkbookMode ? freezeStatusText : flowChartStructureText}</strong>
         </div>
         <div className="status-segment">
           <span className="status-label">更改</span>
-          <strong>{hasDirtyChanges ? "存在未保存更改" : "无未保存更改"}</strong>
+          <strong>{isWorkbookMode ? (hasDirtyChanges ? "存在未保存更改" : "无未保存更改") : flowChartDirtyText}</strong>
         </div>
       </footer>
     </div>

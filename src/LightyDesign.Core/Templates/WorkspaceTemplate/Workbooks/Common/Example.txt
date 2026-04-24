@@ -1,0 +1,2 @@
+1	Wood Sword	模板内置样例物品
+2	Iron Shield	模板内置样例防具

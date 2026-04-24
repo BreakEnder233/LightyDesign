@@ -652,6 +652,65 @@ app.MapPost("/api/workspace/create", (CreateWorkspaceRequest request) =>
     }
 });
 
+app.MapPost("/api/workspace/template/builtin-nodes/refresh", (WorkspacePathRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+
+    try
+    {
+        var workspace = LightyWorkspaceScaffolder.RefreshBuiltinNodeDefinitions(workspacePath);
+        return Results.Ok(new
+        {
+            workspacePath = workspace.RootPath,
+            builtinNodeDefinitionCount = workspace.FlowChartNodeDefinitions.Count(document => document.RelativePath.StartsWith("Builtin/", StringComparison.Ordinal)),
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapPost("/api/workspace/workbooks/create", (CreateWorkbookRequest request) =>
 {
     if (string.IsNullOrWhiteSpace(request.WorkspacePath))
@@ -2945,6 +3004,11 @@ sealed class CreateWorkspaceRequest
     public string ParentDirectoryPath { get; set; } = string.Empty;
 
     public string WorkspaceName { get; set; } = string.Empty;
+}
+
+sealed class WorkspacePathRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
 }
 
 sealed class CreateWorkbookRequest

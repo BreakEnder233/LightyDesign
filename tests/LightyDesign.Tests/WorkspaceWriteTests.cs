@@ -119,7 +119,7 @@ public class WorkspaceWriteTests
             Assert.False(annotationColumn.TryGetValidation(out _));
 
             var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
-            var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks);
+            var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks.Where(candidate => candidate.Name == "Item"));
             var reloadedSheet = Assert.Single(reloadedWorkbook.Sheets);
             Assert.Equal(LightyWorkbookScaffolder.DefaultSheetName, reloadedSheet.Name);
             Assert.Equal(2, reloadedSheet.Header.Count);
@@ -150,7 +150,8 @@ public class WorkspaceWriteTests
 
             Assert.False(Directory.Exists(LightyWorkspacePathLayout.GetWorkbookDirectoryPath(workspaceRoot, "Item")));
             var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
-            Assert.Empty(reloadedWorkspace.Workbooks);
+            Assert.DoesNotContain(reloadedWorkspace.Workbooks, workbook => workbook.Name == "Item");
+            Assert.Contains(reloadedWorkspace.Workbooks, workbook => workbook.Name == "Common");
         }
         finally
         {
@@ -232,7 +233,7 @@ public class WorkspaceWriteTests
             LightyWorkbookWriter.Save(workspaceRoot, workspace.HeaderLayout, workbook);
 
             var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
-            var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks);
+            var reloadedWorkbook = Assert.Single(reloadedWorkspace.Workbooks.Where(candidate => candidate.Name == "Item"));
 
             Assert.True(File.Exists(Path.Combine(workspaceRoot, LightyWorkbookCodegenOptionsSerializer.DefaultFileName)));
             Assert.True(Directory.Exists(LightyWorkspacePathLayout.GetWorkbooksRootPath(workspaceRoot)));

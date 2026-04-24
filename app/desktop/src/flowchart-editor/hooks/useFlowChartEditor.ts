@@ -761,6 +761,11 @@ export function useFlowChartEditor({
     setCatalogReloadKey((current) => current + 1);
   }, []);
 
+  const reloadNodeDefinitions = useCallback(() => {
+    pendingNodeDefinitionLoadsRef.current.clear();
+    setNodeDefinitionsByPath({});
+  }, []);
+
   const reloadActiveFlowChart = useCallback(() => {
     if (!activeFlowChartPath) {
       return;
@@ -2216,6 +2221,7 @@ export function useFlowChartEditor({
     beginConnection,
     cancelPendingConnection,
     completePendingConnection,
+    reloadNodeDefinitions,
     reloadCatalog,
     reloadActiveFlowChart,
     saveActiveFlowChart,

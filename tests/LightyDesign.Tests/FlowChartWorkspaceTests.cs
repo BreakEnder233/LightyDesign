@@ -74,11 +74,12 @@ public class FlowChartWorkspaceTests
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Control/While");
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Control/Pause");
 
-            var flowChartFile = Assert.Single(workspace.FlowChartFiles);
+            var flowChartFile = Assert.Single(workspace.FlowChartFiles.Where(document => document.RelativePath == "Main/LoginFlow"));
             Assert.Equal("Main/LoginFlow", flowChartFile.RelativePath);
             Assert.Equal("LoginFlow", flowChartFile.Name);
             Assert.True(workspace.TryGetFlowChartFile("Main/LoginFlow", out var loadedFlowChartFile));
             Assert.NotNull(loadedFlowChartFile);
+            Assert.Contains(workspace.FlowChartFiles, document => document.RelativePath == "Samples/ExampleFlow");
         }
         finally
         {
@@ -148,6 +149,46 @@ public class FlowChartWorkspaceTests
     }
 
     [Fact]
+    public void WorkspaceScaffolder_ShouldRefreshBuiltinNodeDefinitionsFromTemplate()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            LightyWorkspaceScaffolder.Create(workspaceRoot);
+
+            var boolConstantPath = LightyWorkspacePathLayout.GetFlowChartNodeDefinitionFilePath(workspaceRoot, "Builtin/Constant/Bool");
+            File.WriteAllText(
+                boolConstantPath,
+                """
+                {
+                  "formatVersion": "1.0",
+                  "name": "Bool",
+                  "alias": "已被改坏",
+                  "nodeKind": "compute",
+                  "typeParameters": [],
+                  "properties": [],
+                  "computePorts": [],
+                  "flowPorts": []
+                }
+                """);
+
+            var refreshedWorkspace = LightyWorkspaceScaffolder.RefreshBuiltinNodeDefinitions(workspaceRoot);
+            var refreshedBool = Assert.Single(refreshedWorkspace.FlowChartNodeDefinitions.Where(document => document.RelativePath == "Builtin/Constant/Bool"));
+
+            Assert.Equal("布尔常量", refreshedBool.Document.GetProperty("alias").GetString());
+            Assert.True(File.ReadAllText(boolConstantPath).Contains("布尔常量", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void FlowChartAssetWriter_ShouldPersistNodeDefinitionsAndFlowChartFiles()
     {
         var workspaceRoot = CreateWorkspaceDirectory();
@@ -194,7 +235,7 @@ public class FlowChartWorkspaceTests
 
             var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
             var reloadedNodeDefinition = Assert.Single(reloadedWorkspace.FlowChartNodeDefinitions.Where(document => document.RelativePath == "Event/Player/OnEnterScene"));
-            var reloadedFlowChartFile = Assert.Single(reloadedWorkspace.FlowChartFiles);
+            var reloadedFlowChartFile = Assert.Single(reloadedWorkspace.FlowChartFiles.Where(document => document.RelativePath == "Main/LoginFlow"));
 
             Assert.Equal("event", reloadedNodeDefinition.Document.GetProperty("nodeKind").GetString());
             Assert.Equal("LoginFlow", reloadedFlowChartFile.Document.GetProperty("name").GetString());

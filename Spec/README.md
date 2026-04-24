@@ -3,11 +3,6 @@
 
 本目录用于描述各子系统职责、当前实现状态和后续待办。需要先看目录协议时，优先阅读 [Workspace/README.md](Workspace/README.md)；需要看流程图边界时，优先阅读 [FlowCharts/README.md](FlowCharts/README.md)。
 
-## 特殊文件夹
-
-1. `SampleWorkspace` 用于测试编辑功能的策划数据工作区，其中的文件不属于工程源码。
-2. `SampleWorkspaceCodeGen` 用于测试代码生成功能的目标文件夹，其中的文件不属于工程源码。
-
 ## 文档导航
 
 1. [Workspace/README.md](Workspace/README.md)

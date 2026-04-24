@@ -1,0 +1,24 @@
+{
+  "rows": [
+    {
+      "headerType": "fieldName",
+      "configuration": {}
+    },
+    {
+      "headerType": "displayName",
+      "configuration": {}
+    },
+    {
+      "headerType": "type",
+      "configuration": {}
+    },
+    {
+      "headerType": "validation",
+      "configuration": {}
+    },
+    {
+      "headerType": "exportscope",
+      "configuration": {}
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "fieldName": "ID",
+    "type": "int",
+    "displayName": "序号",
+    "ExportScope": "All"
+  },
+  {
+    "fieldName": "Name",
+    "type": "string",
+    "displayName": "名称",
+    "ExportScope": "All"
+  },
+  {
+    "fieldName": "Annotation",
+    "type": "string",
+    "displayName": "注释",
+    "ExportScope": "None"
+  }
+]

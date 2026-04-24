@@ -11,21 +11,28 @@ public static class LightyWorkspaceScaffolder
             throw new LightyCoreException($"Workspace target already exists: '{workspaceRootPath}'.");
         }
 
-        var resolvedHeaderLayout = headerLayout ?? WorkspaceHeaderLayout.CreateDefault();
         Directory.CreateDirectory(workspaceRootPath);
+        LightyWorkspaceTemplateAssets.CopyWorkspaceTemplate(workspaceRootPath);
 
-        var configFilePath = Path.Combine(workspaceRootPath, "config.json");
-        var headersFilePath = Path.Combine(workspaceRootPath, "headers.json");
-        var codegenConfigFilePath = Path.Combine(workspaceRootPath, LightyWorkbookCodegenOptionsSerializer.DefaultFileName);
-        Directory.CreateDirectory(LightyWorkspacePathLayout.GetWorkbooksRootPath(workspaceRootPath));
-        Directory.CreateDirectory(LightyWorkspacePathLayout.GetFlowChartNodesRootPath(workspaceRootPath));
-        Directory.CreateDirectory(LightyWorkspacePathLayout.GetFlowChartFilesRootPath(workspaceRootPath));
-        LightyWorkspaceTemplateAssets.CopyStaticAssets(workspaceRootPath);
+        if (headerLayout is not null)
+        {
+            var headersFilePath = Path.Combine(workspaceRootPath, "headers.json");
+            WorkspaceHeaderLayoutSerializer.SaveToFile(headersFilePath, headerLayout);
+        }
 
-        File.WriteAllText(configFilePath, "{}\n");
-        WorkspaceHeaderLayoutSerializer.SaveToFile(headersFilePath, resolvedHeaderLayout);
-        LightyWorkbookCodegenOptionsSerializer.SaveToFile(codegenConfigFilePath, new LightyWorkbookCodegenOptions());
+        return LightyWorkspaceLoader.Load(workspaceRootPath);
+    }
 
+    public static LightyWorkspace RefreshBuiltinNodeDefinitions(string workspaceRootPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);
+
+        if (!Directory.Exists(workspaceRootPath))
+        {
+            throw new DirectoryNotFoundException($"Workspace root directory was not found: '{workspaceRootPath}'.");
+        }
+
+        LightyWorkspaceTemplateAssets.RefreshNodeDefinitions(workspaceRootPath);
         return LightyWorkspaceLoader.Load(workspaceRootPath);
     }
 }

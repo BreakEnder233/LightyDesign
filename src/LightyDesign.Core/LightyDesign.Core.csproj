@@ -7,8 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Templates\WorkspaceTemplate\FlowCharts\Nodes\**\*.json">
-      <LogicalName>LightyDesign.Core.WorkspaceTemplate/FlowCharts/Nodes/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    <EmbeddedResource Include="Templates\WorkspaceTemplate\**\*">
+      <LogicalName>LightyDesign.Core.WorkspaceTemplate/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

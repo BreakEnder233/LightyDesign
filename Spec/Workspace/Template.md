@@ -23,26 +23,38 @@ WorkspaceTemplate/
       Example_header.json
   FlowCharts/
     Nodes/
-      Control/
-        If.json
-        While.json
-        Pause.json
-      Collection/
+      Builtin/
+        Arithmetic/
+          Add.json
+          Subtract.json
+          Multiply.json
+          Divide.json
+        Comparison/
+          Equal.json
+          NotEqual.json
+          GreaterThan.json
+          LessThan.json
+        Constant/
+          Bool.json
+          Int32.json
+          String.json
+        Config/
+          ListInt32.json
+          DictionaryStringInt32.json
         List/
           Add.json
           GetAt.json
           ForEach.json
           Count.json
         Dictionary/
-          TryGetValue.json
           Set.json
+          Get.json
+          ContainsKey.json
           ForEach.json
-      Compute/
-        Arithmetic/
-          AddInt32.json
-          CompareInt32.json
-          AddFloat.json
-          EqualString.json
+        Control/
+          If.json
+          While.json
+          Pause.json
     Files/
       Samples/
         ExampleFlow.json
@@ -89,4 +101,4 @@ WorkspaceTemplate/
 
 ## 当前状态结论
 
-工作区模板已经进入正式规范，但模板中的具体默认文件内容和节点清单仍未冻结。后续应先围绕这份文档定义模板资产，再让新建工作区流程改为模板复制。
+工作区模板资产已经落地到 Core 内嵌资源中，新建工作区流程也已切换为直接复制模板内容。当前模板已包含根配置、默认工作簿、默认内置节点和默认流程图样例；后续如需继续扩展，只需要围绕模板内容本身迭代，而不必再调整新建工作区的基础流程。

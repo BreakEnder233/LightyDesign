@@ -937,7 +937,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
       setWorkspaceSearch("");
       emitToast({
         title: `工作区已创建: ${trimmedWorkspaceName}`,
-        detail: `已在 ${parentDirectoryPath} 下创建新工作区，并写入默认 headers.json。`,
+        detail: `已在 ${parentDirectoryPath} 下创建新工作区，并复制完整工作区模板内容。`,
         source: "workspace",
         variant: "success",
         canOpenDetail: false,

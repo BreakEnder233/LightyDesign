@@ -21,6 +21,7 @@ import {
   getMcpRuntimeStatusLabel,
   normalizeMcpConfigPath,
 } from "./utils/appHelpers";
+import { fetchJson } from "./utils/desktopHost";
 
 type ToolbarMenuId = "file" | "edit" | "table" | "ai" | "help";
 type McpConfigTargetClient = "vscode";
@@ -853,6 +854,47 @@ function App() {
     }
   }
 
+  async function handleRefreshBuiltinFlowChartNodes() {
+    if (!hostInfo || !workspacePath) {
+      return;
+    }
+
+    try {
+      const response = await fetchJson<{ builtinNodeDefinitionCount: number }>(
+        `${hostInfo.desktopHostUrl}/api/workspace/template/builtin-nodes/refresh`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workspacePath,
+          }),
+        },
+      );
+
+      flowChartEditor.reloadNodeDefinitions();
+      flowChartEditor.reloadCatalog();
+      pushToastNotification({
+        title: "内置节点已更新",
+        detail: `已按当前模板刷新 ${response.builtinNodeDefinitionCount} 个内置流程图节点定义。`,
+        source: "workspace",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 4200,
+      });
+    } catch (error) {
+      pushToastNotification({
+        title: "更新内置节点失败",
+        detail: error instanceof Error ? error.message : "未能按模板刷新内置流程图节点。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 8000,
+      });
+    }
+  }
+
   useEffect(() => {
     if (!openToolbarMenu) {
       return;
@@ -1169,6 +1211,14 @@ function App() {
                     onClick: () => {
                       closeToolbarMenu();
                       handleCloseWorkspace();
+                    },
+                  })}
+                  {renderToolbarMenuItem({
+                    label: "按模板更新内置流程图节点",
+                    disabled: !canCloseWorkspace,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      void handleRefreshBuiltinFlowChartNodes();
                     },
                   })}
                 </>)}

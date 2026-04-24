@@ -1,0 +1,86 @@
+{
+  "formatVersion": "1.0",
+  "name": "ExampleFlow",
+  "alias": "模板示例流程",
+  "nodes": [
+    {
+      "nodeId": 1,
+      "nodeType": "Builtin/Config/ListInt32",
+      "layout": {
+        "x": 60,
+        "y": 80
+      },
+      "propertyValues": [
+        {
+          "propertyId": 1,
+          "value": [
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "nodeId": 2,
+      "nodeType": "Builtin/Constant/Int32",
+      "layout": {
+        "x": 60,
+        "y": 260
+      },
+      "propertyValues": [
+        {
+          "propertyId": 1,
+          "value": 7
+        }
+      ]
+    },
+    {
+      "nodeId": 3,
+      "nodeType": "Builtin/List/Add",
+      "layout": {
+        "x": 330,
+        "y": 170
+      },
+      "typeArguments": [
+        {
+          "name": "TElement",
+          "type": {
+            "kind": "builtin",
+            "name": "int32"
+          }
+        }
+      ]
+    },
+    {
+      "nodeId": 4,
+      "nodeType": "Builtin/Control/Pause",
+      "layout": {
+        "x": 610,
+        "y": 170
+      }
+    }
+  ],
+  "flowConnections": [
+    {
+      "sourceNodeId": 3,
+      "sourcePortId": 251,
+      "targetNodeId": 4,
+      "targetPortId": 201
+    }
+  ],
+  "computeConnections": [
+    {
+      "sourceNodeId": 1,
+      "sourcePortId": 151,
+      "targetNodeId": 3,
+      "targetPortId": 101
+    },
+    {
+      "sourceNodeId": 2,
+      "sourcePortId": 151,
+      "targetNodeId": 3,
+      "targetPortId": 102
+    }
+  ]
+}

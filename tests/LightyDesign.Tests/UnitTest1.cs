@@ -197,7 +197,9 @@ public class UnitTest1
             Assert.True(Directory.Exists(Path.Combine(workspaceRoot, LightyWorkspacePathLayout.WorkbooksDirectoryName)));
             Assert.True(Directory.Exists(Path.Combine(workspaceRoot, LightyWorkspacePathLayout.FlowChartsDirectoryName, LightyWorkspacePathLayout.FlowChartNodesDirectoryName)));
             Assert.True(Directory.Exists(Path.Combine(workspaceRoot, LightyWorkspacePathLayout.FlowChartsDirectoryName, LightyWorkspacePathLayout.FlowChartFilesDirectoryName)));
-            Assert.Empty(workspace.Workbooks);
+            var templateWorkbook = Assert.Single(workspace.Workbooks, workbook => workbook.Name == "Common");
+            var templateSheet = Assert.Single(templateWorkbook.Sheets, sheet => sheet.Name == "Example");
+            Assert.Equal(2, templateSheet.Rows.Count);
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/Add");
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/Count");
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/GetAt");
@@ -222,7 +224,8 @@ public class UnitTest1
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Control/If");
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Control/While");
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Control/Pause");
-            Assert.Empty(workspace.FlowChartFiles);
+            var templateFlow = Assert.Single(workspace.FlowChartFiles, document => document.RelativePath == "Samples/ExampleFlow");
+            Assert.Equal("ExampleFlow", templateFlow.Name);
             Assert.Equal(LightyHeaderTypes.DefaultWorkspaceHeaderTypes, workspace.HeaderLayout.Rows.Select(row => row.HeaderType).ToArray());
         }
         finally

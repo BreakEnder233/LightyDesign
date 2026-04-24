@@ -1,0 +1,70 @@
+{
+  "formatVersion": "1.0",
+  "name": "Add",
+  "alias": "列表追加",
+  "nodeKind": "flow",
+  "typeParameters": [
+    {
+      "name": "TElement",
+      "constraint": "any"
+    }
+  ],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "List",
+      "alias": "列表",
+      "direction": "input",
+      "type": {
+        "kind": "list",
+        "elementType": {
+          "kind": "typeParameter",
+          "name": "TElement"
+        }
+      }
+    },
+    {
+      "portId": 102,
+      "name": "Item",
+      "alias": "元素",
+      "direction": "input",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TElement"
+      }
+    },
+    {
+      "portId": 151,
+      "name": "UpdatedList",
+      "alias": "结果列表",
+      "direction": "output",
+      "type": {
+        "kind": "list",
+        "elementType": {
+          "kind": "typeParameter",
+          "name": "TElement"
+        }
+      }
+    }
+  ],
+  "flowPorts": [
+    {
+      "portId": 201,
+      "name": "In",
+      "alias": "输入",
+      "direction": "input"
+    },
+    {
+      "portId": 251,
+      "name": "Then",
+      "alias": "然后",
+      "direction": "output"
+    }
+  ],
+  "codegenBinding": {
+    "provider": "standard",
+    "operation": "List.Add",
+    "resolutionMode": "generic"
+  }
+}

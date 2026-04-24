@@ -47,9 +47,12 @@ public class FlowChartWorkspaceTests
 
             var workspace = LightyWorkspaceLoader.Load(workspaceRoot);
 
-            var nodeDefinition = Assert.Single(workspace.FlowChartNodeDefinitions);
-            Assert.Equal("Event/Player/OnEnterScene", nodeDefinition.RelativePath);
+            var nodeDefinition = Assert.Single(workspace.FlowChartNodeDefinitions.Where(document => document.RelativePath == "Event/Player/OnEnterScene"));
             Assert.Equal("OnEnterScene", nodeDefinition.Name);
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/Add");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Dictionary/Set");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Arithmetic/Add");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Comparison/Equal");
 
             var flowChartFile = Assert.Single(workspace.FlowChartFiles);
             Assert.Equal("Main/LoginFlow", flowChartFile.RelativePath);
@@ -139,7 +142,7 @@ public class FlowChartWorkspaceTests
             Assert.True(File.Exists(savedFlowChartFile.FilePath));
 
             var reloadedWorkspace = LightyWorkspaceLoader.Load(workspaceRoot);
-            var reloadedNodeDefinition = Assert.Single(reloadedWorkspace.FlowChartNodeDefinitions);
+            var reloadedNodeDefinition = Assert.Single(reloadedWorkspace.FlowChartNodeDefinitions.Where(document => document.RelativePath == "Event/Player/OnEnterScene"));
             var reloadedFlowChartFile = Assert.Single(reloadedWorkspace.FlowChartFiles);
 
             Assert.Equal("event", reloadedNodeDefinition.Document.GetProperty("nodeKind").GetString());

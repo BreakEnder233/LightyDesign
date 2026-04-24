@@ -20,6 +20,7 @@ public static class LightyWorkspaceScaffolder
         Directory.CreateDirectory(LightyWorkspacePathLayout.GetWorkbooksRootPath(workspaceRootPath));
         Directory.CreateDirectory(LightyWorkspacePathLayout.GetFlowChartNodesRootPath(workspaceRootPath));
         Directory.CreateDirectory(LightyWorkspacePathLayout.GetFlowChartFilesRootPath(workspaceRootPath));
+        LightyWorkspaceTemplateAssets.CopyStaticAssets(workspaceRootPath);
 
         File.WriteAllText(configFilePath, "{}\n");
         WorkspaceHeaderLayoutSerializer.SaveToFile(headersFilePath, resolvedHeaderLayout);

@@ -198,7 +198,10 @@ public class UnitTest1
             Assert.True(Directory.Exists(Path.Combine(workspaceRoot, LightyWorkspacePathLayout.FlowChartsDirectoryName, LightyWorkspacePathLayout.FlowChartNodesDirectoryName)));
             Assert.True(Directory.Exists(Path.Combine(workspaceRoot, LightyWorkspacePathLayout.FlowChartsDirectoryName, LightyWorkspacePathLayout.FlowChartFilesDirectoryName)));
             Assert.Empty(workspace.Workbooks);
-            Assert.Empty(workspace.FlowChartNodeDefinitions);
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/Add");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Dictionary/Set");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Arithmetic/Add");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Comparison/Equal");
             Assert.Empty(workspace.FlowChartFiles);
             Assert.Equal(LightyHeaderTypes.DefaultWorkspaceHeaderTypes, workspace.HeaderLayout.Rows.Select(row => row.HeaderType).ToArray());
         }

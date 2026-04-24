@@ -1,0 +1,32 @@
+{
+  "formatVersion": "1.0",
+  "name": "String",
+  "alias": "字符串常量",
+  "nodeKind": "compute",
+  "typeParameters": [],
+  "properties": [
+    {
+      "propertyId": 1,
+      "name": "Value",
+      "alias": "值",
+      "type": {
+        "kind": "builtin",
+        "name": "string"
+      },
+      "defaultValue": ""
+    }
+  ],
+  "computePorts": [
+    {
+      "portId": 151,
+      "name": "Result",
+      "alias": "结果",
+      "direction": "output",
+      "type": {
+        "kind": "builtin",
+        "name": "string"
+      }
+    }
+  ],
+  "flowPorts": []
+}

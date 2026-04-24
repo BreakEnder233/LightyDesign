@@ -1,0 +1,40 @@
+{
+  "formatVersion": "1.0",
+  "name": "While",
+  "alias": "条件循环",
+  "nodeKind": "flow",
+  "typeParameters": [],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "Condition",
+      "alias": "循环条件",
+      "direction": "input",
+      "type": {
+        "kind": "builtin",
+        "name": "bool"
+      }
+    }
+  ],
+  "flowPorts": [
+    {
+      "portId": 201,
+      "name": "In",
+      "alias": "输入",
+      "direction": "input"
+    },
+    {
+      "portId": 251,
+      "name": "LoopBody",
+      "alias": "循环体",
+      "direction": "output"
+    },
+    {
+      "portId": 252,
+      "name": "Completed",
+      "alias": "结束",
+      "direction": "output"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "formatVersion": "1.0",
+  "name": "Divide",
+  "alias": "除法",
+  "nodeKind": "compute",
+  "typeParameters": [
+    {
+      "name": "TNumeric",
+      "constraint": "numeric"
+    }
+  ],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "Left",
+      "alias": "左值",
+      "direction": "input",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TNumeric"
+      }
+    },
+    {
+      "portId": 102,
+      "name": "Right",
+      "alias": "右值",
+      "direction": "input",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TNumeric"
+      }
+    },
+    {
+      "portId": 151,
+      "name": "Result",
+      "alias": "结果",
+      "direction": "output",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TNumeric"
+      }
+    }
+  ],
+  "flowPorts": [],
+  "codegenBinding": {
+    "provider": "standard",
+    "operation": "Arithmetic.Divide",
+    "resolutionMode": "overload"
+  }
+}

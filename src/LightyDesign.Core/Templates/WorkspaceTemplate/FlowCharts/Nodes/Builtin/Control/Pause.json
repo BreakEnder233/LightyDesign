@@ -1,0 +1,23 @@
+{
+  "formatVersion": "1.0",
+  "name": "Pause",
+  "alias": "暂停",
+  "nodeKind": "flow",
+  "typeParameters": [],
+  "properties": [],
+  "computePorts": [],
+  "flowPorts": [
+    {
+      "portId": 201,
+      "name": "In",
+      "alias": "输入",
+      "direction": "input"
+    },
+    {
+      "portId": 251,
+      "name": "Then",
+      "alias": "继续",
+      "direction": "output"
+    }
+  ]
+}

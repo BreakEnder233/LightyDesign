@@ -1,0 +1,62 @@
+{
+  "formatVersion": "1.0",
+  "name": "Get",
+  "alias": "字典取值",
+  "nodeKind": "compute",
+  "typeParameters": [
+    {
+      "name": "TKey",
+      "constraint": "hashableKey"
+    },
+    {
+      "name": "TValue",
+      "constraint": "any"
+    }
+  ],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "Dictionary",
+      "alias": "字典",
+      "direction": "input",
+      "type": {
+        "kind": "dictionary",
+        "keyType": {
+          "kind": "typeParameter",
+          "name": "TKey"
+        },
+        "valueType": {
+          "kind": "typeParameter",
+          "name": "TValue"
+        }
+      }
+    },
+    {
+      "portId": 102,
+      "name": "Key",
+      "alias": "键",
+      "direction": "input",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TKey"
+      }
+    },
+    {
+      "portId": 151,
+      "name": "Value",
+      "alias": "值",
+      "direction": "output",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TValue"
+      }
+    }
+  ],
+  "flowPorts": [],
+  "codegenBinding": {
+    "provider": "standard",
+    "operation": "Dictionary.Get",
+    "resolutionMode": "generic"
+  }
+}

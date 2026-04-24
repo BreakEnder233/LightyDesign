@@ -30,6 +30,33 @@ public sealed class LightyFlowChartNodeCodeGenerator
                 new OverloadSignature("float"),
                 new OverloadSignature("double"),
             },
+            ["Arithmetic.Subtract"] = new[]
+            {
+                new OverloadSignature("int"),
+                new OverloadSignature("uint"),
+                new OverloadSignature("long"),
+                new OverloadSignature("ulong"),
+                new OverloadSignature("float"),
+                new OverloadSignature("double"),
+            },
+            ["Arithmetic.Multiply"] = new[]
+            {
+                new OverloadSignature("int"),
+                new OverloadSignature("uint"),
+                new OverloadSignature("long"),
+                new OverloadSignature("ulong"),
+                new OverloadSignature("float"),
+                new OverloadSignature("double"),
+            },
+            ["Arithmetic.Divide"] = new[]
+            {
+                new OverloadSignature("int"),
+                new OverloadSignature("uint"),
+                new OverloadSignature("long"),
+                new OverloadSignature("ulong"),
+                new OverloadSignature("float"),
+                new OverloadSignature("double"),
+            },
             ["Comparison.Equal"] = new[]
             {
                 new OverloadSignature("bool"),
@@ -40,6 +67,35 @@ public sealed class LightyFlowChartNodeCodeGenerator
                 new OverloadSignature("float"),
                 new OverloadSignature("double"),
                 new OverloadSignature("string"),
+            },
+            ["Comparison.NotEqual"] = new[]
+            {
+                new OverloadSignature("bool"),
+                new OverloadSignature("int"),
+                new OverloadSignature("uint"),
+                new OverloadSignature("long"),
+                new OverloadSignature("ulong"),
+                new OverloadSignature("float"),
+                new OverloadSignature("double"),
+                new OverloadSignature("string"),
+            },
+            ["Comparison.GreaterThan"] = new[]
+            {
+                new OverloadSignature("int"),
+                new OverloadSignature("uint"),
+                new OverloadSignature("long"),
+                new OverloadSignature("ulong"),
+                new OverloadSignature("float"),
+                new OverloadSignature("double"),
+            },
+            ["Comparison.LessThan"] = new[]
+            {
+                new OverloadSignature("int"),
+                new OverloadSignature("uint"),
+                new OverloadSignature("long"),
+                new OverloadSignature("ulong"),
+                new OverloadSignature("float"),
+                new OverloadSignature("double"),
             },
         };
 
@@ -104,6 +160,36 @@ public sealed class LightyFlowChartNodeCodeGenerator
         writer.AppendLine("}");
         writer.AppendLine();
 
+        writer.AppendLine("public static int ListCount<TElement>(List<TElement> list)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (list == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(list));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("return list.Count;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+
+        writer.AppendLine("public static TElement ListGetAt<TElement>(List<TElement> list, int index)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (list == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(list));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("return list[index];");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+
         writer.AppendLine("public static Dictionary<TKey, TValue> DictionarySet<TKey, TValue>(Dictionary<TKey, TValue> dictionary, TKey key, TValue value)");
         writer.AppendLine("{");
         writer.Indent();
@@ -119,6 +205,36 @@ public sealed class LightyFlowChartNodeCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
 
+        writer.AppendLine();
+        writer.AppendLine("public static TValue DictionaryGet<TKey, TValue>(Dictionary<TKey, TValue> dictionary, TKey key)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (dictionary == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(dictionary));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("return dictionary[key];");
+        writer.Outdent();
+        writer.AppendLine("}");
+
+        writer.AppendLine();
+        writer.AppendLine("public static bool DictionaryContainsKey<TKey, TValue>(Dictionary<TKey, TValue> dictionary, TKey key)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (dictionary == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentNullException(nameof(dictionary));");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("return dictionary.ContainsKey(key);");
+        writer.Outdent();
+        writer.AppendLine("}");
+
         foreach (var signature in OverloadBindings["Arithmetic.Add"])
         {
             writer.AppendLine();
@@ -126,6 +242,39 @@ public sealed class LightyFlowChartNodeCodeGenerator
             writer.AppendLine("{");
             writer.Indent();
             writer.AppendLine("return left + right;");
+            writer.Outdent();
+            writer.AppendLine("}");
+        }
+
+        foreach (var signature in OverloadBindings["Arithmetic.Subtract"])
+        {
+            writer.AppendLine();
+            writer.AppendLine($"public static {signature.TypeName} ArithmeticSubtract({signature.TypeName} left, {signature.TypeName} right)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("return left - right;");
+            writer.Outdent();
+            writer.AppendLine("}");
+        }
+
+        foreach (var signature in OverloadBindings["Arithmetic.Multiply"])
+        {
+            writer.AppendLine();
+            writer.AppendLine($"public static {signature.TypeName} ArithmeticMultiply({signature.TypeName} left, {signature.TypeName} right)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("return left * right;");
+            writer.Outdent();
+            writer.AppendLine("}");
+        }
+
+        foreach (var signature in OverloadBindings["Arithmetic.Divide"])
+        {
+            writer.AppendLine();
+            writer.AppendLine($"public static {signature.TypeName} ArithmeticDivide({signature.TypeName} left, {signature.TypeName} right)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("return left / right;");
             writer.Outdent();
             writer.AppendLine("}");
         }
@@ -144,6 +293,46 @@ public sealed class LightyFlowChartNodeCodeGenerator
             {
                 writer.AppendLine("return left == right;");
             }
+            writer.Outdent();
+            writer.AppendLine("}");
+        }
+
+        foreach (var signature in OverloadBindings["Comparison.NotEqual"])
+        {
+            writer.AppendLine();
+            writer.AppendLine($"public static bool ComparisonNotEqual({signature.TypeName} left, {signature.TypeName} right)");
+            writer.AppendLine("{");
+            writer.Indent();
+            if (string.Equals(signature.TypeName, "string", StringComparison.Ordinal))
+            {
+                writer.AppendLine("return !string.Equals(left, right, StringComparison.Ordinal);");
+            }
+            else
+            {
+                writer.AppendLine("return left != right;");
+            }
+            writer.Outdent();
+            writer.AppendLine("}");
+        }
+
+        foreach (var signature in OverloadBindings["Comparison.GreaterThan"])
+        {
+            writer.AppendLine();
+            writer.AppendLine($"public static bool ComparisonGreaterThan({signature.TypeName} left, {signature.TypeName} right)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("return left > right;");
+            writer.Outdent();
+            writer.AppendLine("}");
+        }
+
+        foreach (var signature in OverloadBindings["Comparison.LessThan"])
+        {
+            writer.AppendLine();
+            writer.AppendLine($"public static bool ComparisonLessThan({signature.TypeName} left, {signature.TypeName} right)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("return left < right;");
             writer.Outdent();
             writer.AppendLine("}");
         }
@@ -322,9 +511,19 @@ public sealed class LightyFlowChartNodeCodeGenerator
         return operation switch
         {
             "List.Add" => "ListAdd",
+            "List.Count" => "ListCount",
+            "List.GetAt" => "ListGetAt",
             "Dictionary.Set" => "DictionarySet",
+            "Dictionary.Get" => "DictionaryGet",
+            "Dictionary.ContainsKey" => "DictionaryContainsKey",
             "Arithmetic.Add" => "ArithmeticAdd",
+            "Arithmetic.Subtract" => "ArithmeticSubtract",
+            "Arithmetic.Multiply" => "ArithmeticMultiply",
+            "Arithmetic.Divide" => "ArithmeticDivide",
             "Comparison.Equal" => "ComparisonEqual",
+            "Comparison.NotEqual" => "ComparisonNotEqual",
+            "Comparison.GreaterThan" => "ComparisonGreaterThan",
+            "Comparison.LessThan" => "ComparisonLessThan",
             _ => null,
         };
     }

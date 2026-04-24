@@ -1,0 +1,76 @@
+{
+  "formatVersion": "1.0",
+  "name": "ForEach",
+  "alias": "字典遍历",
+  "nodeKind": "flow",
+  "typeParameters": [
+    {
+      "name": "TKey",
+      "constraint": "hashableKey"
+    },
+    {
+      "name": "TValue",
+      "constraint": "any"
+    }
+  ],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "Dictionary",
+      "alias": "字典",
+      "direction": "input",
+      "type": {
+        "kind": "dictionary",
+        "keyType": {
+          "kind": "typeParameter",
+          "name": "TKey"
+        },
+        "valueType": {
+          "kind": "typeParameter",
+          "name": "TValue"
+        }
+      }
+    },
+    {
+      "portId": 151,
+      "name": "CurrentKey",
+      "alias": "当前键",
+      "direction": "output",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TKey"
+      }
+    },
+    {
+      "portId": 152,
+      "name": "CurrentValue",
+      "alias": "当前值",
+      "direction": "output",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TValue"
+      }
+    }
+  ],
+  "flowPorts": [
+    {
+      "portId": 201,
+      "name": "In",
+      "alias": "输入",
+      "direction": "input"
+    },
+    {
+      "portId": 251,
+      "name": "LoopBody",
+      "alias": "循环体",
+      "direction": "output"
+    },
+    {
+      "portId": 252,
+      "name": "Completed",
+      "alias": "结束",
+      "direction": "output"
+    }
+  ]
+}

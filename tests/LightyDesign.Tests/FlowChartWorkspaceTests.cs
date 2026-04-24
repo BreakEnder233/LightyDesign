@@ -50,9 +50,29 @@ public class FlowChartWorkspaceTests
             var nodeDefinition = Assert.Single(workspace.FlowChartNodeDefinitions.Where(document => document.RelativePath == "Event/Player/OnEnterScene"));
             Assert.Equal("OnEnterScene", nodeDefinition.Name);
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/Add");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/Count");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/GetAt");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/List/ForEach");
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Dictionary/Set");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Dictionary/Get");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Dictionary/ContainsKey");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Dictionary/ForEach");
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Arithmetic/Add");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Arithmetic/Subtract");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Arithmetic/Multiply");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Arithmetic/Divide");
             Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Comparison/Equal");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Comparison/NotEqual");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Comparison/GreaterThan");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Comparison/LessThan");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Constant/Bool");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Constant/Int32");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Constant/String");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Config/ListInt32");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Config/DictionaryStringInt32");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Control/If");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Control/While");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Control/Pause");
 
             var flowChartFile = Assert.Single(workspace.FlowChartFiles);
             Assert.Equal("Main/LoginFlow", flowChartFile.RelativePath);
@@ -81,11 +101,42 @@ public class FlowChartWorkspaceTests
 
             var workspace = LightyWorkspaceLoader.Load(workspaceRoot);
 
-            Assert.Empty(workspace.FlowChartNodeDefinitions);
+            Assert.NotEmpty(workspace.FlowChartNodeDefinitions);
             Assert.Empty(workspace.FlowChartFiles);
             Assert.Equal(LightyWorkspacePathLayout.GetFlowChartsRootPath(workspaceRoot), workspace.FlowChartsRootPath);
             Assert.Equal(LightyWorkspacePathLayout.GetFlowChartNodesRootPath(workspaceRoot), workspace.FlowChartNodesRootPath);
             Assert.Equal(LightyWorkspacePathLayout.GetFlowChartFilesRootPath(workspaceRoot), workspace.FlowChartFilesRootPath);
+            Assert.True(File.Exists(LightyWorkspacePathLayout.GetFlowChartNodeDefinitionFilePath(workspaceRoot, "Builtin/Control/If")));
+            Assert.True(File.Exists(LightyWorkspacePathLayout.GetFlowChartNodeDefinitionFilePath(workspaceRoot, "Builtin/Constant/Bool")));
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void WorkspaceLoader_ShouldRestoreMissingDefaultNodeDefinitions()
+    {
+        var workspaceRoot = CreateWorkspaceDirectory();
+
+        try
+        {
+            LightyWorkspaceScaffolder.Create(workspaceRoot);
+            var boolConstantPath = LightyWorkspacePathLayout.GetFlowChartNodeDefinitionFilePath(workspaceRoot, "Builtin/Constant/Bool");
+            var listConfigPath = LightyWorkspacePathLayout.GetFlowChartNodeDefinitionFilePath(workspaceRoot, "Builtin/Config/ListInt32");
+            File.Delete(boolConstantPath);
+            File.Delete(listConfigPath);
+
+            var workspace = LightyWorkspaceLoader.Load(workspaceRoot);
+
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Constant/Bool");
+            Assert.Contains(workspace.FlowChartNodeDefinitions, document => document.RelativePath == "Builtin/Config/ListInt32");
+            Assert.True(File.Exists(boolConstantPath));
+            Assert.True(File.Exists(listConfigPath));
         }
         finally
         {

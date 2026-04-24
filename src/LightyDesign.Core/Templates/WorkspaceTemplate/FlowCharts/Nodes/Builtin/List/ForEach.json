@@ -1,0 +1,68 @@
+{
+  "formatVersion": "1.0",
+  "name": "ForEach",
+  "alias": "列表遍历",
+  "nodeKind": "flow",
+  "typeParameters": [
+    {
+      "name": "TElement",
+      "constraint": "any"
+    }
+  ],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "List",
+      "alias": "列表",
+      "direction": "input",
+      "type": {
+        "kind": "list",
+        "elementType": {
+          "kind": "typeParameter",
+          "name": "TElement"
+        }
+      }
+    },
+    {
+      "portId": 151,
+      "name": "CurrentItem",
+      "alias": "当前元素",
+      "direction": "output",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TElement"
+      }
+    },
+    {
+      "portId": 152,
+      "name": "CurrentIndex",
+      "alias": "当前索引",
+      "direction": "output",
+      "type": {
+        "kind": "builtin",
+        "name": "int32"
+      }
+    }
+  ],
+  "flowPorts": [
+    {
+      "portId": 201,
+      "name": "In",
+      "alias": "输入",
+      "direction": "input"
+    },
+    {
+      "portId": 251,
+      "name": "LoopBody",
+      "alias": "循环体",
+      "direction": "output"
+    },
+    {
+      "portId": 252,
+      "name": "Completed",
+      "alias": "结束",
+      "direction": "output"
+    }
+  ]
+}

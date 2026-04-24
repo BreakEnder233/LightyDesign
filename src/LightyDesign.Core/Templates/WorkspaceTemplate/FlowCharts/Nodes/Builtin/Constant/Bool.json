@@ -1,0 +1,32 @@
+{
+  "formatVersion": "1.0",
+  "name": "Bool",
+  "alias": "布尔常量",
+  "nodeKind": "compute",
+  "typeParameters": [],
+  "properties": [
+    {
+      "propertyId": 1,
+      "name": "Value",
+      "alias": "值",
+      "type": {
+        "kind": "builtin",
+        "name": "bool"
+      },
+      "defaultValue": false
+    }
+  ],
+  "computePorts": [
+    {
+      "portId": 151,
+      "name": "Result",
+      "alias": "结果",
+      "direction": "output",
+      "type": {
+        "kind": "builtin",
+        "name": "bool"
+      }
+    }
+  ],
+  "flowPorts": []
+}

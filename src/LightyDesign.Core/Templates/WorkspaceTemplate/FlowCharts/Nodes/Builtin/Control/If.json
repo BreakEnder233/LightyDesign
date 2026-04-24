@@ -1,0 +1,40 @@
+{
+  "formatVersion": "1.0",
+  "name": "If",
+  "alias": "条件分支",
+  "nodeKind": "flow",
+  "typeParameters": [],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "Condition",
+      "alias": "条件",
+      "direction": "input",
+      "type": {
+        "kind": "builtin",
+        "name": "bool"
+      }
+    }
+  ],
+  "flowPorts": [
+    {
+      "portId": 201,
+      "name": "In",
+      "alias": "输入",
+      "direction": "input"
+    },
+    {
+      "portId": 251,
+      "name": "Then",
+      "alias": "为真",
+      "direction": "output"
+    },
+    {
+      "portId": 252,
+      "name": "Else",
+      "alias": "为假",
+      "direction": "output"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "formatVersion": "1.0",
+  "name": "ListInt32",
+  "alias": "整数列表配置",
+  "nodeKind": "compute",
+  "typeParameters": [],
+  "properties": [
+    {
+      "propertyId": 1,
+      "name": "Items",
+      "alias": "元素列表",
+      "type": {
+        "kind": "list",
+        "elementType": {
+          "kind": "builtin",
+          "name": "int32"
+        }
+      },
+      "defaultValue": []
+    }
+  ],
+  "computePorts": [
+    {
+      "portId": 151,
+      "name": "Result",
+      "alias": "结果",
+      "direction": "output",
+      "type": {
+        "kind": "list",
+        "elementType": {
+          "kind": "builtin",
+          "name": "int32"
+        }
+      }
+    }
+  ],
+  "flowPorts": []
+}

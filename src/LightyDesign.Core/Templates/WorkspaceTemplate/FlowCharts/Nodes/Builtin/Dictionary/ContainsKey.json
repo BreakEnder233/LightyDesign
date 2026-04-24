@@ -1,0 +1,62 @@
+{
+  "formatVersion": "1.0",
+  "name": "ContainsKey",
+  "alias": "字典包含键",
+  "nodeKind": "compute",
+  "typeParameters": [
+    {
+      "name": "TKey",
+      "constraint": "hashableKey"
+    },
+    {
+      "name": "TValue",
+      "constraint": "any"
+    }
+  ],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "Dictionary",
+      "alias": "字典",
+      "direction": "input",
+      "type": {
+        "kind": "dictionary",
+        "keyType": {
+          "kind": "typeParameter",
+          "name": "TKey"
+        },
+        "valueType": {
+          "kind": "typeParameter",
+          "name": "TValue"
+        }
+      }
+    },
+    {
+      "portId": 102,
+      "name": "Key",
+      "alias": "键",
+      "direction": "input",
+      "type": {
+        "kind": "typeParameter",
+        "name": "TKey"
+      }
+    },
+    {
+      "portId": 151,
+      "name": "Result",
+      "alias": "结果",
+      "direction": "output",
+      "type": {
+        "kind": "builtin",
+        "name": "bool"
+      }
+    }
+  ],
+  "flowPorts": [],
+  "codegenBinding": {
+    "provider": "standard",
+    "operation": "Dictionary.ContainsKey",
+    "resolutionMode": "generic"
+  }
+}

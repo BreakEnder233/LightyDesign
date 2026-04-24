@@ -11,6 +11,8 @@ public static class LightyWorkspaceLoader
             throw new DirectoryNotFoundException($"Workspace root directory was not found: '{rootPath}'.");
         }
 
+        LightyWorkspaceTemplateAssets.CopyMissingNodeDefinitions(rootPath);
+
         var configFilePath = Path.Combine(rootPath, "config.json");
         var headersFilePath = Path.Combine(rootPath, "headers.json");
         var codegenConfigFilePath = Path.Combine(rootPath, LightyWorkbookCodegenOptionsSerializer.DefaultFileName);

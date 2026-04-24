@@ -1,0 +1,46 @@
+{
+  "formatVersion": "1.0",
+  "name": "DictionaryStringInt32",
+  "alias": "字符串整数映射配置",
+  "nodeKind": "compute",
+  "typeParameters": [],
+  "properties": [
+    {
+      "propertyId": 1,
+      "name": "Entries",
+      "alias": "映射项",
+      "type": {
+        "kind": "dictionary",
+        "keyType": {
+          "kind": "builtin",
+          "name": "string"
+        },
+        "valueType": {
+          "kind": "builtin",
+          "name": "int32"
+        }
+      },
+      "defaultValue": {}
+    }
+  ],
+  "computePorts": [
+    {
+      "portId": 151,
+      "name": "Result",
+      "alias": "结果",
+      "direction": "output",
+      "type": {
+        "kind": "dictionary",
+        "keyType": {
+          "kind": "builtin",
+          "name": "string"
+        },
+        "valueType": {
+          "kind": "builtin",
+          "name": "int32"
+        }
+      }
+    }
+  ],
+  "flowPorts": []
+}

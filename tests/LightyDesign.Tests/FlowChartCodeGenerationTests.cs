@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LightyDesign.Core;
 using LightyDesign.Generator;
 
@@ -127,6 +128,281 @@ public class FlowChartCodeGenerationTests
         }
     }
 
+        [Fact]
+        public void FlowChartFileParser_ShouldParseTypeArgumentsAndConnections()
+        {
+                var workspaceRoot = CreateWorkspaceDirectory();
+
+                try
+                {
+                        LightyWorkspaceScaffolder.Create(workspaceRoot);
+
+                        using var document = JsonDocument.Parse(
+                                """
+                                {
+                                    "formatVersion": "1.0",
+                                      "name": "Intro",
+                                    "alias": "任务开场",
+                                    "nodes": [
+                                        {
+                                            "nodeId": 1,
+                                            "nodeType": "Builtin/List/Add",
+                                            "typeArguments": [
+                                                {
+                                                    "name": "TElement",
+                                                    "type": {
+                                                        "kind": "builtin",
+                                                        "name": "int32"
+                                                    }
+                                                }
+                                            ],
+                                            "layout": {
+                                                "x": 120,
+                                                "y": 80
+                                            },
+                                            "propertyValues": [
+                                                {
+                                                    "propertyId": 1,
+                                                    "value": 42
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "nodeId": 2,
+                                            "nodeType": "Builtin/Dictionary/Set",
+                                            "layout": {
+                                                "x": 420,
+                                                "y": 80
+                                            },
+                                            "propertyValues": []
+                                        }
+                                    ],
+                                    "flowConnections": [
+                                        {
+                                            "sourceNodeId": 1,
+                                            "sourcePortId": 251,
+                                            "targetNodeId": 2,
+                                            "targetPortId": 201
+                                        }
+                                    ],
+                                    "computeConnections": [
+                                        {
+                                            "sourceNodeId": 1,
+                                            "sourcePortId": 151,
+                                            "targetNodeId": 2,
+                                            "targetPortId": 103
+                                        }
+                                    ]
+                                }
+                                """);
+
+                        var parsed = LightyFlowChartFileDefinitionParser.Parse("Quest/Intro", Path.Combine(workspaceRoot, "QuestIntro.json"), document.RootElement);
+
+                        Assert.Equal("Quest/Intro", parsed.RelativePath);
+                        Assert.Equal("Intro", parsed.Name);
+                        Assert.Equal("任务开场", parsed.Alias);
+                        Assert.Equal(2, parsed.Nodes.Count);
+                        Assert.Single(parsed.FlowConnections);
+                        Assert.Single(parsed.ComputeConnections);
+
+                        var listNode = parsed.Nodes[0];
+                        Assert.Equal((uint)1, listNode.NodeId);
+                        Assert.Equal("Builtin/List/Add", listNode.NodeType);
+                        Assert.Single(listNode.TypeArguments);
+                        Assert.Equal("TElement", listNode.TypeArguments[0].Name);
+                        Assert.Equal(LightyFlowChartTypeKind.Builtin, listNode.TypeArguments[0].Type.Kind);
+                        Assert.Equal("int32", listNode.TypeArguments[0].Type.Name);
+                        Assert.Single(listNode.PropertyValues);
+                        Assert.Equal((uint)1, listNode.PropertyValues[0].PropertyId);
+                }
+                finally
+                {
+                        if (Directory.Exists(workspaceRoot))
+                        {
+                                Directory.Delete(workspaceRoot, recursive: true);
+                        }
+                }
+        }
+
+        [Fact]
+        public void FlowChartFileCodeGenerator_ShouldGenerateDefinitionRuntimeAndResolvedNodeMembers()
+        {
+                var workspaceRoot = CreateWorkspaceDirectory();
+
+                try
+                {
+                        var scaffoldedWorkspace = LightyWorkspaceScaffolder.Create(workspaceRoot);
+                        CreateNodeDefinition(
+                                workspaceRoot,
+                                "Custom/Math/ConstantInt",
+                                """
+                                {
+                                    "formatVersion": "1.0",
+                                    "name": "ConstantInt",
+                                    "alias": "整数常量",
+                                    "nodeKind": "compute",
+                                    "properties": [],
+                                    "computePorts": [
+                                        {
+                                            "portId": 151,
+                                            "name": "Result",
+                                            "alias": "结果",
+                                            "direction": "output",
+                                            "type": {
+                                                "kind": "builtin",
+                                                "name": "int32"
+                                            }
+                                        }
+                                    ],
+                                    "flowPorts": []
+                                }
+                                """);
+                        CreateFlowChartFile(
+                                workspaceRoot,
+                                "Quest/Intro",
+                                """
+                                {
+                                    "formatVersion": "1.0",
+                                      "name": "Intro",
+                                    "alias": "任务开场",
+                                    "nodes": [
+                                        {
+                                            "nodeId": 1,
+                                            "nodeType": "Custom/Math/ConstantInt",
+                                            "layout": {
+                                                "x": 100,
+                                                "y": 80
+                                            },
+                                            "propertyValues": []
+                                        },
+                                        {
+                                            "nodeId": 2,
+                                            "nodeType": "Custom/Math/ConstantInt",
+                                            "layout": {
+                                                "x": 100,
+                                                "y": 220
+                                            },
+                                            "propertyValues": []
+                                        },
+                                        {
+                                            "nodeId": 3,
+                                            "nodeType": "Builtin/Arithmetic/Add",
+                                            "layout": {
+                                                "x": 360,
+                                                "y": 150
+                                            },
+                                            "propertyValues": []
+                                        },
+                                        {
+                                            "nodeId": 4,
+                                            "nodeType": "Builtin/List/Add",
+                                            "typeArguments": [
+                                                {
+                                                    "name": "TElement",
+                                                    "type": {
+                                                        "kind": "builtin",
+                                                        "name": "int32"
+                                                    }
+                                                }
+                                            ],
+                                            "layout": {
+                                                "x": 640,
+                                                "y": 150
+                                            },
+                                            "propertyValues": []
+                                        },
+                                        {
+                                            "nodeId": 5,
+                                            "nodeType": "Builtin/Dictionary/Set",
+                                            "typeArguments": [
+                                                {
+                                                    "name": "TKey",
+                                                    "type": {
+                                                        "kind": "builtin",
+                                                        "name": "string"
+                                                    }
+                                                },
+                                                {
+                                                    "name": "TValue",
+                                                    "type": {
+                                                        "kind": "builtin",
+                                                        "name": "int32"
+                                                    }
+                                                }
+                                            ],
+                                            "layout": {
+                                                "x": 920,
+                                                "y": 150
+                                            },
+                                            "propertyValues": []
+                                        }
+                                    ],
+                                    "flowConnections": [],
+                                    "computeConnections": [
+                                        {
+                                            "sourceNodeId": 1,
+                                            "sourcePortId": 151,
+                                            "targetNodeId": 3,
+                                            "targetPortId": 101
+                                        },
+                                        {
+                                            "sourceNodeId": 2,
+                                            "sourcePortId": 151,
+                                            "targetNodeId": 3,
+                                            "targetPortId": 102
+                                        }
+                                    ]
+                                }
+                                """);
+
+                        var workspace = WithOutputRelativePath(LightyWorkspaceLoader.Load(workspaceRoot), "Generated/Config");
+                        var generator = new LightyFlowChartFileCodeGenerator();
+
+                        var package = generator.Generate(workspace, "Quest/Intro");
+
+                        Assert.Equal("Generated/Config", package.OutputRelativePath);
+                        Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/FlowChartRuntimeSupport.cs");
+                        Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/FlowChartStandardNodeBindingHelper.cs");
+                        Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Files/Quest/Intro/IntroDefinition.cs");
+                        Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Files/Quest/Intro/IntroFlow.cs");
+
+                        var definitionFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/Files/Quest/Intro/IntroDefinition.cs");
+                        Assert.Contains("namespace LightyDesignData.FlowCharts.Files.Quest.Intro", definitionFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public sealed partial class IntroDefinition", definitionFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("private static readonly LightyDesignData.FlowCharts.Nodes.Builtin.Arithmetic.AddNode Node3 = new LightyDesignData.FlowCharts.Nodes.Builtin.Arithmetic.AddNode();", definitionFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("private static readonly LightyDesignData.FlowCharts.Nodes.Builtin.List.AddNode<int> Node4 = new LightyDesignData.FlowCharts.Nodes.Builtin.List.AddNode<int>();", definitionFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("private static readonly LightyDesignData.FlowCharts.Nodes.Builtin.Dictionary.SetNode<string, int> Node5 = new LightyDesignData.FlowCharts.Nodes.Builtin.Dictionary.SetNode<string, int>();", definitionFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public IntroFlow<TContext> CreateFlow<TContext>(TContext context)", definitionFile.Content, StringComparison.Ordinal);
+
+                        var flowFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/Files/Quest/Intro/IntroFlow.cs");
+                        Assert.Contains("public sealed partial class IntroFlow<TContext>", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public void StepOnce()", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public void RunToCompletion()", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("throw new NotSupportedException", flowFile.Content, StringComparison.Ordinal);
+                }
+                finally
+                {
+                        if (Directory.Exists(workspaceRoot))
+                        {
+                                Directory.Delete(workspaceRoot, recursive: true);
+                        }
+                }
+        }
+
+        [Fact]
+        public void GenerateEntryPointFile_ShouldIncludeGeneratedFlowChartsAlongsideWorkbooks()
+        {
+                var generator = new LightyWorkbookCodeGenerator();
+
+                var content = generator.GenerateEntryPointFile(new[] { "Item" }, new[] { "Quest/Intro", "Combat/Boss/Opening" });
+
+                Assert.Contains("public static ItemWorkbook Item", content, StringComparison.Ordinal);
+                Assert.Contains("public static FlowCharts.Files.Quest.Intro.IntroDefinition FlowChartQuestIntro", content, StringComparison.Ordinal);
+                Assert.Contains("public static FlowCharts.Files.Combat.Boss.Opening.OpeningDefinition FlowChartCombatBossOpening", content, StringComparison.Ordinal);
+                Assert.Contains("_ = FlowChartQuestIntro;", content, StringComparison.Ordinal);
+                Assert.Contains("_ = FlowChartCombatBossOpening;", content, StringComparison.Ordinal);
+        }
+
     private static LightyWorkspace WithOutputRelativePath(LightyWorkspace workspace, string outputRelativePath)
     {
         return new LightyWorkspace(
@@ -144,5 +420,19 @@ public class FlowChartCodeGenerationTests
     private static string CreateWorkspaceDirectory()
     {
         return Path.Combine(Path.GetTempPath(), $"LightyDesign.FlowChartCodeGenerationTests.{Guid.NewGuid():N}");
+    }
+
+    private static void CreateNodeDefinition(string workspaceRoot, string relativePath, string json)
+    {
+        var filePath = LightyWorkspacePathLayout.GetFlowChartNodeDefinitionFilePath(workspaceRoot, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        File.WriteAllText(filePath, json);
+    }
+
+    private static void CreateFlowChartFile(string workspaceRoot, string relativePath, string json)
+    {
+        var filePath = LightyWorkspacePathLayout.GetFlowChartFilePath(workspaceRoot, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        File.WriteAllText(filePath, json);
     }
 }

@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { NameInputDialog } from "../../components/NameInputDialog";
+import { CodegenDialog } from "../../workbook-editor/components/CodegenDialog";
 
 import type { useFlowChartEditor } from "../hooks/useFlowChartEditor";
 
@@ -20,6 +21,11 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
   const [metadataDialogMode, setMetadataDialogMode] = useState<"create" | "edit">("create");
   const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
   const [isNodeDialogOpen, setIsNodeDialogOpen] = useState(false);
+  const [isCodegenDialogOpen, setIsCodegenDialogOpen] = useState(false);
+  const [codegenDialogMode, setCodegenDialogMode] = useState<"single" | "batch" | "all">("single");
+  const [codegenOutputRelativePath, setCodegenOutputRelativePath] = useState(editor.workspaceCodegenOutputRelativePath ?? "");
+  const [codegenTargetPaths, setCodegenTargetPaths] = useState<string[]>([]);
+  const codegenOutputInputRef = useRef<HTMLInputElement | null>(null);
   const [preferredNodeType, setPreferredNodeType] = useState<string | null>(null);
   const [metadataDialogTarget, setMetadataDialogTarget] = useState<{
     previousRelativePath: string | null;
@@ -72,6 +78,108 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
       }
 
       index += 1;
+    }
+  }
+
+  function getFlowChartPathsUnderDirectory(baseDirectory: string) {
+    const normalizedBaseDirectory = baseDirectory.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    const prefix = normalizedBaseDirectory ? `${normalizedBaseDirectory}/` : "";
+    return (editor.catalog?.files ?? [])
+      .map((file) => file.relativePath)
+      .filter((relativePath) => !normalizedBaseDirectory || relativePath.startsWith(prefix));
+  }
+
+  function openCodegenDialog(mode: "single" | "batch" | "all", targetPaths: string[]) {
+    setCodegenDialogMode(mode);
+    setCodegenTargetPaths(targetPaths);
+    setCodegenOutputRelativePath(editor.workspaceCodegenOutputRelativePath ?? "");
+    setIsCodegenDialogOpen(true);
+  }
+
+  function handleCloseCodegenDialog() {
+    setIsCodegenDialogOpen(false);
+    setCodegenDialogMode("single");
+    setCodegenTargetPaths([]);
+  }
+
+  function handleOpenExportFlowChartDialog(relativePath: string) {
+    openCodegenDialog("single", [relativePath]);
+  }
+
+  function handleOpenExportFlowChartDirectoryDialog(baseDirectory: string) {
+    const relativePaths = getFlowChartPathsUnderDirectory(baseDirectory);
+    if (relativePaths.length === 0) {
+      return;
+    }
+
+    openCodegenDialog(relativePaths.length === 1 ? "single" : "batch", relativePaths);
+  }
+
+  function handleOpenExportAllFlowChartsDialog() {
+    const relativePaths = editor.catalog?.files.map((file) => file.relativePath) ?? [];
+    if (relativePaths.length === 0) {
+      return;
+    }
+
+    openCodegenDialog("all", relativePaths);
+  }
+
+  async function handleChooseCodegenOutputDirectory() {
+    const selectedPath = await editor.chooseCodegenOutputDirectory();
+    if (selectedPath) {
+      setCodegenOutputRelativePath(selectedPath);
+    }
+  }
+
+  async function handleSaveWorkspaceCodegenConfig() {
+    const saved = await editor.saveWorkspaceCodegenOptions(codegenOutputRelativePath);
+    if (saved) {
+      handleCloseCodegenDialog();
+    }
+  }
+
+  async function handleExportSingleFlowChartCode() {
+    const targetPath = codegenTargetPaths[0];
+    if (!targetPath) {
+      return;
+    }
+
+    const saved = await editor.saveWorkspaceCodegenOptions(codegenOutputRelativePath);
+    if (!saved) {
+      return;
+    }
+
+    const exported = await editor.exportFlowChartCode(targetPath);
+    if (exported) {
+      handleCloseCodegenDialog();
+    }
+  }
+
+  async function handleExportBatchFlowChartCode() {
+    if (codegenTargetPaths.length === 0) {
+      return;
+    }
+
+    const saved = await editor.saveWorkspaceCodegenOptions(codegenOutputRelativePath);
+    if (!saved) {
+      return;
+    }
+
+    const exported = await editor.exportFlowChartBatchCode(codegenTargetPaths);
+    if (exported) {
+      handleCloseCodegenDialog();
+    }
+  }
+
+  async function handleExportAllFlowChartCode() {
+    const saved = await editor.saveWorkspaceCodegenOptions(codegenOutputRelativePath);
+    if (!saved) {
+      return;
+    }
+
+    const exported = await editor.exportAllFlowChartCode();
+    if (exported) {
+      handleCloseCodegenDialog();
     }
   }
 
@@ -206,6 +314,9 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
         onOpenCreateDirectoryDialog={handleOpenCreateDirectoryDialog}
         onOpenCreateFlowChartDialog={handleOpenCreateFlowChartDialog}
         onOpenEditFlowChartDialog={handleOpenEditFlowChartDialog}
+        onOpenExportAllFlowChartsDialog={handleOpenExportAllFlowChartsDialog}
+        onOpenExportFlowChartDialog={handleOpenExportFlowChartDialog}
+        onOpenExportFlowChartDirectoryDialog={handleOpenExportFlowChartDirectoryDialog}
         onOpenFlowChart={editor.selectFlowChart}
         onOpenRenameDirectoryDialog={handleOpenRenameDirectoryDialog}
         onRequestDeleteDirectory={handleRequestDeleteDirectory}
@@ -297,6 +408,24 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
           setIsMetadataDialogOpen(false);
         }}
         onSubmit={handleSubmitMetadata}
+      />
+
+      <CodegenDialog
+        bridgeError={null}
+        canChooseWorkspaceDirectory={Boolean(window.lightyDesign?.chooseWorkspaceDirectory)}
+        inputRef={codegenOutputInputRef}
+        isOpen={isCodegenDialogOpen}
+        mode={codegenDialogMode}
+        onChooseOutputDirectory={handleChooseCodegenOutputDirectory}
+        onClose={handleCloseCodegenDialog}
+        onExportAll={handleExportAllFlowChartCode}
+        onExportBatch={handleExportBatchFlowChartCode}
+        onExportSingle={handleExportSingleFlowChartCode}
+        onOutputPathChange={setCodegenOutputRelativePath}
+        onSaveConfig={handleSaveWorkspaceCodegenConfig}
+        outputRelativePath={codegenOutputRelativePath}
+        subjectLabel="流程图"
+        workspacePath={workspacePath}
       />
 
       <NameInputDialog

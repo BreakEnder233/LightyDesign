@@ -1613,6 +1613,273 @@ app.MapPost("/api/workspace/workbooks/codegen/export-all", (ExportAllWorkbookCod
     }
 });
 
+app.MapPost("/api/workspace/flowcharts/codegen/export", (ExportFlowChartCodegenRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.RelativePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "relativePath is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var relativePath = LightyWorkspacePathLayout.NormalizeRelativeAssetPath(request.RelativePath);
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (!workspace.TryGetFlowChartFile(relativePath, out var flowChartDocument) || flowChartDocument is null)
+        {
+            return Results.NotFound(new
+            {
+                error = $"FlowChart file '{relativePath}' was not found.",
+                workspacePath,
+            });
+        }
+
+        var generator = new LightyFlowChartFileCodeGenerator();
+        var package = generator.Generate(workspace, relativePath);
+        var outputDirectoryPath = GeneratedCodeOutputWriter.WriteGeneratedFlowChartPackage(workspace.RootPath, relativePath, package);
+        var materializedFiles = GeneratedCodeOutputWriter.GetMaterializedRelativePaths(package.Files);
+
+        return Results.Ok(new
+        {
+            relativePath,
+            outputDirectoryPath,
+            fileCount = materializedFiles.Count,
+            files = materializedFiles,
+            flowChartCount = 1,
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/flowcharts/codegen/export-batch", (ExportBatchFlowChartCodegenRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    if (request.RelativePaths is null || request.RelativePaths.Count == 0)
+    {
+        return Results.BadRequest(new
+        {
+            error = "relativePaths is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+    var relativePaths = request.RelativePaths
+        .Where(path => !string.IsNullOrWhiteSpace(path))
+        .Select(LightyWorkspacePathLayout.NormalizeRelativeAssetPath)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    if (relativePaths.Count == 0)
+    {
+        return Results.BadRequest(new
+        {
+            error = "relativePaths is required.",
+        });
+    }
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        var missingRelativePath = relativePaths.FirstOrDefault(path => !workspace.TryGetFlowChartFile(path, out _));
+        if (!string.IsNullOrWhiteSpace(missingRelativePath))
+        {
+            return Results.NotFound(new
+            {
+                error = $"FlowChart file '{missingRelativePath}' was not found.",
+                workspacePath,
+            });
+        }
+
+        var generator = new LightyFlowChartFileCodeGenerator();
+        var package = generator.Generate(workspace, relativePaths);
+        var outputDirectoryPath = GeneratedCodeOutputWriter.WriteGeneratedFlowChartPackages(workspace.RootPath, relativePaths, package);
+        var materializedFiles = GeneratedCodeOutputWriter.GetMaterializedRelativePaths(package.Files);
+
+        return Results.Ok(new
+        {
+            relativePaths,
+            outputDirectoryPath,
+            fileCount = materializedFiles.Count,
+            files = materializedFiles,
+            flowChartCount = relativePaths.Count,
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
+app.MapPost("/api/workspace/flowcharts/codegen/export-all", (ExportAllFlowChartCodegenRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath))
+    {
+        return Results.BadRequest(new
+        {
+            error = "workspacePath is required.",
+        });
+    }
+
+    var workspacePath = request.WorkspacePath.Trim();
+
+    try
+    {
+        var workspace = LightyWorkspaceLoader.Load(workspacePath);
+        if (workspace.FlowChartFiles.Count == 0)
+        {
+            return Results.BadRequest(new
+            {
+                error = "The workspace does not contain any flowchart files to export.",
+                workspacePath,
+            });
+        }
+
+        var relativePaths = workspace.FlowChartFiles
+            .Select(document => document.RelativePath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var generator = new LightyFlowChartFileCodeGenerator();
+        var package = generator.Generate(workspace, relativePaths);
+        var outputDirectoryPath = GeneratedCodeOutputWriter.WriteGeneratedWorkspaceFlowChartPackage(workspace.RootPath, package);
+        var materializedFiles = GeneratedCodeOutputWriter.GetMaterializedRelativePaths(package.Files);
+
+        return Results.Ok(new
+        {
+            relativePaths,
+            outputDirectoryPath,
+            fileCount = materializedFiles.Count,
+            files = materializedFiles,
+            flowChartCount = relativePaths.Count,
+        });
+    }
+    catch (FileNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+            path = exception.FileName,
+        });
+    }
+    catch (DirectoryNotFoundException exception)
+    {
+        return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (LightyCoreException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+});
+
 app.MapGet("/api/workspace/workbooks/{workbookName}", (string workbookName, string workspacePath) =>
 {
     if (string.IsNullOrWhiteSpace(workspacePath))
@@ -2752,6 +3019,25 @@ sealed class ExportWorkbookCodegenRequest
 }
 
 sealed class ExportAllWorkbookCodegenRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+}
+
+sealed class ExportFlowChartCodegenRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string RelativePath { get; set; } = string.Empty;
+}
+
+sealed class ExportBatchFlowChartCodegenRequest
+{
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public List<string> RelativePaths { get; set; } = new();
+}
+
+sealed class ExportAllFlowChartCodegenRequest
 {
     public string WorkspacePath { get; set; } = string.Empty;
 }

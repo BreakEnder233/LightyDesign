@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { tryGetWorkspaceRelativePath } from "../../utils/appHelpers";
 import { fetchJson } from "../../utils/desktopHost";
 import type {
   FlowChartCatalogResponse,
   FlowChartClipboardSnapshot,
+  FlowChartCodegenExportResponse,
   FlowChartConnection,
   FlowChartConnectionKind,
   FlowChartFileDocument,
@@ -33,11 +35,19 @@ type ToastInput = {
   variant: "error" | "success";
   canOpenDetail: boolean;
   durationMs?: number;
+  action?: {
+    label: string;
+    kind: "open-directory";
+    directoryPath: string;
+  };
 };
 
 type UseFlowChartEditorArgs = {
   hostInfo: DesktopHostInfo | null;
   workspacePath: string;
+  bridgeError?: string | null;
+  workspaceCodegenOutputRelativePath?: string | null;
+  onSaveWorkspaceCodegenOptions?: (outputRelativePath: string) => Promise<boolean>;
   onToast: (toast: ToastInput) => void;
 };
 
@@ -384,7 +394,14 @@ function buildClipboardSnapshot(document: FlowChartFileDocument, selection: Flow
   };
 }
 
-export function useFlowChartEditor({ hostInfo, workspacePath, onToast }: UseFlowChartEditorArgs) {
+export function useFlowChartEditor({
+  hostInfo,
+  workspacePath,
+  bridgeError,
+  workspaceCodegenOutputRelativePath,
+  onSaveWorkspaceCodegenOptions,
+  onToast,
+}: UseFlowChartEditorArgs) {
   const [catalog, setCatalog] = useState<FlowChartCatalogResponse | null>(null);
   const [catalogStatus, setCatalogStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -1862,6 +1879,292 @@ export function useFlowChartEditor({ hostInfo, workspacePath, onToast }: UseFlow
     }
   }, [activeFlowChartPath, activeFlowChartState, hostInfo, onToast, reloadCatalog, validationIssues.length, workspacePath]);
 
+  const saveWorkspaceCodegenOptions = useCallback(async (outputRelativePath: string) => {
+    if (!onSaveWorkspaceCodegenOptions) {
+      onToast({
+        title: "无法保存代码生成配置",
+        detail: "当前工作区未连接工作簿配置写入能力。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+      });
+      return false;
+    }
+
+    return onSaveWorkspaceCodegenOptions(outputRelativePath);
+  }, [onSaveWorkspaceCodegenOptions, onToast]);
+
+  const chooseCodegenOutputDirectory = useCallback(async () => {
+    if (!window.lightyDesign?.chooseWorkspaceDirectory) {
+      onToast({
+        title: "无法选择输出目录",
+        detail: bridgeError ?? "当前环境不支持原生目录选择。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+      });
+      return null;
+    }
+
+    if (!workspacePath) {
+      onToast({
+        title: "无法选择输出目录",
+        detail: "请先打开一个工作区。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+      });
+      return null;
+    }
+
+    try {
+      const selectedPath = await window.lightyDesign.chooseWorkspaceDirectory();
+      if (!selectedPath) {
+        return null;
+      }
+
+      const relativePath = tryGetWorkspaceRelativePath(workspacePath, selectedPath);
+      if (relativePath === null) {
+        onToast({
+          title: "输出目录必须与工作区位于同一硬盘",
+          detail: `已选择目录: ${selectedPath}\n工作区目录: ${workspacePath}`,
+          source: "system",
+          variant: "error",
+          canOpenDetail: true,
+        });
+        return null;
+      }
+
+      return relativePath;
+    } catch (error) {
+      onToast({
+        title: "无法选择输出目录",
+        detail: error instanceof Error ? error.message : "打开输出目录选择器失败。",
+        source: "system",
+        variant: "error",
+        canOpenDetail: true,
+      });
+      return null;
+    }
+  }, [bridgeError, onToast, workspacePath]);
+
+  const ensureActiveFlowChartSavedForExport = useCallback(async (targetRelativePaths: string[]) => {
+    if (!activeFlowChartPath || activeFlowChartState.status !== "ready" || !activeFlowChartState.dirty) {
+      return true;
+    }
+
+    if (!targetRelativePaths.includes(activeFlowChartPath)) {
+      return true;
+    }
+
+    return saveActiveFlowChart();
+  }, [activeFlowChartPath, activeFlowChartState, saveActiveFlowChart]);
+
+  const exportFlowChartCode = useCallback(async (relativePath: string) => {
+    if (!hostInfo || !workspacePath) {
+      onToast({
+        title: "无法导出代码",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+      });
+      return false;
+    }
+
+    const normalizedRelativePath = normalizeFlowChartRelativePath(relativePath);
+    if (!normalizedRelativePath) {
+      onToast({
+        title: "无法导出代码",
+        detail: "流程图相对路径无效。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+      });
+      return false;
+    }
+
+    const saved = await ensureActiveFlowChartSavedForExport([normalizedRelativePath]);
+    if (!saved) {
+      return false;
+    }
+
+    try {
+      const result = await fetchJson<FlowChartCodegenExportResponse>(`${hostInfo.desktopHostUrl}/api/workspace/flowcharts/codegen/export`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspacePath,
+          relativePath: normalizedRelativePath,
+        }),
+      });
+
+      onToast({
+        title: `代码导出成功: ${normalizedRelativePath}`,
+        detail: `已输出 ${result.fileCount} 个文件到 ${result.outputDirectoryPath}。`,
+        source: "save",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 5000,
+        action: {
+          label: "打开输出目录",
+          kind: "open-directory",
+          directoryPath: result.outputDirectoryPath,
+        },
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "导出代码失败。";
+      onToast({
+        title: "导出代码失败",
+        detail: errorMessage,
+        source: "save",
+        variant: "error",
+        canOpenDetail: true,
+      });
+      return false;
+    }
+  }, [ensureActiveFlowChartSavedForExport, hostInfo, onToast, workspacePath]);
+
+  const exportFlowChartBatchCode = useCallback(async (relativePaths: string[]) => {
+    if (!hostInfo || !workspacePath) {
+      onToast({
+        title: "无法导出代码",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+      });
+      return false;
+    }
+
+    const normalizedRelativePaths = Array.from(new Set(relativePaths.map(normalizeFlowChartRelativePath).filter((path) => path.length > 0)));
+    if (normalizedRelativePaths.length === 0) {
+      onToast({
+        title: "无法导出代码",
+        detail: "当前没有可导出的流程图。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+      });
+      return false;
+    }
+
+    const saved = await ensureActiveFlowChartSavedForExport(normalizedRelativePaths);
+    if (!saved) {
+      return false;
+    }
+
+    try {
+      const result = await fetchJson<FlowChartCodegenExportResponse>(`${hostInfo.desktopHostUrl}/api/workspace/flowcharts/codegen/export-batch`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspacePath,
+          relativePaths: normalizedRelativePaths,
+        }),
+      });
+
+      const exportedCount = result.flowChartCount ?? normalizedRelativePaths.length;
+      onToast({
+        title: "批量流程图代码导出成功",
+        detail: `已导出 ${exportedCount} 张流程图，共生成 ${result.fileCount} 个文件到 ${result.outputDirectoryPath}。`,
+        source: "save",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 5000,
+        action: {
+          label: "打开输出目录",
+          kind: "open-directory",
+          directoryPath: result.outputDirectoryPath,
+        },
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "批量导出代码失败。";
+      onToast({
+        title: "批量导出代码失败",
+        detail: errorMessage,
+        source: "save",
+        variant: "error",
+        canOpenDetail: true,
+      });
+      return false;
+    }
+  }, [ensureActiveFlowChartSavedForExport, hostInfo, onToast, workspacePath]);
+
+  const exportAllFlowChartCode = useCallback(async () => {
+    if (!hostInfo || !workspacePath) {
+      onToast({
+        title: "无法导出代码",
+        detail: "请先选择一个有效工作区。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+      });
+      return false;
+    }
+
+    const relativePaths = catalog?.files.map((file) => file.relativePath) ?? [];
+    if (relativePaths.length === 0) {
+      onToast({
+        title: "无法导出全部代码",
+        detail: "当前工作区没有可导出的流程图。",
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: false,
+      });
+      return false;
+    }
+
+    const saved = await ensureActiveFlowChartSavedForExport(relativePaths);
+    if (!saved) {
+      return false;
+    }
+
+    try {
+      const result = await fetchJson<FlowChartCodegenExportResponse>(`${hostInfo.desktopHostUrl}/api/workspace/flowcharts/codegen/export-all`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspacePath,
+        }),
+      });
+
+      const exportedCount = result.flowChartCount ?? relativePaths.length;
+      onToast({
+        title: "全部流程图代码导出成功",
+        detail: `已导出 ${exportedCount} 张流程图，共生成 ${result.fileCount} 个文件到 ${result.outputDirectoryPath}。`,
+        source: "save",
+        variant: "success",
+        canOpenDetail: false,
+        durationMs: 5000,
+        action: {
+          label: "打开输出目录",
+          kind: "open-directory",
+          directoryPath: result.outputDirectoryPath,
+        },
+      });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "导出全部代码失败。";
+      onToast({
+        title: "导出全部代码失败",
+        detail: errorMessage,
+        source: "save",
+        variant: "error",
+        canOpenDetail: true,
+      });
+      return false;
+    }
+  }, [catalog?.files, ensureActiveFlowChartSavedForExport, hostInfo, onToast, workspacePath]);
+
   return {
     catalog,
     catalogError,
@@ -1886,6 +2189,7 @@ export function useFlowChartEditor({ hostInfo, workspacePath, onToast }: UseFlow
     canSaveActiveFlowChart,
     canPasteClipboard,
     clipboardVersion,
+    workspaceCodegenOutputRelativePath: workspaceCodegenOutputRelativePath ?? "",
     createFlowChart,
     createFlowChartDirectory,
     renameFlowChartDirectory,
@@ -1915,6 +2219,11 @@ export function useFlowChartEditor({ hostInfo, workspacePath, onToast }: UseFlow
     reloadCatalog,
     reloadActiveFlowChart,
     saveActiveFlowChart,
+    saveWorkspaceCodegenOptions,
+    chooseCodegenOutputDirectory,
+    exportFlowChartCode,
+    exportFlowChartBatchCode,
+    exportAllFlowChartCode,
     ensureNodeDefinition,
     copySelection,
     cutSelection,

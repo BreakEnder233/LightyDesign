@@ -7,6 +7,9 @@ public static class GeneratedCodeOutputWriter
 {
     public const string GeneratedDirectoryName = "Generated";
     public const string ExtendedDirectoryName = "Extended";
+    private const string FlowChartsDirectoryName = "FlowCharts";
+    private const string FlowChartFilesDirectoryName = "Files";
+    private const string FlowChartNodesDirectoryName = "Nodes";
 
     public static string WriteGeneratedWorkbookPackage(string workspaceRootPath, string workbookName, LightyGeneratedWorkbookPackage package)
     {
@@ -24,7 +27,62 @@ public static class GeneratedCodeOutputWriter
             generatedWorkbookNames.Add(workbookName);
         }
 
-        WriteEntryPointFile(generatedOutputRootPath, generatedWorkbookNames);
+        RewriteEntryPointFile(generatedOutputRootPath, generatedWorkbookNames);
+
+        return generatedOutputRootPath;
+    }
+
+    public static string WriteGeneratedFlowChartPackage(string workspaceRootPath, string flowChartRelativePath, LightyGeneratedFlowChartPackage package)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(flowChartRelativePath);
+        ArgumentNullException.ThrowIfNull(package);
+
+        var generatedOutputRootPath = InitializeOutputDirectories(workspaceRootPath, package.OutputRelativePath, resetGeneratedRoot: false);
+        DeleteFlowChartNodesDirectory(generatedOutputRootPath);
+        DeleteFlowChartDirectory(generatedOutputRootPath, flowChartRelativePath);
+        WriteGeneratedFiles(generatedOutputRootPath, package.Files);
+        RewriteEntryPointFile(generatedOutputRootPath);
+
+        return generatedOutputRootPath;
+    }
+
+    public static string WriteGeneratedFlowChartPackages(
+        string workspaceRootPath,
+        IReadOnlyList<string> flowChartRelativePaths,
+        LightyGeneratedFlowChartPackage package)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);
+        ArgumentNullException.ThrowIfNull(flowChartRelativePaths);
+        ArgumentNullException.ThrowIfNull(package);
+
+        if (flowChartRelativePaths.Count == 0)
+        {
+            throw new ArgumentException("At least one FlowChart relative path is required.", nameof(flowChartRelativePaths));
+        }
+
+        var generatedOutputRootPath = InitializeOutputDirectories(workspaceRootPath, package.OutputRelativePath, resetGeneratedRoot: false);
+        DeleteFlowChartNodesDirectory(generatedOutputRootPath);
+        foreach (var flowChartRelativePath in flowChartRelativePaths.Where(path => !string.IsNullOrWhiteSpace(path)))
+        {
+            DeleteFlowChartDirectory(generatedOutputRootPath, flowChartRelativePath);
+        }
+
+        WriteGeneratedFiles(generatedOutputRootPath, package.Files);
+        RewriteEntryPointFile(generatedOutputRootPath);
+
+        return generatedOutputRootPath;
+    }
+
+    public static string WriteGeneratedWorkspaceFlowChartPackage(string workspaceRootPath, LightyGeneratedFlowChartPackage package)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);
+        ArgumentNullException.ThrowIfNull(package);
+
+        var generatedOutputRootPath = InitializeOutputDirectories(workspaceRootPath, package.OutputRelativePath, resetGeneratedRoot: false);
+        DeleteFlowChartsDirectory(generatedOutputRootPath);
+        WriteGeneratedFiles(generatedOutputRootPath, package.Files);
+        RewriteEntryPointFile(generatedOutputRootPath);
 
         return generatedOutputRootPath;
     }
@@ -47,7 +105,12 @@ public static class GeneratedCodeOutputWriter
             throw new LightyCoreException("All workbook packages must target the same output relative path.");
         }
 
-        var generatedOutputRootPath = InitializeOutputDirectories(workspaceRootPath, outputRelativePath, resetGeneratedRoot: true);
+        var generatedOutputRootPath = InitializeOutputDirectories(workspaceRootPath, outputRelativePath, resetGeneratedRoot: false);
+
+        foreach (var existingWorkbookName in GetGeneratedWorkbookNames(generatedOutputRootPath))
+        {
+            DeleteWorkbookDirectory(generatedOutputRootPath, existingWorkbookName);
+        }
 
         foreach (var (workbookName, package) in workbookPackages)
         {
@@ -62,7 +125,7 @@ public static class GeneratedCodeOutputWriter
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        WriteEntryPointFile(generatedOutputRootPath, generatedWorkbookNames);
+        RewriteEntryPointFile(generatedOutputRootPath, generatedWorkbookNames);
 
         return generatedOutputRootPath;
     }
@@ -105,6 +168,24 @@ public static class GeneratedCodeOutputWriter
             .Select(entry => entry.WorkbookName)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public static List<string> GetGeneratedFlowChartRelativePaths(string outputRootPath)
+    {
+        var flowChartFilesRootPath = Path.Combine(outputRootPath, FlowChartsDirectoryName, FlowChartFilesDirectoryName);
+        if (!Directory.Exists(flowChartFilesRootPath))
+        {
+            return new List<string>();
+        }
+
+        return Directory.EnumerateFiles(flowChartFilesRootPath, "*Definition.cs", SearchOption.AllDirectories)
+            .Select(filePath => Path.GetDirectoryName(filePath))
+            .Where(directoryPath => !string.IsNullOrWhiteSpace(directoryPath))
+            .Select(directoryPath => NormalizeRelativePath(Path.GetRelativePath(flowChartFilesRootPath, directoryPath!)))
+            .Where(relativePath => !string.IsNullOrWhiteSpace(relativePath) && !string.Equals(relativePath, ".", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -172,11 +253,64 @@ public static class GeneratedCodeOutputWriter
         }
     }
 
-    private static void WriteEntryPointFile(string generatedOutputRootPath, IEnumerable<string> workbookNames)
+    private static void WriteEntryPointFile(string generatedOutputRootPath, IEnumerable<string> workbookNames, IEnumerable<string> flowChartRelativePaths)
     {
         var generator = new LightyWorkbookCodeGenerator();
-        var entryPointContent = generator.GenerateEntryPointFile(workbookNames);
+        var entryPointContent = generator.GenerateEntryPointFile(workbookNames, flowChartRelativePaths);
         File.WriteAllText(Path.Combine(generatedOutputRootPath, "LDD.cs"), entryPointContent);
+    }
+
+    private static void RewriteEntryPointFile(string generatedOutputRootPath)
+    {
+        WriteEntryPointFile(
+            generatedOutputRootPath,
+            GetGeneratedWorkbookNames(generatedOutputRootPath),
+            GetGeneratedFlowChartRelativePaths(generatedOutputRootPath));
+    }
+
+    private static void RewriteEntryPointFile(string generatedOutputRootPath, IEnumerable<string> generatedWorkbookNames)
+    {
+        WriteEntryPointFile(
+            generatedOutputRootPath,
+            generatedWorkbookNames,
+            GetGeneratedFlowChartRelativePaths(generatedOutputRootPath));
+    }
+
+    private static void DeleteFlowChartDirectory(string generatedOutputRootPath, string flowChartRelativePath)
+    {
+        var normalizedRelativePath = NormalizeRelativePath(flowChartRelativePath).Trim('/');
+        if (string.IsNullOrWhiteSpace(normalizedRelativePath))
+        {
+            return;
+        }
+
+        var flowChartOutputPath = Path.Combine(
+            generatedOutputRootPath,
+            FlowChartsDirectoryName,
+            FlowChartFilesDirectoryName,
+            normalizedRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (Directory.Exists(flowChartOutputPath))
+        {
+            Directory.Delete(flowChartOutputPath, recursive: true);
+        }
+    }
+
+    private static void DeleteFlowChartNodesDirectory(string generatedOutputRootPath)
+    {
+        var flowChartNodesOutputPath = Path.Combine(generatedOutputRootPath, FlowChartsDirectoryName, FlowChartNodesDirectoryName);
+        if (Directory.Exists(flowChartNodesOutputPath))
+        {
+            Directory.Delete(flowChartNodesOutputPath, recursive: true);
+        }
+    }
+
+    private static void DeleteFlowChartsDirectory(string generatedOutputRootPath)
+    {
+        var flowChartsOutputPath = Path.Combine(generatedOutputRootPath, FlowChartsDirectoryName);
+        if (Directory.Exists(flowChartsOutputPath))
+        {
+            Directory.Delete(flowChartsOutputPath, recursive: true);
+        }
     }
 
     private static bool HasWorkbookDefinitionFile(string directoryPath, string workbookName)

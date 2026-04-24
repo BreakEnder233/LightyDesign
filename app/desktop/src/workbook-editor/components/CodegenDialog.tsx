@@ -2,11 +2,12 @@ import type { RefObject } from "react";
 
 import { DialogBackdrop } from "../../components/DialogBackdrop";
 
-type CodegenDialogMode = "single" | "all";
+type CodegenDialogMode = "single" | "batch" | "all";
 
 interface CodegenDialogProps {
   isOpen: boolean;
   mode: CodegenDialogMode;
+  subjectLabel?: string;
   outputRelativePath: string;
   canChooseWorkspaceDirectory: boolean;
   workspacePath: string;
@@ -17,12 +18,14 @@ interface CodegenDialogProps {
   onChooseOutputDirectory: () => void | Promise<void>;
   onSaveConfig: () => void | Promise<void>;
   onExportSingle: () => void | Promise<void>;
+  onExportBatch?: () => void | Promise<void>;
   onExportAll: () => void | Promise<void>;
 }
 
 export function CodegenDialog({
   isOpen,
   mode,
+  subjectLabel = "工作簿",
   outputRelativePath,
   canChooseWorkspaceDirectory,
   workspacePath,
@@ -33,15 +36,20 @@ export function CodegenDialog({
   onChooseOutputDirectory,
   onSaveConfig,
   onExportSingle,
+  onExportBatch,
   onExportAll,
 }: CodegenDialogProps) {
   if (!isOpen) {
     return null;
   }
 
-  const title = mode === "all" ? "导出全部工作簿代码" : "导出工作簿代码";
-  const submit = mode === "all" ? onExportAll : onExportSingle;
-  const submitLabel = mode === "all" ? "导出全部代码" : "导出代码";
+  const title = mode === "all"
+    ? `导出全部${subjectLabel}代码`
+    : mode === "batch"
+      ? `批量导出${subjectLabel}代码`
+      : `导出${subjectLabel}代码`;
+  const submit = mode === "all" ? onExportAll : mode === "batch" ? (onExportBatch ?? onExportAll) : onExportSingle;
+  const submitLabel = mode === "all" ? "导出全部代码" : mode === "batch" ? "批量导出代码" : "导出代码";
 
   return (
     <DialogBackdrop className="workspace-create-backdrop" onClose={onClose}>

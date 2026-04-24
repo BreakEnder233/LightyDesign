@@ -22,6 +22,9 @@ type FlowChartSidebarProps = {
   onOpenEditFlowChartDialog: (relativePath: string) => void;
   onOpenCreateDirectoryDialog: (scope: FlowChartTreeScope, baseDirectory: string) => void;
   onOpenRenameDirectoryDialog: (scope: FlowChartTreeScope, relativePath: string) => void;
+  onOpenExportFlowChartDialog: (relativePath: string) => void;
+  onOpenExportFlowChartDirectoryDialog: (baseDirectory: string) => void;
+  onOpenExportAllFlowChartsDialog: () => void;
   onRequestDeleteDirectory: (scope: FlowChartTreeScope, relativePath: string, label: string) => void;
   onRequestDeleteFlowChart: (relativePath: string, label: string) => void;
 };
@@ -268,6 +271,9 @@ export function FlowChartSidebar({
   onOpenEditFlowChartDialog,
   onOpenCreateDirectoryDialog,
   onOpenRenameDirectoryDialog,
+  onOpenExportFlowChartDialog,
+  onOpenExportFlowChartDirectoryDialog,
+  onOpenExportAllFlowChartsDialog,
   onRequestDeleteDirectory,
   onRequestDeleteFlowChart,
 }: FlowChartSidebarProps) {
@@ -358,6 +364,19 @@ export function FlowChartSidebar({
   const visibleRoots = [filesTree, nodesTree].filter((root): root is TreeDirectoryNode => root !== null);
   const hasVisibleEntries = visibleRoots.some((root) => root.children.length > 0);
   const isSearchActive = keyword.length > 0;
+
+  function getFlowChartCountInDirectory(relativePath: string | null) {
+    if (!catalog) {
+      return 0;
+    }
+
+    if (!relativePath) {
+      return catalog.files.length;
+    }
+
+    const prefix = `${relativePath}/`;
+    return catalog.files.filter((file) => file.relativePath.startsWith(prefix)).length;
+  }
 
   function toggleDirectory(key: string) {
     setExpandedKeys((current) => {
@@ -575,6 +594,28 @@ export function FlowChartSidebar({
                 </button>
               ) : null}
 
+              {contextMenu.target.scope === "files" ? (
+                contextMenu.target.isRoot ? (
+                  <button
+                    className="tree-context-menu-item"
+                    disabled={getFlowChartCountInDirectory(null) === 0}
+                    onClick={() => runMenuAction(() => onOpenExportAllFlowChartsDialog())}
+                    type="button"
+                  >
+                    导出全部代码
+                  </button>
+                ) : (
+                  <button
+                    className="tree-context-menu-item"
+                    disabled={getFlowChartCountInDirectory(contextMenu.target.relativePath) === 0}
+                    onClick={() => runMenuAction(() => onOpenExportFlowChartDirectoryDialog(contextMenu.target.relativePath ?? ""))}
+                    type="button"
+                  >
+                    导出目录代码
+                  </button>
+                )
+              ) : null}
+
               <button
                 className="tree-context-menu-item"
                 onClick={() => runMenuAction(() => onOpenCreateDirectoryDialog(contextMenu.target.scope, contextMenu.target.relativePath ?? ""))}
@@ -620,6 +661,13 @@ export function FlowChartSidebar({
                 type="button"
               >
                 重命名 / 编辑元信息
+              </button>
+              <button
+                className="tree-context-menu-item"
+                onClick={() => runMenuAction(() => onOpenExportFlowChartDialog(contextMenu.target.relativePath))}
+                type="button"
+              >
+                导出流程图代码
               </button>
               <button
                 className="tree-context-menu-item is-danger"

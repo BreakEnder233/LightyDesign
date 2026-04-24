@@ -73,6 +73,7 @@ function App() {
     chooseParentDirectoryForWorkspaceCreation,
     createWorkspace,
     deleteWorkbook,
+    saveWorkspaceCodegenOptions,
     validateWorkbookCode,
     chooseWorkspaceDirectory,
     retryWorkspaceLoad,
@@ -152,6 +153,9 @@ function App() {
   const flowChartEditor = useFlowChartEditor({
     hostInfo,
     workspacePath,
+    bridgeError,
+    workspaceCodegenOutputRelativePath: workspace?.codegen.outputRelativePath ?? "",
+    onSaveWorkspaceCodegenOptions: saveWorkspaceCodegenOptions,
     onToast: pushToastNotification,
   });
   const {

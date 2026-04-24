@@ -72,7 +72,13 @@ public sealed class LightyWorkbookCodeGenerator
 
     public string GenerateEntryPointFile(IEnumerable<string> workbookNames)
     {
+        return GenerateEntryPointFile(workbookNames, Array.Empty<string>());
+    }
+
+    public string GenerateEntryPointFile(IEnumerable<string> workbookNames, IEnumerable<string> flowChartRelativePaths)
+    {
         ArgumentNullException.ThrowIfNull(workbookNames);
+        ArgumentNullException.ThrowIfNull(flowChartRelativePaths);
 
         var normalizedWorkbookNames = workbookNames
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -80,13 +86,19 @@ public sealed class LightyWorkbookCodeGenerator
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var normalizedFlowChartRelativePaths = flowChartRelativePaths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path.Trim().Replace('\\', '/').Trim('/'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        if (normalizedWorkbookNames.Count == 0)
+        if (normalizedWorkbookNames.Count == 0 && normalizedFlowChartRelativePaths.Count == 0)
         {
-            throw new ArgumentException("At least one workbook name is required to generate LDD entry point.", nameof(workbookNames));
+            throw new ArgumentException("At least one workbook name or FlowChart relative path is required to generate LDD entry point.");
         }
 
-        return RenderEntryPointFile(normalizedWorkbookNames);
+        return RenderEntryPointFile(normalizedWorkbookNames, normalizedFlowChartRelativePaths);
     }
 
     private static GeneratedSheetModel AnalyzeSheet(LightyWorkspace workspace, LightySheet sheet)
@@ -687,7 +699,7 @@ public sealed class LightyWorkbookCodeGenerator
         return writer.ToString();
     }
 
-    private static string RenderEntryPointFile(IReadOnlyList<string> workbookNames)
+    private static string RenderEntryPointFile(IReadOnlyList<string> workbookNames, IReadOnlyList<string> flowChartRelativePaths)
     {
         var writer = new CodeWriter();
         writer.AppendLine("using System;");
@@ -746,6 +758,13 @@ public sealed class LightyWorkbookCodeGenerator
             writer.AppendLine($"public static {workbookTypeName} {workbookPropertyName} {{ get; }} = {workbookTypeName}.Create();");
         }
 
+        foreach (var flowChartRelativePath in flowChartRelativePaths)
+        {
+            var propertyName = LightyFlowChartCodegenNaming.BuildLddFlowChartPropertyName(flowChartRelativePath);
+            var typeName = $"FlowCharts.Files.{BuildFlowChartTypePath(flowChartRelativePath)}.{LightyFlowChartFileCodeGenerator.BuildDefinitionTypeName(flowChartRelativePath)}";
+            writer.AppendLine($"public static {typeName} {propertyName} {{ get; }} = {typeName}.Create();");
+        }
+
         writer.AppendLine();
         writer.AppendLine("public static EditingScope BeginEditing()");
         writer.AppendLine("{");
@@ -760,6 +779,10 @@ public sealed class LightyWorkbookCodeGenerator
         foreach (var workbookName in workbookNames)
         {
             writer.AppendLine($"_ = {ToTypeIdentifier(workbookName)};");
+        }
+        foreach (var flowChartRelativePath in flowChartRelativePaths)
+        {
+            writer.AppendLine($"_ = {LightyFlowChartCodegenNaming.BuildLddFlowChartPropertyName(flowChartRelativePath)};");
         }
         writer.Outdent();
         writer.AppendLine("}");
@@ -1361,6 +1384,11 @@ public sealed class LightyWorkbookCodeGenerator
         }
 
         return expression;
+    }
+
+    private static string BuildFlowChartTypePath(string relativePath)
+    {
+        return string.Join('.', relativePath.Split('/').Where(segment => !string.IsNullOrWhiteSpace(segment)).Select(LightyFlowChartCodegenNaming.ToTypeIdentifier));
     }
 
     private static string ToTypeIdentifier(string value)

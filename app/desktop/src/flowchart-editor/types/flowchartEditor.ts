@@ -113,6 +113,15 @@ export type FlowChartFileResponse = FlowChartFileSummary & {
   document: FlowChartFileDocument | null;
 };
 
+export type FlowChartCodegenExportResponse = {
+  relativePath?: string;
+  relativePaths?: string[];
+  outputDirectoryPath: string;
+  fileCount: number;
+  files: string[];
+  flowChartCount?: number;
+};
+
 export type FlowChartCatalogResponse = {
   flowChartsRootPath: string;
   flowChartNodesRootPath: string;

@@ -261,6 +261,7 @@ export function FlowChartCanvas({
   selectedNodeCount,
 }: FlowChartCanvasProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const minimapRef = useRef<HTMLDivElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [viewOrigin, setViewOrigin] = useState<CanvasPoint>({ x: 0, y: 0 });
@@ -289,6 +290,10 @@ export function FlowChartCanvas({
   });
   const [contextMenuState, setContextMenuState] = useState<ContextMenuState | null>(null);
   const initialViewAppliedDocumentKeyRef = useRef<string | null>(null);
+  const [minimapDragState, setMinimapDragState] = useState<{
+    pointerOffsetX: number;
+    pointerOffsetY: number;
+  } | null>(null);
 
   const nodesById = useMemo(() => new Map(activeDocument?.nodes.map((node) => [node.nodeId, node]) ?? []), [activeDocument]);
   const selectedNodeIdSet = useMemo(() => new Set(selection.nodeIds), [selection.nodeIds]);
@@ -406,7 +411,7 @@ export function FlowChartCanvas({
   }, [updateViewportSize]);
 
   useEffect(() => {
-    if (!dragState && !marqueeState && !panState) {
+    if (!dragState && !marqueeState && !panState && !minimapDragState) {
       return;
     }
 
@@ -418,7 +423,27 @@ export function FlowChartCanvas({
         });
         return;
       }
+      if (minimapDragState) {
+        const minimap = minimapRef.current;
+        if (!minimap) {
+          return;
+        }
 
+        const rect = minimap.getBoundingClientRect();
+        const scale = Math.min((rect.width - 12) / minimapRect.width, (rect.height - 12) / minimapRect.height);
+        const contentWidth = minimapRect.width * scale;
+        const contentHeight = minimapRect.height * scale;
+        const offsetX = (rect.width - contentWidth) / 2;
+        const offsetY = (rect.height - contentHeight) / 2;
+        const logicalX = minimapOrigin.x + Math.max(0, Math.min(minimapRect.width, (event.clientX - rect.left - offsetX) / scale));
+        const logicalY = minimapOrigin.y + Math.max(0, Math.min(minimapRect.height, (event.clientY - rect.top - offsetY) / scale));
+
+        setViewOrigin({
+          x: logicalX - minimapDragState.pointerOffsetX,
+          y: logicalY - minimapDragState.pointerOffsetY,
+        });
+        return;
+      }
       const point = getCanvasPointFromClient(event.clientX, event.clientY);
       if (!point) {
         return;
@@ -446,6 +471,7 @@ export function FlowChartCanvas({
     const handleMouseUp = () => {
       setPanState(null);
       setDragState(null);
+      setMinimapDragState(null);
 
       if (!marqueeState || !activeDocument) {
         setMarqueeState(null);
@@ -474,7 +500,7 @@ export function FlowChartCanvas({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [activeDocument, dragState, getCanvasPointFromClient, marqueeState, nodeDefinitionsByType, onClearSelection, onMoveSelectedNodes, onSelectNodes, panState, zoom]);
+  }, [activeDocument, dragState, getCanvasPointFromClient, marqueeState, nodeDefinitionsByType, onClearSelection, onMoveSelectedNodes, onSelectNodes, panState, zoom, minimapDragState, minimapRect, minimapOrigin]);
 
   useEffect(() => {
     initialViewAppliedDocumentKeyRef.current = null;
@@ -483,6 +509,7 @@ export function FlowChartCanvas({
     setMarqueeState(null);
     setPointerPosition(null);
     setContextMenuState(null);
+    setMinimapDragState(null);
   }, [documentKey]);
 
   useEffect(() => {
@@ -707,15 +734,35 @@ export function FlowChartCanvas({
   }
 
   function handleMinimapMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
+    const minimapEl = minimapRef.current ?? event.currentTarget;
+    const rect = minimapEl.getBoundingClientRect();
     const scale = Math.min((rect.width - 12) / minimapRect.width, (rect.height - 12) / minimapRect.height);
     const contentWidth = minimapRect.width * scale;
     const contentHeight = minimapRect.height * scale;
     const offsetX = (rect.width - contentWidth) / 2;
     const offsetY = (rect.height - contentHeight) / 2;
-    const logicalX = minimapOrigin.x + Math.max(0, Math.min(minimapRect.width, (event.clientX - rect.left - offsetX) / scale));
-    const logicalY = minimapOrigin.y + Math.max(0, Math.min(minimapRect.height, (event.clientY - rect.top - offsetY) / scale));
+    const localX = Math.max(0, Math.min(minimapRect.width, (event.clientX - rect.left - offsetX) / scale));
+    const localY = Math.max(0, Math.min(minimapRect.height, (event.clientY - rect.top - offsetY) / scale));
+    const logicalX = minimapOrigin.x + localX;
+    const logicalY = minimapOrigin.y + localY;
 
+    // 如果点击在视口矩形内部，则进入拖拽视口模式
+    const insideViewport =
+      localX >= minimapViewportRect.x &&
+      localX <= minimapViewportRect.x + minimapViewportRect.width &&
+      localY >= minimapViewportRect.y &&
+      localY <= minimapViewportRect.y + minimapViewportRect.height;
+
+    if (insideViewport) {
+      setMinimapDragState({
+        pointerOffsetX: logicalX - viewOrigin.x,
+        pointerOffsetY: logicalY - viewOrigin.y,
+      });
+      event.stopPropagation();
+      return;
+    }
+
+    // 否则视为点击跳转到该位置
     setViewOrigin({
       x: logicalX - viewportMetrics.width / 2,
       y: logicalY - viewportMetrics.height / 2,
@@ -982,7 +1029,7 @@ export function FlowChartCanvas({
         </div>
       </div>
 
-      <div className="flowchart-minimap" onMouseDown={handleMinimapMouseDown} role="presentation">
+      <div className="flowchart-minimap" onMouseDown={handleMinimapMouseDown} role="presentation" ref={minimapRef}>
         <div className="flowchart-minimap-header">小地图</div>
         <svg className="flowchart-minimap-canvas" viewBox={`0 0 ${minimapRect.width} ${minimapRect.height}`}>
           <rect className="flowchart-minimap-background" height={minimapRect.height} width={minimapRect.width} x={0} y={0} />

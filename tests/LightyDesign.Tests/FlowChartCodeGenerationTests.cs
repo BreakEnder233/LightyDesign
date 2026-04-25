@@ -663,11 +663,17 @@ public class FlowChartCodeGenerationTests
                         Assert.Contains("public sealed partial class IntroFlow<TContext>", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("private readonly Dictionary<uint, FlowChartNodeState> _nodeStates = new Dictionary<uint, FlowChartNodeState>();", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("private readonly Dictionary<(uint NodeId, uint PortId), object?> _stepComputeCache = new Dictionary<(uint NodeId, uint PortId), object?>();", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("private FlowChartNodeTransition? _currentEntryTransition;", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("public void Resume()", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("public void StepOnce()", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public void StepOnce(TimeSpan deltaTime)", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("public void Step(int maxSteps)", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public void Step(int maxSteps, TimeSpan deltaTime)", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("public void RunToCompletion()", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public void RunToCompletion(TimeSpan deltaTime)", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("public void RunUntilPaused()", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public void RunUntilPaused(TimeSpan deltaTime)", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("private void EnterNode(uint? sourceNodeId, uint? sourcePortId, uint targetNodeId, uint? targetPortId)", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("private T ResolveComputeInput<T>(uint targetNodeId, uint targetPortId)", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("private object? EvaluateNodeOutputValue(uint sourceNodeId, uint sourcePortId)", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("Node3.Evaluate(ResolveComputeInput<int>(3u, 101u), ResolveComputeInput<int>(3u, 102u))", flowFile.Content, StringComparison.Ordinal);
@@ -848,11 +854,13 @@ public class FlowChartCodeGenerationTests
                         Assert.Contains("return _entryNodeIdOverride ?? 1u;", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("case 2u:", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("var condition = ResolveComputeInput<bool>(2u, 101u);", flowFile.Content, StringComparison.Ordinal);
-                        Assert.Contains("CurrentNodeId = ResolveFlowTarget(2u, condition ? 251u : 252u);", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("TransitionToResolvedTarget(2u, condition ? 251u : 252u);", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("case 3u:", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("IsPaused = true;", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("case 4u:", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("var condition = ResolveComputeInput<bool>(4u, 101u);", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("partial void OnNode1Enter(FlowChartNodeTransition transition);", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("partial void OnNode6Leave(FlowChartNodeTransition transition);", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("case 5u:", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("var nextIndex = state.IterationIndex + 1;", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("state.SetOutputValue(151u, list[nextIndex]);", flowFile.Content, StringComparison.Ordinal);
@@ -976,17 +984,21 @@ public class FlowChartCodeGenerationTests
                         var runtimeSupportFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/FlowChartRuntimeSupport.cs");
                         Assert.Contains("public interface IFlowChartTimeContext", runtimeSupportFile.Content, StringComparison.Ordinal);
                         Assert.Contains("DateTime UtcNow { get; }", runtimeSupportFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public sealed class FlowChartNodeTransition", runtimeSupportFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public bool IsSelfTransition => SourceNodeId.HasValue && TargetNodeId.HasValue && SourceNodeId.Value == TargetNodeId.Value;", runtimeSupportFile.Content, StringComparison.Ordinal);
 
                         var flowFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/Files/Quest/WaitingRuntime/WaitingRuntimeFlow.cs");
                         Assert.Contains("case 3u:", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("var condition = ResolveComputeInput<bool>(3u, 101u);", flowFile.Content, StringComparison.Ordinal);
-                        Assert.Contains("CurrentNodeId = 3u;", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("partial void OnNode3Enter(FlowChartNodeTransition transition);", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("partial void OnNode4Leave(FlowChartNodeTransition transition);", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("case 4u:", flowFile.Content, StringComparison.Ordinal);
-                        Assert.Contains("var timeContext = Context as IFlowChartTimeContext;", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("public void StepOnce(TimeSpan deltaTime)", flowFile.Content, StringComparison.Ordinal);
                         Assert.Contains("var durationSeconds = JsonSerializer.Deserialize<int>(\"3\")", flowFile.Content, StringComparison.Ordinal);
-                        Assert.Contains("var wakeUpUtc = state.Payload as DateTime?;", flowFile.Content, StringComparison.Ordinal);
-                        Assert.Contains("wakeUpUtc = timeContext.UtcNow.AddSeconds(durationSeconds);", flowFile.Content, StringComparison.Ordinal);
-                        Assert.Contains("CurrentNodeId = 4u;", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("if (_currentNodeEntryPending && (_currentEntryTransition == null || !_currentEntryTransition.IsSelfTransition))", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("var elapsedSeconds = state.Payload is double storedElapsedSeconds ? storedElapsedSeconds : 0d;", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("elapsedSeconds += deltaTime.TotalSeconds;", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("TransitionToResolvedTarget(4u, 251u);", flowFile.Content, StringComparison.Ordinal);
                 }
                 finally
                 {

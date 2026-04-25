@@ -349,6 +349,29 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
+        writer.AppendLine("public sealed class FlowChartNodeTransition");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("public FlowChartNodeTransition(uint? sourceNodeId, uint? sourcePortId, uint? targetNodeId, uint? targetPortId)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("SourceNodeId = sourceNodeId;");
+        writer.AppendLine("SourcePortId = sourcePortId;");
+        writer.AppendLine("TargetNodeId = targetNodeId;");
+        writer.AppendLine("TargetPortId = targetPortId;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public uint? SourceNodeId { get; }");
+        writer.AppendLine("public uint? SourcePortId { get; }");
+        writer.AppendLine("public uint? TargetNodeId { get; }");
+        writer.AppendLine("public uint? TargetPortId { get; }");
+        writer.AppendLine("public bool IsInitialEntry => !SourceNodeId.HasValue;");
+        writer.AppendLine("public bool IsExit => !TargetNodeId.HasValue;");
+        writer.AppendLine("public bool IsSelfTransition => SourceNodeId.HasValue && TargetNodeId.HasValue && SourceNodeId.Value == TargetNodeId.Value;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
         writer.AppendLine("public sealed class FlowChartNodeState");
         writer.AppendLine("{");
         writer.Indent();
@@ -520,6 +543,9 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("private readonly uint? _entryNodeIdOverride;");
         writer.AppendLine("private readonly Dictionary<uint, FlowChartNodeState> _nodeStates = new Dictionary<uint, FlowChartNodeState>();");
         writer.AppendLine("private readonly Dictionary<(uint NodeId, uint PortId), object?> _stepComputeCache = new Dictionary<(uint NodeId, uint PortId), object?>();");
+        writer.AppendLine("private FlowChartNodeTransition? _currentEntryTransition;");
+        writer.AppendLine("private bool _currentNodeEntryPending;");
+        writer.AppendLine("private long _currentNodeEntryVersion;");
         writer.AppendLine("public TContext Context { get; }");
         writer.AppendLine("public uint? CurrentNodeId { get; private set; }");
         writer.AppendLine("public bool IsPaused { get; private set; }");
@@ -542,6 +568,20 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("public void StepOnce()");
         writer.AppendLine("{");
         writer.Indent();
+        writer.AppendLine("StepOnce(TimeSpan.Zero);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public void StepOnce(TimeSpan deltaTime)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (deltaTime < TimeSpan.Zero)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new ArgumentOutOfRangeException(nameof(deltaTime), \"Delta time cannot be negative.\");");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
         writer.AppendLine("if (IsCompleted || IsPaused)");
         writer.AppendLine("{");
         writer.Indent();
@@ -553,22 +593,39 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("if (CurrentNodeId is null)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("CurrentNodeId = ResolveInitialNodeId();");
-        writer.AppendLine("if (CurrentNodeId is null)");
+        writer.AppendLine("var initialNodeId = ResolveInitialNodeId();");
+        writer.AppendLine("if (initialNodeId is null)");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine("CompleteFlow();");
         writer.AppendLine("return;");
         writer.Outdent();
         writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("EnterNode(null, null, initialNodeId.Value, null);");
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
-        writer.AppendLine("ExecuteCurrentNode(CurrentNodeId.Value);");
+        writer.AppendLine("var executingNodeId = CurrentNodeId.Value;");
+        writer.AppendLine("var executingEntryVersion = _currentNodeEntryVersion;");
+        writer.AppendLine("ExecuteCurrentNode(executingNodeId, deltaTime);");
+        writer.AppendLine("if (CurrentNodeId == executingNodeId && _currentNodeEntryVersion == executingEntryVersion)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("_currentNodeEntryPending = false;");
+        writer.Outdent();
+        writer.AppendLine("}");
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine("public void Step(int maxSteps)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("Step(maxSteps, TimeSpan.Zero);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public void Step(int maxSteps, TimeSpan deltaTime)");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine("if (maxSteps <= 0)");
@@ -588,7 +645,7 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
-        writer.AppendLine("StepOnce();");
+        writer.AppendLine("StepOnce(deltaTime);");
         writer.Outdent();
         writer.AppendLine("}");
         writer.Outdent();
@@ -597,10 +654,17 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("public void RunToCompletion()");
         writer.AppendLine("{");
         writer.Indent();
+        writer.AppendLine("RunToCompletion(TimeSpan.Zero);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public void RunToCompletion(TimeSpan deltaTime)");
+        writer.AppendLine("{");
+        writer.Indent();
         writer.AppendLine("while (!IsPaused && !IsCompleted)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("StepOnce();");
+        writer.AppendLine("StepOnce(deltaTime);");
         writer.Outdent();
         writer.AppendLine("}");
         writer.Outdent();
@@ -609,16 +673,30 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("public void RunUntilPaused()");
         writer.AppendLine("{");
         writer.Indent();
+        writer.AppendLine("RunUntilPaused(TimeSpan.Zero);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public void RunUntilPaused(TimeSpan deltaTime)");
+        writer.AppendLine("{");
+        writer.Indent();
         writer.AppendLine("while (!IsPaused && !IsCompleted)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("StepOnce();");
+        writer.AppendLine("StepOnce(deltaTime);");
         writer.Outdent();
         writer.AppendLine("}");
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine($"public void RunUntil(Func<{BuildFlowTypeName(flowChart.RelativePath)}<TContext>, bool> predicate)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("RunUntil(predicate, TimeSpan.Zero);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"public void RunUntil(Func<{BuildFlowTypeName(flowChart.RelativePath)}<TContext>, bool> predicate, TimeSpan deltaTime)");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine("if (predicate == null)");
@@ -631,7 +709,7 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("while (!predicate(this) && !IsPaused && !IsCompleted)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("StepOnce();");
+        writer.AppendLine("StepOnce(deltaTime);");
         writer.Outdent();
         writer.AppendLine("}");
         writer.Outdent();
@@ -654,7 +732,24 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("private void CompleteFlow()");
         writer.AppendLine("{");
         writer.Indent();
+            writer.AppendLine("CompleteFlow(null, null);");
+            writer.Outdent();
+            writer.AppendLine("}");
+            writer.AppendLine();
+            writer.AppendLine("private void CompleteFlow(uint? sourceNodeId, uint? sourcePortId)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("if (sourceNodeId.HasValue)");
+            writer.AppendLine("{");
+            writer.Indent();
+            writer.AppendLine("var transition = new FlowChartNodeTransition(sourceNodeId, sourcePortId, null, null);");
+            writer.AppendLine("NotifyNodeLeaving(sourceNodeId.Value, transition);");
+            writer.Outdent();
+            writer.AppendLine("}");
+            writer.AppendLine();
         writer.AppendLine("CurrentNodeId = null;");
+            writer.AppendLine("_currentEntryTransition = null;");
+            writer.AppendLine("_currentNodeEntryPending = false;");
         writer.AppendLine("IsCompleted = true;");
         writer.AppendLine("IsPaused = false;");
         writer.Outdent();
@@ -691,7 +786,7 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
-        writer.AppendLine("private uint? ResolveFlowTarget(uint sourceNodeId, uint sourcePortId)");
+        writer.AppendLine("private FlowChartConnectionDescriptor? ResolveFlowTargetConnection(uint sourceNodeId, uint sourcePortId)");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine("foreach (var connection in _definition.FlowConnections)");
@@ -700,7 +795,7 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("if (connection.SourceNodeId == sourceNodeId && connection.SourcePortId == sourcePortId)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("return connection.TargetNodeId;");
+        writer.AppendLine("return connection;");
         writer.Outdent();
         writer.AppendLine("}");
         writer.Outdent();
@@ -710,6 +805,93 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
+        writer.AppendLine("private void TransitionToResolvedTarget(uint sourceNodeId, uint sourcePortId)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("var connection = ResolveFlowTargetConnection(sourceNodeId, sourcePortId);");
+        writer.AppendLine("if (connection == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("CompleteFlow(sourceNodeId, sourcePortId);");
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("EnterNode(sourceNodeId, sourcePortId, connection.TargetNodeId, connection.TargetPortId);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private void EnterNode(uint? sourceNodeId, uint? sourcePortId, uint targetNodeId, uint? targetPortId)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("var transition = new FlowChartNodeTransition(sourceNodeId, sourcePortId, targetNodeId, targetPortId);");
+        writer.AppendLine("if (sourceNodeId.HasValue)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("NotifyNodeLeaving(sourceNodeId.Value, transition);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("CurrentNodeId = targetNodeId;");
+        writer.AppendLine("_currentEntryTransition = transition;");
+        writer.AppendLine("_currentNodeEntryPending = true;");
+        writer.AppendLine("_currentNodeEntryVersion += 1;");
+        writer.AppendLine("NotifyNodeEntered(targetNodeId, transition);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private void NotifyNodeEntered(uint nodeId, FlowChartNodeTransition transition)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("switch (nodeId)");
+        writer.AppendLine("{");
+        writer.Indent();
+        foreach (var flowNode in resolvedNodes.Where(node => node.Definition.NodeKind != LightyFlowChartNodeKind.Compute).OrderBy(node => node.Node.NodeId))
+        {
+            writer.AppendLine($"case {flowNode.Node.NodeId}u:");
+            writer.Indent();
+            writer.AppendLine($"OnNode{flowNode.Node.NodeId}Enter(transition);");
+            writer.AppendLine("return;");
+            writer.Outdent();
+        }
+        writer.AppendLine("default:");
+        writer.Indent();
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private void NotifyNodeLeaving(uint nodeId, FlowChartNodeTransition transition)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("switch (nodeId)");
+        writer.AppendLine("{");
+        writer.Indent();
+        foreach (var flowNode in resolvedNodes.Where(node => node.Definition.NodeKind != LightyFlowChartNodeKind.Compute).OrderBy(node => node.Node.NodeId))
+        {
+            writer.AppendLine($"case {flowNode.Node.NodeId}u:");
+            writer.Indent();
+            writer.AppendLine($"OnNode{flowNode.Node.NodeId}Leave(transition);");
+            writer.AppendLine("return;");
+            writer.Outdent();
+        }
+        writer.AppendLine("default:");
+        writer.Indent();
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        foreach (var flowNode in resolvedNodes.Where(node => node.Definition.NodeKind != LightyFlowChartNodeKind.Compute).OrderBy(node => node.Node.NodeId))
+        {
+            writer.AppendLine($"partial void OnNode{flowNode.Node.NodeId}Enter(FlowChartNodeTransition transition);");
+            writer.AppendLine($"partial void OnNode{flowNode.Node.NodeId}Leave(FlowChartNodeTransition transition);");
+            writer.AppendLine();
+        }
         writer.AppendLine("private T ResolveComputeInput<T>(uint targetNodeId, uint targetPortId)");
         writer.AppendLine("{");
         writer.Indent();
@@ -776,7 +958,7 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
-        writer.AppendLine("private void ExecuteCurrentNode(uint nodeId)");
+        writer.AppendLine("private void ExecuteCurrentNode(uint nodeId, TimeSpan deltaTime)");
         writer.AppendLine("{");
         writer.Indent();
         writer.AppendLine("switch (nodeId)");
@@ -900,60 +1082,35 @@ public sealed class LightyFlowChartFileCodeGenerator
         var outputPort = resolvedNode.Definition.FlowPorts.FirstOrDefault(port => port.Direction == LightyFlowChartPortDirection.Output);
         if (outputPort is null)
         {
-            writer.AppendLine("CompleteFlow();");
+            writer.AppendLine($"CompleteFlow({resolvedNode.Node.NodeId}u, null);");
             writer.AppendLine("return;");
             return;
         }
 
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, {outputPort.PortId}u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, {outputPort.PortId}u);");
         writer.AppendLine("return;");
     }
 
     private static void AppendIfExecution(CodeWriter writer, ResolvedNodeInstance resolvedNode)
     {
         writer.AppendLine($"var condition = ResolveComputeInput<bool>({resolvedNode.Node.NodeId}u, 101u);");
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, condition ? 251u : 252u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, condition ? 251u : 252u);");
         writer.AppendLine("return;");
     }
 
     private static void AppendWhileExecution(CodeWriter writer, ResolvedNodeInstance resolvedNode)
     {
         writer.AppendLine($"var condition = ResolveComputeInput<bool>({resolvedNode.Node.NodeId}u, 101u);");
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, condition ? 251u : 252u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, condition ? 251u : 252u);");
         writer.AppendLine("return;");
     }
 
     private static void AppendPauseExecution(CodeWriter writer, ResolvedNodeInstance resolvedNode)
     {
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 251u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, 251u);");
+        writer.AppendLine("if (IsCompleted)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("CompleteFlow();");
         writer.AppendLine("return;");
         writer.Outdent();
         writer.AppendLine("}");
@@ -968,34 +1125,17 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("if (!condition)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine($"CurrentNodeId = {resolvedNode.Node.NodeId}u;");
         writer.AppendLine("IsPaused = true;");
         writer.AppendLine("return;");
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 251u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, 251u);");
         writer.AppendLine("return;");
     }
 
     private static void AppendPauseSecondsExecution(CodeWriter writer, ResolvedNodeInstance resolvedNode)
     {
-        writer.AppendLine("var timeContext = Context as IFlowChartTimeContext;");
-        writer.AppendLine("if (timeContext == null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine($"throw new InvalidOperationException(\"Flow context must implement IFlowChartTimeContext to execute node '{resolvedNode.Definition.RelativePath}'.\");");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
         writer.AppendLine($"var durationSeconds = {BuildPropertyLiteralExpression(resolvedNode)};");
         writer.AppendLine("if (durationSeconds < 0)");
         writer.AppendLine("{");
@@ -1005,34 +1145,26 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine($"var state = GetNodeState({resolvedNode.Node.NodeId}u);");
-        writer.AppendLine("var wakeUpUtc = state.Payload as DateTime?;");
-        writer.AppendLine("if (!wakeUpUtc.HasValue)");
+        writer.AppendLine("if (_currentNodeEntryPending && (_currentEntryTransition == null || !_currentEntryTransition.IsSelfTransition))");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine("wakeUpUtc = timeContext.UtcNow.AddSeconds(durationSeconds);");
-        writer.AppendLine("state.Payload = wakeUpUtc.Value;");
+        writer.AppendLine("state.Reset();");
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
-        writer.AppendLine("if (timeContext.UtcNow < wakeUpUtc.Value)");
+        writer.AppendLine("var elapsedSeconds = state.Payload is double storedElapsedSeconds ? storedElapsedSeconds : 0d;");
+        writer.AppendLine("elapsedSeconds += deltaTime.TotalSeconds;");
+        writer.AppendLine("if (elapsedSeconds < durationSeconds)");
         writer.AppendLine("{");
         writer.Indent();
-        writer.AppendLine($"CurrentNodeId = {resolvedNode.Node.NodeId}u;");
+        writer.AppendLine("state.Payload = elapsedSeconds;");
         writer.AppendLine("IsPaused = true;");
         writer.AppendLine("return;");
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine("state.Reset();");
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 251u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, 251u);");
         writer.AppendLine("return;");
     }
 
@@ -1055,29 +1187,13 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("state.IterationIndex = nextIndex;");
         writer.AppendLine("state.SetOutputValue(151u, list[nextIndex]);");
         writer.AppendLine("state.SetOutputValue(152u, nextIndex);");
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 251u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, 251u);");
         writer.AppendLine("return;");
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine("state.Reset();");
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 252u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, 252u);");
         writer.AppendLine("return;");
     }
 
@@ -1121,29 +1237,13 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("state.IterationIndex = nextIndex;");
         writer.AppendLine("state.SetOutputValue(151u, entry.Key);");
         writer.AppendLine("state.SetOutputValue(152u, entry.Value);");
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 251u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, 251u);");
         writer.AppendLine("return;");
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine("state.Reset();");
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 252u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, 252u);");
         writer.AppendLine("return;");
     }
 
@@ -1166,20 +1266,12 @@ public sealed class LightyFlowChartFileCodeGenerator
 
         if (nextFlowPort is null)
         {
-            writer.AppendLine("CompleteFlow();");
+            writer.AppendLine($"CompleteFlow({resolvedNode.Node.NodeId}u, null);");
             writer.AppendLine("return;");
             return;
         }
 
-        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, {nextFlowPort.PortId}u);");
-        writer.AppendLine("if (CurrentNodeId is null)");
-        writer.AppendLine("{");
-        writer.Indent();
-        writer.AppendLine("CompleteFlow();");
-        writer.AppendLine("return;");
-        writer.Outdent();
-        writer.AppendLine("}");
-        writer.AppendLine();
+        writer.AppendLine($"TransitionToResolvedTarget({resolvedNode.Node.NodeId}u, {nextFlowPort.PortId}u);");
         writer.AppendLine("return;");
     }
 

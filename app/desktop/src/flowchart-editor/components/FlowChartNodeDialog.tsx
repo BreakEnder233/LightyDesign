@@ -132,7 +132,7 @@ export function FlowChartNodeDialog({ isOpen, catalog, initialNodeType, onClose,
                     <span>定义路径</span>
                     <strong>{selectedDefinition.relativePath}</strong>
                   </div>
-                  <p className="workspace-create-path-label">确认后会将该节点加入当前流程图，并按当前选区附近自动放置。</p>
+                  <p className="workspace-create-path-label">确认后会将该节点加入当前流程图，并按当前右键位置或选区附近自动放置。</p>
                 </>
               ) : (
                 <p className="status-detail">请选择一个节点定义后再添加。</p>

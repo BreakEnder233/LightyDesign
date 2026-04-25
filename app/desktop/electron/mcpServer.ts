@@ -113,6 +113,37 @@ type ColumnPatchOperation = {
   column?: unknown;
 };
 
+type FlowChartDocument = Record<string, unknown>;
+
+type FlowChartNodeDefinitionResponse = {
+  kind: "flowchart-node";
+  relativePath: string;
+  filePath: string;
+  name: string;
+  alias?: string | null;
+  nodeKind?: string | null;
+  document: FlowChartDocument | null;
+};
+
+type FlowChartFileResponse = {
+  kind: "flowchart-file";
+  relativePath: string;
+  filePath: string;
+  name: string;
+  alias?: string | null;
+  document: FlowChartDocument | null;
+};
+
+type FlowChartCatalogResponse = {
+  flowChartsRootPath: string;
+  flowChartNodesRootPath: string;
+  flowChartFilesRootPath: string;
+  nodeDirectories: string[];
+  fileDirectories: string[];
+  nodeDefinitions: Array<Omit<FlowChartNodeDefinitionResponse, "document">>;
+  files: Array<Omit<FlowChartFileResponse, "document">>;
+};
+
 const desktopHostUrl = process.env.LDD_DESKTOP_HOST_URL ?? "http://127.0.0.1:5000";
 const editorContextFilePath = process.env.LDD_EDITOR_CONTEXT_FILE ?? "";
 const preferencesFilePath = process.env.LDD_MCP_PREFERENCES_FILE ?? "";
@@ -192,10 +223,26 @@ const columnPatchOperationSchema = {
   additionalProperties: false,
 } as const;
 
+const flowChartDocumentSchema = {
+  type: "object",
+  additionalProperties: true,
+} as const;
+
 const tools: ToolDefinition[] = [
   {
     name: "get_workspace_navigation",
     description: "读取当前工作区或指定工作区的工作簿与表导航。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspacePath: { type: "string", description: "可选。未提供时优先使用当前编辑器上下文中的工作区路径。" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_flowchart_navigation",
+    description: "读取当前工作区或指定工作区的流程图导航、目录与资源摘要。",
     inputSchema: {
       type: "object",
       properties: {
@@ -276,6 +323,49 @@ const tools: ToolDefinition[] = [
     },
   },
   {
+    name: "get_current_flowchart",
+    description: "读取桌面端当前活动流程图的上下文摘要。",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_current_flowchart_selection",
+    description: "读取桌面端当前流程图选区、焦点与节点/连线摘要。",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_flowchart_node_definition",
+    description: "读取指定流程图节点定义的完整文档。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspacePath: { type: "string" },
+        relativePath: { type: "string" },
+      },
+      required: ["relativePath"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_flowchart_file",
+    description: "读取指定流程图文件或当前活动流程图的完整文档。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspacePath: { type: "string" },
+        relativePath: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "get_active_editor_context",
     description: "读取桌面端当前编辑器上下文，包括工作区、活动 Sheet 与当前选区。",
     inputSchema: {
@@ -308,6 +398,41 @@ const tools: ToolDefinition[] = [
         sheetName: { type: "string" },
       },
       required: ["workbookName", "sheetName"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "save_flowchart_file",
+    description: "创建或保存指定流程图文件，写入完整流程图文档。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspacePath: { type: "string" },
+        relativePath: { type: "string" },
+        document: flowChartDocumentSchema,
+      },
+      required: ["document"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "export_flowchart_codegen",
+    description: "触发流程图代码导出，支持当前流程图、批量流程图或全工作区流程图。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspacePath: { type: "string" },
+        mode: {
+          type: "string",
+          enum: ["single", "batch", "all"],
+        },
+        relativePath: { type: "string" },
+        relativePaths: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+        },
+      },
       additionalProperties: false,
     },
   },
@@ -488,6 +613,60 @@ function resolveSheetTarget(args: Record<string, unknown>, context: Record<strin
   };
 }
 
+function normalizeFlowChartRelativePath(relativePath: string | null) {
+  if (!relativePath) {
+    return "";
+  }
+
+  return relativePath
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\.json$/i, "")
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .join("/");
+}
+
+function encodeFlowChartRelativePath(relativePath: string) {
+  return relativePath
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function resolveFlowChartTarget(args: Record<string, unknown>, context: Record<string, unknown> | null) {
+  const workspacePath = resolveWorkspacePath(args, context);
+  const contextFlowChart = asRecord(context?.currentFlowChart);
+  const relativePath = normalizeFlowChartRelativePath(getString(args.relativePath) ?? getString(contextFlowChart.relativePath));
+
+  if (!relativePath) {
+    throw new Error("未提供 relativePath，且当前桌面端没有活动流程图上下文。请先在 LightyDesign 中激活目标流程图，或显式传入 relativePath。");
+  }
+
+  return {
+    workspacePath,
+    relativePath,
+  };
+}
+
+function normalizeRelativePathList(value: unknown) {
+  return [...new Set(
+    asArray(value)
+      .map((entry) => normalizeFlowChartRelativePath(getString(entry)))
+      .filter((entry) => entry.length > 0),
+  )];
+}
+
+function requireJsonObject(value: unknown, errorMessage: string) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(errorMessage);
+  }
+
+  return value as Record<string, unknown>;
+}
+
 function normalizeColumn(column: SheetColumn): SheetColumn {
   return {
     fieldName: column.fieldName,
@@ -660,6 +839,38 @@ async function saveWorkbook(workspacePath: string, workbook: WorkbookResponse) {
   return postJson<WorkbookResponse>(`${desktopHostUrl}/api/workspace/workbooks/save`, {
     workspacePath,
     workbook: buildWorkbookSavePayload(workbook),
+  });
+}
+
+async function exportFlowChartCodegen(args: Record<string, unknown>, context: Record<string, unknown> | null) {
+  const workspacePath = resolveWorkspacePath(args, context);
+  const rawMode = getString(args.mode);
+  if (rawMode && rawMode !== "single" && rawMode !== "batch" && rawMode !== "all") {
+    throw new Error("export_flowchart_codegen 的 mode 仅支持 single、batch 或 all。");
+  }
+
+  if (rawMode === "all") {
+    return postJson(`${desktopHostUrl}/api/workspace/flowcharts/codegen/export-all`, {
+      workspacePath,
+    });
+  }
+
+  const relativePaths = normalizeRelativePathList(args.relativePaths);
+  if (rawMode === "batch" || relativePaths.length > 1) {
+    if (relativePaths.length === 0) {
+      throw new Error("export_flowchart_codegen 在 batch 模式下需要提供 relativePaths。");
+    }
+
+    return postJson(`${desktopHostUrl}/api/workspace/flowcharts/codegen/export-batch`, {
+      workspacePath,
+      relativePaths,
+    });
+  }
+
+  const relativePath = relativePaths[0] ?? resolveFlowChartTarget(args, context).relativePath;
+  return postJson(`${desktopHostUrl}/api/workspace/flowcharts/codegen/export`, {
+    workspacePath,
+    relativePath,
   });
 }
 
@@ -953,6 +1164,11 @@ async function handleToolCall(name: string, rawArguments: unknown) {
       const query = new URLSearchParams({ workspacePath });
       return fetchJson(`${desktopHostUrl}/api/workspace/navigation?${query.toString()}`);
     }
+    case "get_flowchart_navigation": {
+      const workspacePath = resolveWorkspacePath(args, context);
+      const query = new URLSearchParams({ workspacePath });
+      return fetchJson<FlowChartCatalogResponse>(`${desktopHostUrl}/api/workspace/flowcharts/navigation?${query.toString()}`);
+    }
     case "get_header_property_schemas": {
       const workspacePath = resolveWorkspacePath(args, context);
       const query = new URLSearchParams({ workspacePath });
@@ -1019,6 +1235,41 @@ async function handleToolCall(name: string, rawArguments: unknown) {
 
       return selection;
     }
+    case "get_current_flowchart": {
+      const currentFlowChart = context?.currentFlowChart;
+      if (!currentFlowChart) {
+        throw new Error("当前桌面端没有活动流程图。请先在 LightyDesign 中切换到流程图编辑器并打开目标流程图。");
+      }
+
+      return currentFlowChart;
+    }
+    case "get_current_flowchart_selection": {
+      const selection = context?.flowChartSelection;
+      if (!selection) {
+        throw new Error("当前桌面端没有活动流程图选区。请先在 LightyDesign 中切换到流程图编辑器并选中节点或连线。");
+      }
+
+      return selection;
+    }
+    case "get_flowchart_node_definition": {
+      const workspacePath = resolveWorkspacePath(args, context);
+      const relativePath = normalizeFlowChartRelativePath(getString(args.relativePath));
+      if (!relativePath) {
+        throw new Error("get_flowchart_node_definition 缺少 relativePath 参数。");
+      }
+
+      const query = new URLSearchParams({ workspacePath });
+      return fetchJson<FlowChartNodeDefinitionResponse>(
+        `${desktopHostUrl}/api/workspace/flowcharts/nodes/${encodeFlowChartRelativePath(relativePath)}?${query.toString()}`,
+      );
+    }
+    case "get_flowchart_file": {
+      const target = resolveFlowChartTarget(args, context);
+      const query = new URLSearchParams({ workspacePath: target.workspacePath });
+      return fetchJson<FlowChartFileResponse>(
+        `${desktopHostUrl}/api/workspace/flowcharts/files/${encodeFlowChartRelativePath(target.relativePath)}?${query.toString()}`,
+      );
+    }
     case "get_active_editor_context": {
       if (!context) {
         throw new Error("当前未收到桌面端编辑器上下文。请确认 LightyDesign 已启动且至少打开过一个工作区。");
@@ -1055,6 +1306,17 @@ async function handleToolCall(name: string, rawArguments: unknown) {
         sheetName,
       });
     }
+    case "save_flowchart_file": {
+      const target = resolveFlowChartTarget(args, context);
+      const document = requireJsonObject(args.document, "save_flowchart_file 缺少 document 参数，或 document 不是 JSON 对象。");
+      return postJson<FlowChartFileResponse>(`${desktopHostUrl}/api/workspace/flowcharts/files/save`, {
+        workspacePath: target.workspacePath,
+        relativePath: target.relativePath,
+        document,
+      });
+    }
+    case "export_flowchart_codegen":
+      return exportFlowChartCodegen(args, context);
     case "patch_sheet_rows":
       return patchSheetRows(args, context);
     case "patch_sheet_columns":

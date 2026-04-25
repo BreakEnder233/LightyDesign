@@ -3,15 +3,12 @@ import { useEffect, useState } from "react";
 import type {
   FlowChartConnection,
   FlowChartFileDocument,
-  FlowChartFileResponse,
   FlowChartNodeDefinitionDocument,
   FlowChartNodeInstance,
-  FlowChartValidationIssue,
 } from "../types/flowchartEditor";
 import { buildFlowChartConnectionKey, findNodePropertyValue, formatFlowChartTypeRef } from "../utils/flowchartDocument";
 
 type FlowChartInspectorProps = {
-  activeSummary: FlowChartFileResponse | null;
   activeDocument: FlowChartFileDocument | null;
   selectedNode: FlowChartNodeInstance | null;
   selectedNodeCount: number;
@@ -21,13 +18,6 @@ type FlowChartInspectorProps = {
     connection: FlowChartConnection;
   } | null;
   selectedConnectionCount: number;
-  validationIssues: FlowChartValidationIssue[];
-  dirty: boolean;
-  saveState: "idle" | "saving" | "error" | "saved";
-  saveError: string | null;
-  onOpenMetaDialog: () => void;
-  onSave: () => void | Promise<void>;
-  onReload: () => void | Promise<void>;
   onDeleteSelection: () => void;
   onDeleteSelectedNode: () => void;
   onDeleteSelectedConnection: () => void;
@@ -140,77 +130,47 @@ function FlowChartPropertyInput({ nodeId, property, value, onCommit, onReset }: 
 }
 
 export function FlowChartInspector({
-  activeSummary,
   activeDocument,
   selectedNode,
   selectedNodeCount,
   selectedNodeDefinition,
   selectedConnection,
   selectedConnectionCount,
-  validationIssues,
-  dirty,
-  saveState,
-  saveError,
-  onOpenMetaDialog,
-  onSave,
-  onReload,
   onDeleteSelection,
   onDeleteSelectedNode,
   onDeleteSelectedConnection,
   onUpdateNodePropertyValue,
   onResetNodePropertyValue,
 }: FlowChartInspectorProps) {
-  if (!activeDocument || !activeSummary) {
+  if (!activeDocument) {
     return (
-      <aside className="flowchart-inspector">
+      <aside className="flowchart-inspector flowchart-header-selection-stack">
         <section className="tree-card flowchart-inspector-panel">
           <div className="section-header">
             <div>
-              <p className="eyebrow">Inspector</p>
+              <p className="eyebrow">节点与连线</p>
               <strong>暂无活动流程图</strong>
             </div>
           </div>
-          <p className="status-detail">打开流程图后，这里会显示文件信息、节点属性和当前结构错误。</p>
+          <p className="status-detail">打开流程图后，这里会显示当前选中节点或连线的属性与操作。</p>
         </section>
       </aside>
     );
   }
 
   return (
-    <aside className="flowchart-inspector">
-      <section className="tree-card flowchart-inspector-panel">
-        <div className="section-header">
-          <div>
-            <p className="eyebrow">文件</p>
-            <strong>{activeSummary.relativePath}</strong>
+    <aside className="flowchart-inspector flowchart-header-selection-stack">
+      {!selectedNode && !selectedConnection && selectedNodeCount === 0 && selectedConnectionCount === 0 ? (
+        <section className="tree-card flowchart-inspector-panel">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">节点与连线</p>
+              <strong>未选择对象</strong>
+            </div>
           </div>
-          <span className={`badge${dirty ? " flowchart-badge-dirty" : ""}`}>{dirty ? "未保存" : "已同步"}</span>
-        </div>
-
-        <div className="flowchart-dialog-static-field compact-field">
-          <span>名称</span>
-          <strong>{activeDocument.name}</strong>
-        </div>
-
-        <div className="flowchart-dialog-static-field compact-field">
-          <span>别名</span>
-          <strong>{activeDocument.alias?.trim() ? activeDocument.alias : "未设置"}</strong>
-        </div>
-
-        <div className="flowchart-inspector-actions compact-grid action-grid">
-          <button className="secondary-button" onClick={onOpenMetaDialog} type="button">
-            编辑元信息
-          </button>
-          <button className="primary-button" disabled={saveState === "saving"} onClick={() => void onSave()} type="button">
-            {saveState === "saving" ? "保存中" : "保存流程图"}
-          </button>
-          <button className="secondary-button" onClick={() => void onReload()} type="button">
-            重新加载
-          </button>
-        </div>
-
-        {saveError ? <p className="status-detail flowchart-save-error">{saveError}</p> : null}
-      </section>
+          <p className="status-detail">选择节点或连线后，这里会显示对应信息、删除操作以及节点属性编辑器。</p>
+        </section>
+      ) : null}
 
       {selectedNodeCount > 1 ? (
         <section className="tree-card flowchart-inspector-panel">
@@ -296,28 +256,6 @@ export function FlowChartInspector({
           <p className="status-detail">{buildFlowChartConnectionKey(selectedConnection.connection)}</p>
         </section>
       ) : null}
-
-      <section className="tree-card flowchart-inspector-panel">
-        <div className="section-header">
-          <div>
-            <p className="eyebrow">校验</p>
-            <strong>{validationIssues.length === 0 ? "结构校验通过" : `${validationIssues.length} 个阻断问题`}</strong>
-          </div>
-          <span className={`badge${validationIssues.length > 0 ? " flowchart-badge-error" : ""}`}>{validationIssues.length}</span>
-        </div>
-
-        {validationIssues.length === 0 ? (
-          <p className="status-detail">当前流程图满足本地结构校验，可以直接保存。</p>
-        ) : (
-          <div className="flowchart-issue-list">
-            {validationIssues.map((issue) => (
-              <div className="flowchart-issue-card" key={issue.id}>
-                <strong>{issue.message}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
     </aside>
   );
 }

@@ -106,9 +106,17 @@ type AppPreferences = {
     port?: number;
     path?: string;
   };
+  flowChart?: {
+    sidebarWidth?: number;
+  };
 };
 
 type McpServerStatus = "stopped" | "starting" | "running" | "error";
+
+type FlowChartPreferences = {
+  sidebarWidth: number;
+  preferencesFilePath: string;
+};
 
 type McpServerSettings = {
   host: string;
@@ -159,6 +167,10 @@ let appUpdateDownloadState: AppUpdateDownloadState = {
   progressPercent: null,
 };
 let appUpdateInstallPromise: Promise<AppUpdateDownloadState> | null = null;
+
+const defaultFlowChartSidebarWidth = 320;
+const minFlowChartSidebarWidth = 280;
+const maxFlowChartSidebarWidth = 520;
 
 function getPreferencesFilePath() {
   return path.join(app.getPath("userData"), "preferences.json");
@@ -211,6 +223,20 @@ function normalizeMcpPort(value: unknown) {
   return parsedPort;
 }
 
+function normalizeFlowChartSidebarWidth(value: unknown) {
+  const parsedWidth = typeof value === "number"
+    ? value
+    : typeof value === "string"
+      ? Number.parseInt(value, 10)
+      : Number.NaN;
+
+  if (!Number.isFinite(parsedWidth)) {
+    return defaultFlowChartSidebarWidth;
+  }
+
+  return Math.min(maxFlowChartSidebarWidth, Math.max(minFlowChartSidebarWidth, Math.round(parsedWidth)));
+}
+
 function getMcpServerSettings(preferences: AppPreferences = readAppPreferences()): McpServerSettings {
   return {
     host: mcpServerHost,
@@ -237,6 +263,14 @@ function getMcpPreferences(): McpPreferences {
     serverUrl: getMcpServerUrl(settings),
     runtimeStatus: mcpServerStatus,
     lastStartError: mcpServerLastError,
+  };
+}
+
+function getFlowChartPreferences(): FlowChartPreferences {
+  const preferences = readAppPreferences();
+  return {
+    sidebarWidth: normalizeFlowChartSidebarWidth(preferences.flowChart?.sidebarWidth),
+    preferencesFilePath: getPreferencesFilePath(),
   };
 }
 
@@ -291,6 +325,19 @@ function saveMcpConfiguration(configuration: { port: number; path?: string | nul
 
   mcpServerLastError = null;
   return getMcpPreferences();
+}
+
+function saveFlowChartPreferences(configuration: { sidebarWidth?: number | null }) {
+  const preferences = readAppPreferences();
+  writeAppPreferences({
+    ...preferences,
+    flowChart: {
+      ...preferences.flowChart,
+      sidebarWidth: normalizeFlowChartSidebarWidth(configuration.sidebarWidth),
+    },
+  });
+
+  return getFlowChartPreferences();
 }
 
 function writeMcpEditorContextSnapshot(snapshot: unknown) {
@@ -1503,10 +1550,16 @@ ipcMain.handle("app:download-and-install-update", async () => downloadAndInstall
 
 ipcMain.handle("app:get-mcp-preferences", async () => getMcpPreferences());
 
+ipcMain.handle("app:get-flowchart-preferences", async () => getFlowChartPreferences());
+
 ipcMain.handle("app:set-mcp-enabled", async (_event, enabled: boolean) => setMcpEnabled(Boolean(enabled)));
 
 ipcMain.handle("app:save-mcp-configuration", async (_event, configuration: { port: number; path?: string | null }) => {
   return saveMcpConfiguration(configuration ?? { port: normalizeMcpPort(defaultMcpServerPort) });
+});
+
+ipcMain.handle("app:save-flowchart-preferences", async (_event, configuration: { sidebarWidth?: number | null }) => {
+  return saveFlowChartPreferences(configuration ?? { sidebarWidth: defaultFlowChartSidebarWidth });
 });
 
 ipcMain.handle("app:find-available-mcp-port", async () => ({

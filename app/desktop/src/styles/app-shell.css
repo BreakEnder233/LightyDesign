@@ -43,7 +43,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: var(--workspace-sidebar-width, 248px) minmax(0, 1fr);
   grid-template-rows: 40px minmax(0, 1fr) auto;
   height: 100vh;
   overflow: hidden;

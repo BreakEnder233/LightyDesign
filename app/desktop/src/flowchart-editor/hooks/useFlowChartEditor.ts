@@ -1019,8 +1019,8 @@ export function useFlowChartEditor({
             return;
           }
 
-          node.layout.x = Math.max(0, Math.round(node.layout.x + delta.x));
-          node.layout.y = Math.max(0, Math.round(node.layout.y + delta.y));
+          node.layout.x = Math.max(0, node.layout.x + delta.x);
+          node.layout.y = Math.max(0, node.layout.y + delta.y);
         });
       });
     },
@@ -1028,7 +1028,7 @@ export function useFlowChartEditor({
   );
 
   const addNode = useCallback(
-    async (nodeType: string) => {
+    async (nodeType: string, preferredPosition?: { x: number; y: number }) => {
       if (!activeDocument) {
         return;
       }
@@ -1037,9 +1037,16 @@ export function useFlowChartEditor({
 
       const nextNodeId = activeDocument.nodes.reduce((maxNodeId, node) => Math.max(maxNodeId, node.nodeId), 0) + 1;
       const selectionBounds = selectedNodes.length > 0 ? getDocumentBounds(selectedNodes) : null;
-      const nextPosition = selectionBounds
-        ? { x: selectionBounds.maxX + 104, y: selectionBounds.minY + 24 }
-        : { x: 120 + activeDocument.nodes.length * 18, y: 96 + activeDocument.nodes.length * 18 };
+      const normalizedPreferredPosition = preferredPosition
+        ? {
+            x: Math.max(0, Math.round(preferredPosition.x - flowChartNodeWidth / 2)),
+            y: Math.max(0, Math.round(preferredPosition.y - 28)),
+          }
+        : null;
+      const nextPosition = normalizedPreferredPosition
+        ?? (selectionBounds
+          ? { x: selectionBounds.maxX + 104, y: selectionBounds.minY + 24 }
+          : { x: 120 + activeDocument.nodes.length * 18, y: 96 + activeDocument.nodes.length * 18 });
 
       updateActiveDocument((document) => {
         document.nodes.push({

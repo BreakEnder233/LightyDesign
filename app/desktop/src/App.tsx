@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { DialogBackdrop } from "./components/DialogBackdrop";
 import { McpConfigDialog } from "./components/McpConfigDialog";
@@ -26,6 +26,8 @@ import { fetchJson } from "./utils/desktopHost";
 type ToolbarMenuId = "file" | "edit" | "table" | "ai" | "help";
 type McpConfigTargetClient = "vscode";
 type EditorMode = "workbook" | "flowchart";
+
+const defaultFlowChartSidebarWidth = 320;
 
 function App() {
   const appShellRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +93,7 @@ function App() {
   const hostStatusClassName = bridgeStatus === "unavailable" ? "status-chip is-error" : hostHealth?.ok ? "status-chip is-ok" : "status-chip is-warn";
   const canChooseWorkspaceDirectory = bridgeStatus === "ready";
   const [editorMode, setEditorMode] = useState<EditorMode>("workbook");
+  const [flowChartSidebarWidth, setFlowChartSidebarWidth] = useState(defaultFlowChartSidebarWidth);
   const isWorkbookMode = editorMode === "workbook";
   const isFlowChartMode = editorMode === "flowchart";
   const isUpdateInstallInProgress =
@@ -137,6 +140,55 @@ function App() {
                         : updateStatus === "error"
                           ? "检查失败"
                           : updateInfo?.currentVersion ?? "待检查";
+
+  useEffect(() => {
+    if (!window.lightyDesign?.getFlowChartPreferences) {
+      return;
+    }
+
+    let canceled = false;
+
+    async function loadFlowChartPreferences() {
+      try {
+        const preferences = await window.lightyDesign?.getFlowChartPreferences();
+        if (!canceled && preferences?.sidebarWidth) {
+          setFlowChartSidebarWidth(preferences.sidebarWidth);
+        }
+      } catch {
+        return;
+      }
+    }
+
+    void loadFlowChartPreferences();
+
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  function handleFlowChartSidebarWidthChange(nextWidth: number) {
+    setFlowChartSidebarWidth(nextWidth);
+  }
+
+  function handleFlowChartSidebarWidthCommit(nextWidth: number) {
+    setFlowChartSidebarWidth(nextWidth);
+    if (!window.lightyDesign?.saveFlowChartPreferences) {
+      return;
+    }
+
+    void window.lightyDesign.saveFlowChartPreferences({ sidebarWidth: nextWidth })
+      .then((preferences) => {
+        setFlowChartSidebarWidth(preferences.sidebarWidth);
+      })
+      .catch(() => {
+        return;
+      });
+  }
+
+  const appShellStyle = isFlowChartMode
+    ? ({ "--workspace-sidebar-width": `${flowChartSidebarWidth}px` } as CSSProperties)
+    : undefined;
+
   const [isCreateWorkspaceDialogOpen, setIsCreateWorkspaceDialogOpen] = useState(false);
   const [createWorkspaceParentDirectoryPath, setCreateWorkspaceParentDirectoryPath] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("NewWorkspace");
@@ -395,6 +447,75 @@ function App() {
   const flowChartDirtyText = flowChartEditor.activeFlowChartState.status === "ready" && flowChartEditor.activeFlowChartState.dirty
     ? "存在未保存更改"
     : "无未保存更改";
+  const mcpEditorContext = useMemo(() => {
+    const currentFlowChart = isFlowChartMode && flowChartEditor.activeFlowChartPath
+      ? {
+          relativePath: flowChartEditor.activeFlowChartPath,
+          filePath: flowChartEditor.activeSummary?.filePath ?? null,
+          name: flowChartEditor.activeSummary?.name ?? null,
+          alias: flowChartEditor.activeSummary?.alias ?? null,
+          status: flowChartEditor.activeFlowChartState.status,
+          dirty: flowChartEditor.activeFlowChartState.status === "ready" ? flowChartEditor.activeFlowChartState.dirty : false,
+          nodeCount: flowChartEditor.activeDocument?.nodes.length ?? null,
+          flowConnectionCount: flowChartEditor.activeDocument?.flowConnections.length ?? null,
+          computeConnectionCount: flowChartEditor.activeDocument?.computeConnections.length ?? null,
+          validationIssueCount: flowChartEditor.validationIssues.length,
+          saveState: flowChartEditor.saveState,
+          error: flowChartEditor.activeFlowChartState.status === "error" ? flowChartEditor.activeFlowChartState.error : null,
+        }
+      : null;
+    const flowChartSelection = isFlowChartMode && currentFlowChart
+      ? {
+          nodeIds: [...flowChartEditor.selection.nodeIds],
+          flowConnectionKeys: [...flowChartEditor.selection.flowConnectionKeys],
+          computeConnectionKeys: [...flowChartEditor.selection.computeConnectionKeys],
+          focus: flowChartEditor.selection.focus,
+          selectedNodeCount: flowChartEditor.selectedNodeCount,
+          selectedConnectionCount: flowChartEditor.selectedConnectionCount,
+          selectedNode: flowChartEditor.selectedNode
+            ? {
+                nodeId: flowChartEditor.selectedNode.nodeId,
+                nodeType: flowChartEditor.selectedNode.nodeType,
+                layout: { ...flowChartEditor.selectedNode.layout },
+              }
+            : null,
+          selectedConnection: flowChartEditor.selectedConnectionItem
+            ? {
+                kind: flowChartEditor.selectedConnectionItem.kind,
+                key: flowChartEditor.selectedConnectionItem.key,
+                connection: { ...flowChartEditor.selectedConnectionItem.connection },
+              }
+            : null,
+          pendingConnection: flowChartEditor.pendingConnection,
+        }
+      : null;
+
+    return {
+      ...activeEditorContext,
+      editorMode,
+      currentSheet: isWorkbookMode ? activeEditorContext.currentSheet : null,
+      selection: isWorkbookMode ? activeEditorContext.selection : null,
+      currentFlowChart,
+      flowChartSelection,
+    };
+  }, [
+    activeEditorContext,
+    editorMode,
+    flowChartEditor.activeDocument,
+    flowChartEditor.activeFlowChartPath,
+    flowChartEditor.activeFlowChartState,
+    flowChartEditor.activeSummary,
+    flowChartEditor.pendingConnection,
+    flowChartEditor.saveState,
+    flowChartEditor.selectedConnectionCount,
+    flowChartEditor.selectedConnectionItem,
+    flowChartEditor.selectedNode,
+    flowChartEditor.selectedNodeCount,
+    flowChartEditor.selection,
+    flowChartEditor.validationIssues.length,
+    isFlowChartMode,
+    isWorkbookMode,
+  ]);
 
   useEffect(() => {
     if (!hostHealth) {
@@ -962,11 +1083,11 @@ function App() {
     }
 
     void window.lightyDesign.setMcpEditorContext({
-      ...activeEditorContext,
+      ...mcpEditorContext,
       updatedAt: new Date().toISOString(),
       mcpEnabled: mcpPreferences?.enabled ?? false,
     });
-  }, [activeEditorContext, mcpPreferences?.enabled]);
+  }, [mcpEditorContext, mcpPreferences?.enabled]);
 
   useEffect(() => {
     if (!isMcpConfigDialogOpen || !mcpConfigPreviewJson) {
@@ -993,7 +1114,7 @@ function App() {
   }, [isMcpConfigDialogOpen, mcpPreferences?.serverPort, mcpPreferences?.serverPath]);
 
   return (
-    <div className="app-shell" ref={appShellRef}>
+    <div className="app-shell" ref={appShellRef} style={appShellStyle}>
       <NameInputDialog
         ariaLabel="新建工作区"
         inputLabel="工作区文件夹名称"
@@ -1765,7 +1886,13 @@ function App() {
           onWorkspaceSearchChange={setWorkspaceSearch}
         />
       ) : (
-        <FlowChartEditorView editor={flowChartEditor} workspacePath={workspacePath} />
+        <FlowChartEditorView
+          editor={flowChartEditor}
+          onSidebarWidthChange={handleFlowChartSidebarWidthChange}
+          onSidebarWidthCommit={handleFlowChartSidebarWidthCommit}
+          sidebarWidth={flowChartSidebarWidth}
+          workspacePath={workspacePath}
+        />
       )}
 
       <footer className="status-bar">

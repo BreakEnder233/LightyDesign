@@ -70,6 +70,11 @@ interface McpPreferences {
   lastStartError: string | null;
 }
 
+interface FlowChartPreferences {
+  sidebarWidth: number;
+  preferencesFilePath: string;
+}
+
 interface WorkspaceFilesChangedEvent {
   workspacePath: string;
   changedPath: string | null;
@@ -86,8 +91,10 @@ interface Window {
     getAppUpdateDownloadState: () => Promise<AppUpdateDownloadState>;
     downloadAndInstallAppUpdate: () => Promise<AppUpdateDownloadState>;
     getMcpPreferences: () => Promise<McpPreferences>;
+    getFlowChartPreferences: () => Promise<FlowChartPreferences>;
     setMcpEnabled: (enabled: boolean) => Promise<McpPreferences>;
     saveMcpConfiguration: (configuration: { port: number; path?: string | null }) => Promise<McpPreferences>;
+    saveFlowChartPreferences: (configuration: { sidebarWidth?: number | null }) => Promise<FlowChartPreferences>;
     findAvailableMcpPort: () => Promise<{ port: number }>;
     getMcpConfigJson: () => Promise<string>;
     setMcpEditorContext: (context: unknown) => Promise<{ ok: boolean; error?: string }>;

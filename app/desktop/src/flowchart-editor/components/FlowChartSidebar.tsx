@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import type {
   FlowChartCatalogResponse,
@@ -10,6 +10,7 @@ type FlowChartTreeScope = "files" | "nodes";
 
 type FlowChartSidebarProps = {
   workspacePath: string;
+  sidebarWidth: number;
   catalogStatus: "idle" | "loading" | "ready" | "error";
   catalogError: string | null;
   catalog: FlowChartCatalogResponse | null;
@@ -25,9 +26,13 @@ type FlowChartSidebarProps = {
   onOpenExportFlowChartDialog: (relativePath: string) => void;
   onOpenExportFlowChartDirectoryDialog: (baseDirectory: string) => void;
   onOpenExportAllFlowChartsDialog: () => void;
+  onSidebarWidthChange: (width: number) => void;
+  onSidebarWidthCommit: (width: number) => void;
   onRequestDeleteDirectory: (scope: FlowChartTreeScope, relativePath: string, label: string) => void;
   onRequestDeleteFlowChart: (relativePath: string, label: string) => void;
 };
+
+type FlowChartSidebarTab = "files" | "nodes";
 
 type TreeDirectoryNode = {
   kind: "directory";
@@ -47,7 +52,6 @@ type TreeFlowChartNode = {
   key: string;
   relativePath: string;
   label: string;
-  secondaryLabel: string | null;
   searchText: string;
 };
 
@@ -57,7 +61,6 @@ type TreeNodeDefinitionNode = {
   key: string;
   relativePath: string;
   label: string;
-  secondaryLabel: string | null;
   nodeKind: string;
   searchText: string;
 };
@@ -86,11 +89,11 @@ type TreeContextMenuTarget =
     };
 
 function buildFlowChartFileLabel(file: FlowChartFileSummary) {
-  return file.alias?.trim() ? `${file.alias} · ${file.name}` : file.name;
+  return file.alias?.trim() || file.name;
 }
 
 function buildNodeDefinitionLabel(node: FlowChartNodeDefinitionSummary) {
-  return node.alias?.trim() ? `${node.alias} · ${node.name}` : node.name;
+  return node.alias?.trim() || node.name;
 }
 
 function buildTreeKey(scope: FlowChartTreeScope, relativePath: string | null) {
@@ -99,6 +102,13 @@ function buildTreeKey(scope: FlowChartTreeScope, relativePath: string | null) {
 
 function buildSidebarPreferenceKey(workspacePath: string) {
   return `lightydesign.workspacePath:${workspacePath}:flowchart-sidebar-expanded-v1`;
+}
+
+const minSidebarWidth = 280;
+const maxSidebarWidth = 520;
+
+function clampSidebarWidth(width: number) {
+  return Math.min(maxSidebarWidth, Math.max(minSidebarWidth, Math.round(width)));
 }
 
 function createDirectoryNode(scope: FlowChartTreeScope, relativePath: string | null, name: string, isRoot = false, count: number | null = null): TreeDirectoryNode {
@@ -193,7 +203,7 @@ function filterTree(entry: TreeEntry, keyword: string): TreeEntry | null {
 }
 
 function buildFilesTree(catalog: FlowChartCatalogResponse | null) {
-  const root = createDirectoryNode("files", null, "Files", true, catalog?.files.length ?? 0);
+  const root = createDirectoryNode("files", null, "流程图", true, catalog?.files.length ?? 0);
   if (!catalog) {
     return root;
   }
@@ -211,7 +221,6 @@ function buildFilesTree(catalog: FlowChartCatalogResponse | null) {
       key: buildTreeKey("files", file.relativePath),
       relativePath: file.relativePath,
       label: buildFlowChartFileLabel(file),
-      secondaryLabel: file.alias?.trim() ? file.name : null,
       searchText: `${file.relativePath} ${file.name} ${file.alias ?? ""}`.toLowerCase(),
     });
   });
@@ -221,7 +230,7 @@ function buildFilesTree(catalog: FlowChartCatalogResponse | null) {
 }
 
 function buildNodesTree(catalog: FlowChartCatalogResponse | null) {
-  const root = createDirectoryNode("nodes", null, "Nodes", true, catalog?.nodeDefinitions.length ?? 0);
+  const root = createDirectoryNode("nodes", null, "节点", true, catalog?.nodeDefinitions.length ?? 0);
   if (!catalog) {
     return root;
   }
@@ -239,7 +248,6 @@ function buildNodesTree(catalog: FlowChartCatalogResponse | null) {
       key: buildTreeKey("nodes", nodeDefinition.relativePath),
       relativePath: nodeDefinition.relativePath,
       label: buildNodeDefinitionLabel(nodeDefinition),
-      secondaryLabel: nodeDefinition.alias?.trim() ? nodeDefinition.name : null,
       nodeKind: nodeDefinition.nodeKind,
       searchText: `${nodeDefinition.relativePath} ${nodeDefinition.name} ${nodeDefinition.alias ?? ""} ${nodeDefinition.nodeKind}`.toLowerCase(),
     });
@@ -259,6 +267,7 @@ function clampContextMenuPosition(x: number, y: number, width: number, height: n
 
 export function FlowChartSidebar({
   workspacePath,
+  sidebarWidth,
   catalogStatus,
   catalogError,
   catalog,
@@ -274,15 +283,23 @@ export function FlowChartSidebar({
   onOpenExportFlowChartDialog,
   onOpenExportFlowChartDirectoryDialog,
   onOpenExportAllFlowChartsDialog,
+  onSidebarWidthChange,
+  onSidebarWidthCommit,
   onRequestDeleteDirectory,
   onRequestDeleteFlowChart,
 }: FlowChartSidebarProps) {
-  const [searchText, setSearchText] = useState("");
+  const [activeTab, setActiveTab] = useState<FlowChartSidebarTab>("files");
+  const [filesSearchText, setFilesSearchText] = useState("");
+  const [nodesSearchText, setNodesSearchText] = useState("");
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     target: TreeContextMenuTarget;
+  } | null>(null);
+  const [resizeState, setResizeState] = useState<{
+    startX: number;
+    startWidth: number;
   } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -358,12 +375,57 @@ export function FlowChartSidebar({
     };
   }, [contextMenu]);
 
-  const keyword = searchText.trim().toLowerCase();
-  const filesTree = useMemo(() => filterTree(buildFilesTree(catalog), keyword), [catalog, keyword]);
-  const nodesTree = useMemo(() => filterTree(buildNodesTree(catalog), keyword), [catalog, keyword]);
-  const visibleRoots = [filesTree, nodesTree].filter((root): root is TreeDirectoryNode => root !== null);
-  const hasVisibleEntries = visibleRoots.some((root) => root.children.length > 0);
-  const isSearchActive = keyword.length > 0;
+  useEffect(() => {
+    if (!resizeState) {
+      return;
+    }
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (event: PointerEvent) => {
+      onSidebarWidthChange(clampSidebarWidth(resizeState.startWidth + event.clientX - resizeState.startX));
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const nextWidth = clampSidebarWidth(resizeState.startWidth + event.clientX - resizeState.startX);
+      onSidebarWidthChange(nextWidth);
+      onSidebarWidthCommit(nextWidth);
+      setResizeState(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [onSidebarWidthChange, onSidebarWidthCommit, resizeState]);
+
+  const filesKeyword = filesSearchText.trim().toLowerCase();
+  const nodesKeyword = nodesSearchText.trim().toLowerCase();
+  const filesTree = useMemo(() => filterTree(buildFilesTree(catalog), filesKeyword), [catalog, filesKeyword]);
+  const nodesTree = useMemo(() => filterTree(buildNodesTree(catalog), nodesKeyword), [catalog, nodesKeyword]);
+  const activeKeyword = activeTab === "files" ? filesKeyword : nodesKeyword;
+  const activeSearchText = activeTab === "files" ? filesSearchText : nodesSearchText;
+  const activeTree = activeTab === "files" ? filesTree : nodesTree;
+  const hasVisibleEntries = Boolean(activeTree && activeTree.children.length > 0);
+  const isSearchActive = activeKeyword.length > 0;
+
+  function setActiveSearchText(value: string) {
+    if (activeTab === "files") {
+      setFilesSearchText(value);
+      return;
+    }
+
+    setNodesSearchText(value);
+  }
 
   function getFlowChartCountInDirectory(relativePath: string | null) {
     if (!catalog) {
@@ -403,6 +465,14 @@ export function FlowChartSidebar({
   function runMenuAction(action: () => void) {
     setContextMenu(null);
     action();
+  }
+
+  function handleResizePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setResizeState({
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+    });
   }
 
   function renderTreeEntry(entry: TreeEntry, depth: number) {
@@ -461,14 +531,14 @@ export function FlowChartSidebar({
             });
           }}
           style={{ paddingLeft: 10 + depth * 18 }}
+          title={entry.relativePath}
           type="button"
         >
-          <span className="flowchart-tree-expander is-leaf">-</span>
+          <span className="flowchart-tree-expander is-leaf">•</span>
           <span className="flowchart-tree-copy">
             <strong>{entry.label}</strong>
-            {entry.secondaryLabel ? <span>{entry.secondaryLabel}</span> : null}
           </span>
-          {activeFlowChartPath === entry.relativePath ? <span className="badge">打开中</span> : null}
+          {activeFlowChartPath === entry.relativePath ? <span className="badge flowchart-tree-row-badge">打开中</span> : null}
         </button>
       );
     }
@@ -490,12 +560,12 @@ export function FlowChartSidebar({
           });
         }}
         style={{ paddingLeft: 10 + depth * 18 }}
+        title={entry.relativePath}
         type="button"
       >
-        <span className="flowchart-tree-expander is-leaf">-</span>
+        <span className="flowchart-tree-expander is-leaf">•</span>
         <span className="flowchart-tree-copy">
           <strong>{entry.label}</strong>
-          {entry.secondaryLabel ? <span>{entry.secondaryLabel}</span> : null}
         </span>
         <span className={`flowchart-kind-badge is-${entry.nodeKind}`}>{entry.nodeKind}</span>
       </button>
@@ -503,71 +573,107 @@ export function FlowChartSidebar({
   }
 
   return (
-    <aside className="workspace-sidebar">
-      <section className="sidebar-section tree-card">
+    <aside className="workspace-sidebar flowchart-workspace-sidebar">
+      <section className="sidebar-section tree-card flowchart-sidebar-panel">
         <div className="section-header">
           <div>
             <p className="eyebrow">FlowChartEditor</p>
-            <strong>{workspacePath ? "流程图资源树" : "尚未打开工作区"}</strong>
+            <strong>{workspacePath ? "流程图资源" : "尚未打开工作区"}</strong>
           </div>
           {catalog ? <span className="badge">{catalog.files.length + catalog.nodeDefinitions.length} 项</span> : null}
         </div>
 
-        <label className="search-field compact-field">
-          <span>搜索</span>
-          <input
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="按名称、别名、路径或节点种类过滤"
-            type="search"
-            value={searchText}
-          />
-        </label>
+        <div aria-label="流程图资源分页" className="flowchart-sidebar-tabbar" role="tablist">
+          <button
+            aria-selected={activeTab === "files"}
+            className={`flowchart-sidebar-tab-button${activeTab === "files" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("files")}
+            role="tab"
+            type="button"
+          >
+            <span>流程图树</span>
+            <span className="badge">{catalog?.files.length ?? 0}</span>
+          </button>
+          <button
+            aria-selected={activeTab === "nodes"}
+            className={`flowchart-sidebar-tab-button${activeTab === "nodes" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("nodes")}
+            role="tab"
+            type="button"
+          >
+            <span>节点树</span>
+            <span className="badge">{catalog?.nodeDefinitions.length ?? 0}</span>
+          </button>
+        </div>
 
-        {catalogStatus === "loading" ? (
-          <div className="empty-panel flowchart-sidebar-empty">
-            <strong>正在读取流程图导航</strong>
-            <p>准备 Files / Nodes 目录树。</p>
-          </div>
-        ) : null}
+        <div className="flowchart-sidebar-tabpanel" role="tabpanel">
+          <label className="search-field compact-field">
+            <span>{activeTab === "files" ? "搜索流程图" : "搜索节点"}</span>
+            <input
+              onChange={(event) => setActiveSearchText(event.target.value)}
+              placeholder={activeTab === "files" ? "按名称、别名或路径过滤流程图" : "按名称、别名、路径或节点种类过滤"}
+              type="search"
+              value={activeSearchText}
+            />
+          </label>
 
-        {catalogStatus === "error" ? (
-          <div className="empty-panel is-error flowchart-sidebar-empty">
-            <strong>流程图导航加载失败</strong>
-            <p>{catalogError ?? "未能读取 FlowCharts 目录。"}</p>
-            <button className="secondary-button" onClick={onRetryLoad} type="button">
-              重试
-            </button>
-          </div>
-        ) : null}
-
-        {catalogStatus === "ready" && !catalog ? (
-          <div className="empty-panel flowchart-sidebar-empty">
-            <strong>当前没有流程图导航数据</strong>
-            <p>请先打开一个工作区。</p>
-          </div>
-        ) : null}
-
-        {catalogStatus === "ready" && catalog ? (
-          <>
-            <div className="flowchart-sidebar-tree">
-              {visibleRoots.map((root) => renderTreeEntry(root, 0))}
-            </div>
-
-            {isSearchActive && !hasVisibleEntries ? (
-              <div className="empty-panel flowchart-sidebar-empty is-compact">
-                <strong>没有匹配的流程图或节点</strong>
-                <p>尝试调整搜索关键字。</p>
+          <div className="flowchart-sidebar-tree-shell">
+            {catalogStatus === "loading" ? (
+              <div className="empty-panel flowchart-sidebar-empty">
+                <strong>正在读取流程图导航</strong>
+                <p>准备{activeTab === "files" ? "流程图树" : "节点树"}。</p>
               </div>
             ) : null}
 
-            {!isSearchActive && catalog.files.length === 0 && catalog.nodeDefinitions.length === 0 && catalog.fileDirectories.length === 0 && catalog.nodeDirectories.length === 0 ? (
-              <div className="empty-panel flowchart-sidebar-empty is-compact">
-                <strong>Files / Nodes 目录目前为空</strong>
-                <p>右键根目录即可新建流程图或子目录。</p>
+            {catalogStatus === "error" ? (
+              <div className="empty-panel is-error flowchart-sidebar-empty">
+                <strong>流程图导航加载失败</strong>
+                <p>{catalogError ?? "未能读取 FlowCharts 目录。"}</p>
+                <button className="secondary-button" onClick={onRetryLoad} type="button">
+                  重试
+                </button>
               </div>
             ) : null}
-          </>
-        ) : null}
+
+            {catalogStatus === "ready" && !catalog ? (
+              <div className="empty-panel flowchart-sidebar-empty">
+                <strong>当前没有流程图导航数据</strong>
+                <p>请先打开一个工作区。</p>
+              </div>
+            ) : null}
+
+            {catalogStatus === "ready" && catalog ? (
+              <>
+                <div className="flowchart-sidebar-tree">
+                  <div className="flowchart-sidebar-tree-content">
+                    {activeTree ? renderTreeEntry(activeTree, 0) : null}
+                  </div>
+                </div>
+
+                {isSearchActive && !hasVisibleEntries ? (
+                  <div className="empty-panel flowchart-sidebar-empty is-compact">
+                    <strong>没有匹配的{activeTab === "files" ? "流程图" : "节点"}</strong>
+                    <p>尝试调整搜索关键字。</p>
+                  </div>
+                ) : null}
+
+                {!isSearchActive && activeTab === "files" && catalog.files.length === 0 && catalog.fileDirectories.length === 0 ? (
+                  <div className="empty-panel flowchart-sidebar-empty is-compact">
+                    <strong>流程图树目前为空</strong>
+                    <p>右键根目录即可新建流程图或子目录。</p>
+                  </div>
+                ) : null}
+
+                {!isSearchActive && activeTab === "nodes" && catalog.nodeDefinitions.length === 0 && catalog.nodeDirectories.length === 0 ? (
+                  <div className="empty-panel flowchart-sidebar-empty is-compact">
+                    <strong>节点树目前为空</strong>
+                    <p>右键根目录即可新建目录，再导入或生成节点定义。</p>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        </div>
       </section>
 
       {contextMenu ? (
@@ -716,6 +822,13 @@ export function FlowChartSidebar({
             : null}
         </div>
       ) : null}
+
+      <button
+        aria-label="调整流程图侧栏宽度"
+        className={`flowchart-sidebar-resize-handle${resizeState ? " is-dragging" : ""}`}
+        onPointerDown={handleResizePointerDown}
+        type="button"
+      />
     </aside>
   );
 }

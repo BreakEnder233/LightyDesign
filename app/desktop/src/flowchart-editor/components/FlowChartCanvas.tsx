@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react";
 
+import { clampContextMenuPosition } from "../../utils/appHelpers";
+
 import type {
   FlowChartConnection,
   FlowChartConnectionKind,
@@ -20,10 +22,31 @@ import {
 type SelectionMode = "replace" | "add" | "toggle";
 type AlignMode = "left" | "center" | "right" | "top" | "middle" | "bottom";
 type DistributionAxis = "horizontal" | "vertical";
+type CanvasPoint = { x: number; y: number };
+type CanvasBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+type ContextMenuState = {
+  x: number;
+  y: number;
+  target:
+    | {
+        kind: "canvas";
+        canvasPoint: CanvasPoint | null;
+      }
+    | {
+        kind: "node";
+        nodeId: number;
+      };
+};
 
 type FlowChartCanvasProps = {
   status: "idle" | "loading" | "ready" | "error";
   errorMessage: string | null;
+  documentKey: string | null;
   activeDocument: FlowChartFileDocument | null;
   nodeDefinitionsByType: Record<string, FlowChartNodeDefinitionDocument | undefined>;
   selection: FlowChartSelection;
@@ -32,11 +55,12 @@ type FlowChartCanvasProps = {
   onSelectNodes: (nodeIds: number[], mode?: SelectionMode, focusNodeId?: number) => void;
   onSelectConnection: (kind: FlowChartConnectionKind, connectionKey: string, mode?: SelectionMode) => void;
   onClearSelection: () => void;
+  onDeleteSelection: () => void;
   onMoveSelectedNodes: (nodeIds: number[], delta: { x: number; y: number }) => void;
   onBeginConnection: (kind: FlowChartConnectionKind, sourceNodeId: number, sourcePortId: number) => void;
   onCompleteConnection: (targetNodeId: number, targetPortId: number) => void;
   onCancelPendingConnection: () => void;
-  onOpenAddNodeDialog: () => void;
+  onOpenAddNodeDialog: (position?: CanvasPoint) => void;
   onAlignSelectedNodes: (mode: AlignMode) => void;
   onDistributeSelectedNodes: (axis: DistributionAxis) => void;
   onAutoLayoutNodes: () => void;
@@ -45,9 +69,77 @@ type FlowChartCanvasProps = {
 
 const minZoom = 0.5;
 const maxZoom = 2;
+const defaultCanvasBounds: CanvasBounds = {
+  minX: 0,
+  minY: 0,
+  maxX: 1600,
+  maxY: 960,
+};
+const canvasViewportPadding = 240;
+const minimapPadding = 120;
 
 function clampZoom(zoom: number) {
   return Math.min(maxZoom, Math.max(minZoom, Math.round(zoom * 100) / 100));
+}
+
+function buildCanvasRect(bounds: CanvasBounds) {
+  return {
+    x: bounds.minX,
+    y: bounds.minY,
+    width: Math.max(1, bounds.maxX - bounds.minX),
+    height: Math.max(1, bounds.maxY - bounds.minY),
+  };
+}
+
+function unionCanvasBounds(left: CanvasBounds, right: CanvasBounds): CanvasBounds {
+  return {
+    minX: Math.min(left.minX, right.minX),
+    minY: Math.min(left.minY, right.minY),
+    maxX: Math.max(left.maxX, right.maxX),
+    maxY: Math.max(left.maxY, right.maxY),
+  };
+}
+
+function expandCanvasBounds(bounds: CanvasBounds, padding: number): CanvasBounds {
+  return {
+    minX: bounds.minX - padding,
+    minY: bounds.minY - padding,
+    maxX: bounds.maxX + padding,
+    maxY: bounds.maxY + padding,
+  };
+}
+
+function getDocumentCanvasBounds(
+  activeDocument: FlowChartFileDocument | null,
+  nodeDefinitionsByType: Record<string, FlowChartNodeDefinitionDocument | undefined>,
+): CanvasBounds {
+  if (!activeDocument || activeDocument.nodes.length === 0) {
+    return defaultCanvasBounds;
+  }
+
+  const [firstNode] = activeDocument.nodes;
+  const firstMetrics = getFlowChartNodeLayoutMetrics(nodeDefinitionsByType[firstNode.nodeType]);
+  return activeDocument.nodes.reduce<CanvasBounds>((bounds, node) => {
+    const metrics = getFlowChartNodeLayoutMetrics(nodeDefinitionsByType[node.nodeType]);
+    return {
+      minX: Math.min(bounds.minX, node.layout.x),
+      minY: Math.min(bounds.minY, node.layout.y),
+      maxX: Math.max(bounds.maxX, node.layout.x + flowChartNodeWidth),
+      maxY: Math.max(bounds.maxY, node.layout.y + metrics.height),
+    };
+  }, {
+    minX: firstNode.layout.x,
+    minY: firstNode.layout.y,
+    maxX: firstNode.layout.x + flowChartNodeWidth,
+    maxY: firstNode.layout.y + firstMetrics.height,
+  });
+}
+
+function offsetCanvasPoint(point: CanvasPoint, origin: CanvasPoint) {
+  return {
+    x: point.x - origin.x,
+    y: point.y - origin.y,
+  };
 }
 
 function getPointerSelectionMode(event: Pick<MouseEvent, "ctrlKey" | "metaKey" | "shiftKey">): SelectionMode {
@@ -112,7 +204,13 @@ function buildPortAnchor(
   const port = ports[index];
   return {
     x: node.layout.x + (port.direction === "input" ? 0 : flowChartNodeWidth),
-    y: node.layout.y + sectionStart + metrics.sectionHeaderHeight + index * metrics.portRowHeight + metrics.portRowHeight / 2,
+    y:
+      node.layout.y
+      + sectionStart
+      + metrics.sectionBorderHeight
+      + metrics.sectionHeaderHeight
+      + index * metrics.portRowHeight
+      + metrics.portRowHeight / 2,
   };
 }
 
@@ -142,6 +240,7 @@ function rectIntersectsNode(
 export function FlowChartCanvas({
   status,
   errorMessage,
+  documentKey,
   activeDocument,
   nodeDefinitionsByType,
   selection,
@@ -150,6 +249,7 @@ export function FlowChartCanvas({
   onSelectNodes,
   onSelectConnection,
   onClearSelection,
+  onDeleteSelection,
   onMoveSelectedNodes,
   onBeginConnection,
   onCompleteConnection,
@@ -163,10 +263,17 @@ export function FlowChartCanvas({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [viewOrigin, setViewOrigin] = useState<CanvasPoint>({ x: 0, y: 0 });
   const [dragState, setDragState] = useState<{
     nodeIds: number[];
     lastX: number;
     lastY: number;
+  } | null>(null);
+  const [panState, setPanState] = useState<{
+    startClientX: number;
+    startClientY: number;
+    startOriginX: number;
+    startOriginY: number;
   } | null>(null);
   const [pointerPosition, setPointerPosition] = useState<{ x: number; y: number } | null>(null);
   const [marqueeState, setMarqueeState] = useState<{
@@ -176,58 +283,61 @@ export function FlowChartCanvas({
     currentY: number;
     mode: SelectionMode;
   } | null>(null);
-  const [viewportMetrics, setViewportMetrics] = useState({
-    left: 0,
-    top: 0,
+  const [viewportSize, setViewportSize] = useState({
     width: 0,
     height: 0,
   });
-  const [contextMenuState, setContextMenuState] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-
-  const stageSize = useMemo(() => {
-    if (!activeDocument) {
-      return {
-        width: 1600,
-        height: 960,
-      };
-    }
-
-    let maxX = 1600;
-    let maxY = 960;
-    activeDocument.nodes.forEach((node) => {
-      const definition = nodeDefinitionsByType[node.nodeType];
-      const metrics = getFlowChartNodeLayoutMetrics(definition);
-      maxX = Math.max(maxX, node.layout.x + flowChartNodeWidth + 280);
-      maxY = Math.max(maxY, node.layout.y + metrics.height + 220);
-    });
-
-    return {
-      width: maxX,
-      height: maxY,
-    };
-  }, [activeDocument, nodeDefinitionsByType]);
+  const [contextMenuState, setContextMenuState] = useState<ContextMenuState | null>(null);
+  const initialViewAppliedDocumentKeyRef = useRef<string | null>(null);
 
   const nodesById = useMemo(() => new Map(activeDocument?.nodes.map((node) => [node.nodeId, node]) ?? []), [activeDocument]);
   const selectedNodeIdSet = useMemo(() => new Set(selection.nodeIds), [selection.nodeIds]);
   const selectedFlowKeySet = useMemo(() => new Set(selection.flowConnectionKeys), [selection.flowConnectionKeys]);
   const selectedComputeKeySet = useMemo(() => new Set(selection.computeConnectionKeys), [selection.computeConnectionKeys]);
+  const documentBounds = useMemo(
+    () => getDocumentCanvasBounds(activeDocument, nodeDefinitionsByType),
+    [activeDocument, nodeDefinitionsByType],
+  );
+  const viewportMetrics = useMemo(() => ({
+    left: viewOrigin.x,
+    top: viewOrigin.y,
+    width: viewportSize.width / zoom,
+    height: viewportSize.height / zoom,
+  }), [viewOrigin.x, viewOrigin.y, viewportSize.height, viewportSize.width, zoom]);
+  const viewportBounds = useMemo<CanvasBounds>(() => ({
+    minX: viewportMetrics.left,
+    minY: viewportMetrics.top,
+    maxX: viewportMetrics.left + viewportMetrics.width,
+    maxY: viewportMetrics.top + viewportMetrics.height,
+  }), [viewportMetrics.height, viewportMetrics.left, viewportMetrics.top, viewportMetrics.width]);
+  const stageBounds = useMemo(
+    () => expandCanvasBounds(unionCanvasBounds(documentBounds, viewportBounds), canvasViewportPadding),
+    [documentBounds, viewportBounds],
+  );
+  const stageRect = useMemo(() => buildCanvasRect(stageBounds), [stageBounds]);
+  const stageOrigin = useMemo(() => ({ x: stageBounds.minX, y: stageBounds.minY }), [stageBounds.minX, stageBounds.minY]);
+  const stageTransform = useMemo(
+    () => `translate(${-(viewOrigin.x - stageOrigin.x) * zoom}px, ${-(viewOrigin.y - stageOrigin.y) * zoom}px) scale(${zoom})`,
+    [stageOrigin.x, stageOrigin.y, viewOrigin.x, viewOrigin.y, zoom],
+  );
+  const minimapBounds = useMemo(
+    () => expandCanvasBounds(unionCanvasBounds(documentBounds, viewportBounds), minimapPadding),
+    [documentBounds, viewportBounds],
+  );
+  const minimapRect = useMemo(() => buildCanvasRect(minimapBounds), [minimapBounds]);
+  const minimapOrigin = useMemo(() => ({ x: minimapBounds.minX, y: minimapBounds.minY }), [minimapBounds.minX, minimapBounds.minY]);
 
-  const updateViewportMetrics = useCallback(() => {
+  const updateViewportSize = useCallback(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
       return;
     }
 
-    setViewportMetrics({
-      left: viewport.scrollLeft / zoom,
-      top: viewport.scrollTop / zoom,
-      width: viewport.clientWidth / zoom,
-      height: viewport.clientHeight / zoom,
+    setViewportSize({
+      width: viewport.clientWidth,
+      height: viewport.clientHeight,
     });
-  }, [zoom]);
+  }, []);
 
   const getCanvasPointFromClient = useCallback(
     (clientX: number, clientY: number) => {
@@ -238,11 +348,11 @@ export function FlowChartCanvas({
 
       const rect = viewport.getBoundingClientRect();
       return {
-        x: (clientX - rect.left + viewport.scrollLeft) / zoom,
-        y: (clientY - rect.top + viewport.scrollTop) / zoom,
+        x: viewOrigin.x + (clientX - rect.left) / zoom,
+        y: viewOrigin.y + (clientY - rect.top) / zoom,
       };
     },
-    [zoom],
+    [viewOrigin.x, viewOrigin.y, zoom],
   );
 
   const zoomAt = useCallback(
@@ -260,28 +370,22 @@ export function FlowChartCanvas({
       const pointerClientX = clientX ?? fallbackClientX;
       const pointerClientY = clientY ?? fallbackClientY;
       const logicalPoint = {
-        x: (pointerClientX - rect.left + viewport.scrollLeft) / zoom,
-        y: (pointerClientY - rect.top + viewport.scrollTop) / zoom,
+        x: viewOrigin.x + (pointerClientX - rect.left) / zoom,
+        y: viewOrigin.y + (pointerClientY - rect.top) / zoom,
       };
 
       setZoom(clampedZoom);
-      requestAnimationFrame(() => {
-        const currentViewport = viewportRef.current;
-        if (!currentViewport) {
-          return;
-        }
-
-        currentViewport.scrollLeft = logicalPoint.x * clampedZoom - (pointerClientX - rect.left);
-        currentViewport.scrollTop = logicalPoint.y * clampedZoom - (pointerClientY - rect.top);
-        updateViewportMetrics();
+      setViewOrigin({
+        x: logicalPoint.x - (pointerClientX - rect.left) / clampedZoom,
+        y: logicalPoint.y - (pointerClientY - rect.top) / clampedZoom,
       });
     },
-    [updateViewportMetrics, zoom],
+    [viewOrigin.x, viewOrigin.y, zoom],
   );
 
-  useEffect(() => {
-    updateViewportMetrics();
-  }, [stageSize.height, stageSize.width, updateViewportMetrics]);
+  useLayoutEffect(() => {
+    updateViewportSize();
+  }, [updateViewportSize]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -289,24 +393,32 @@ export function FlowChartCanvas({
       return;
     }
 
-    const handleScroll = () => {
-      updateViewportMetrics();
-    };
+    const resizeObserver = new ResizeObserver(() => {
+      updateViewportSize();
+    });
 
-    viewport.addEventListener("scroll", handleScroll);
-    window.addEventListener("resize", handleScroll);
+    resizeObserver.observe(viewport);
+    window.addEventListener("resize", updateViewportSize);
     return () => {
-      viewport.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("resize", handleScroll);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateViewportSize);
     };
-  }, [updateViewportMetrics]);
+  }, [updateViewportSize]);
 
   useEffect(() => {
-    if (!dragState && !marqueeState) {
+    if (!dragState && !marqueeState && !panState) {
       return;
     }
 
     const handleMouseMove = (event: MouseEvent) => {
+      if (panState) {
+        setViewOrigin({
+          x: panState.startOriginX - (event.clientX - panState.startClientX) / zoom,
+          y: panState.startOriginY - (event.clientY - panState.startClientY) / zoom,
+        });
+        return;
+      }
+
       const point = getCanvasPointFromClient(event.clientX, event.clientY);
       if (!point) {
         return;
@@ -332,6 +444,7 @@ export function FlowChartCanvas({
     };
 
     const handleMouseUp = () => {
+      setPanState(null);
       setDragState(null);
 
       if (!marqueeState || !activeDocument) {
@@ -361,25 +474,51 @@ export function FlowChartCanvas({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [activeDocument, dragState, getCanvasPointFromClient, marqueeState, nodeDefinitionsByType, onClearSelection, onMoveSelectedNodes, onSelectNodes]);
+  }, [activeDocument, dragState, getCanvasPointFromClient, marqueeState, nodeDefinitionsByType, onClearSelection, onMoveSelectedNodes, onSelectNodes, panState, zoom]);
 
   useEffect(() => {
+    initialViewAppliedDocumentKeyRef.current = null;
     setDragState(null);
+    setPanState(null);
     setMarqueeState(null);
     setPointerPosition(null);
-  }, [activeDocument]);
+    setContextMenuState(null);
+  }, [documentKey]);
+
+  useEffect(() => {
+    if (!documentKey) {
+      setViewOrigin({ x: 0, y: 0 });
+      setZoom(1);
+      initialViewAppliedDocumentKeyRef.current = null;
+      return;
+    }
+
+    if (!activeDocument || initialViewAppliedDocumentKeyRef.current === documentKey) {
+      return;
+    }
+
+    setViewOrigin({
+      x: Math.max(0, documentBounds.minX - 160),
+      y: Math.max(0, documentBounds.minY - 120),
+    });
+    setZoom(1);
+    initialViewAppliedDocumentKeyRef.current = documentKey;
+  }, [activeDocument, documentBounds.minX, documentBounds.minY, documentKey]);
 
   useLayoutEffect(() => {
     if (!contextMenuState || !contextMenuRef.current) {
       return;
     }
 
-    const margin = 8;
-    const nextX = Math.min(Math.max(contextMenuState.x, margin), Math.max(margin, window.innerWidth - contextMenuRef.current.offsetWidth - margin));
-    const nextY = Math.min(Math.max(contextMenuState.y, margin), Math.max(margin, window.innerHeight - contextMenuRef.current.offsetHeight - margin));
-    if (nextX !== contextMenuState.x || nextY !== contextMenuState.y) {
-      setContextMenuState((current) => (current ? { x: nextX, y: nextY } : current));
-    }
+    const nextPosition = clampContextMenuPosition(
+      contextMenuState.x,
+      contextMenuState.y,
+      contextMenuRef.current.offsetWidth,
+      contextMenuRef.current.offsetHeight,
+    );
+
+    contextMenuRef.current.style.left = `${nextPosition.x}px`;
+    contextMenuRef.current.style.top = `${nextPosition.y}px`;
   }, [contextMenuState]);
 
   useEffect(() => {
@@ -430,18 +569,18 @@ export function FlowChartCanvas({
       return null;
     }
 
-    return buildCurvePath(sourceAnchor, pointerPosition);
-  }, [activeDocument, nodeDefinitionsByType, nodesById, pendingConnection, pointerPosition]);
+    return buildCurvePath(offsetCanvasPoint(sourceAnchor, stageOrigin), offsetCanvasPoint(pointerPosition, stageOrigin));
+  }, [activeDocument, nodeDefinitionsByType, nodesById, pendingConnection, pointerPosition, stageOrigin]);
 
   const marqueeRect = marqueeState
     ? buildSelectionRect(marqueeState.anchorX, marqueeState.anchorY, marqueeState.currentX, marqueeState.currentY)
     : null;
 
   const minimapViewportRect = {
-    x: viewportMetrics.left,
-    y: viewportMetrics.top,
-    width: Math.min(stageSize.width, viewportMetrics.width),
-    height: Math.min(stageSize.height, viewportMetrics.height),
+    x: viewportMetrics.left - minimapOrigin.x,
+    y: viewportMetrics.top - minimapOrigin.y,
+    width: Math.min(minimapRect.width, viewportMetrics.width),
+    height: Math.min(minimapRect.height, viewportMetrics.height),
   };
   const canAlignSelection = selectedNodeCount >= 2;
   const canDistributeSelection = selectedNodeCount >= 3;
@@ -457,6 +596,17 @@ export function FlowChartCanvas({
   }
 
   function handleCanvasMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.button === 1) {
+      event.preventDefault();
+      setPanState({
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startOriginX: viewOrigin.x,
+        startOriginY: viewOrigin.y,
+      });
+      return;
+    }
+
     if (event.button !== 0) {
       return;
     }
@@ -469,6 +619,8 @@ export function FlowChartCanvas({
     if (!point) {
       return;
     }
+
+    event.preventDefault();
 
     if (pendingConnection) {
       onCancelPendingConnection();
@@ -485,9 +637,26 @@ export function FlowChartCanvas({
 
   function openCanvasContextMenu(event: ReactMouseEvent<HTMLElement>) {
     event.preventDefault();
+    const canvasPoint = getCanvasPointFromClient(event.clientX, event.clientY);
     setContextMenuState({
       x: event.clientX,
       y: event.clientY,
+      target: {
+        kind: "canvas",
+        canvasPoint,
+      },
+    });
+  }
+
+  function openNodeContextMenu(event: ReactMouseEvent<HTMLElement>, nodeId: number) {
+    event.preventDefault();
+    setContextMenuState({
+      x: event.clientX,
+      y: event.clientY,
+      target: {
+        kind: "node",
+        nodeId,
+      },
     });
   }
 
@@ -496,9 +665,11 @@ export function FlowChartCanvas({
       return;
     }
 
+    event.preventDefault();
+    event.stopPropagation();
+
     const selectionMode = getPointerSelectionMode(event);
     if (selectionMode !== "replace") {
-      event.stopPropagation();
       onSelectNode(node.nodeId, selectionMode);
       return;
     }
@@ -521,33 +692,34 @@ export function FlowChartCanvas({
   }
 
   function handleWheel(event: ReactWheelEvent<HTMLDivElement>) {
-    if (!(event.ctrlKey || event.metaKey)) {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const nextZoom = zoom * (event.deltaY < 0 ? 1.1 : 0.9);
+      zoomAt(nextZoom, event.clientX, event.clientY);
       return;
     }
 
     event.preventDefault();
-    const nextZoom = zoom * (event.deltaY < 0 ? 1.1 : 0.9);
-    zoomAt(nextZoom, event.clientX, event.clientY);
+    setViewOrigin((current) => ({
+      x: current.x + event.deltaX / zoom,
+      y: current.y + event.deltaY / zoom,
+    }));
   }
 
   function handleMinimapMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
-    const viewport = viewportRef.current;
-    if (!viewport) {
-      return;
-    }
-
     const rect = event.currentTarget.getBoundingClientRect();
-    const scale = Math.min((rect.width - 12) / stageSize.width, (rect.height - 12) / stageSize.height);
-    const contentWidth = stageSize.width * scale;
-    const contentHeight = stageSize.height * scale;
+    const scale = Math.min((rect.width - 12) / minimapRect.width, (rect.height - 12) / minimapRect.height);
+    const contentWidth = minimapRect.width * scale;
+    const contentHeight = minimapRect.height * scale;
     const offsetX = (rect.width - contentWidth) / 2;
     const offsetY = (rect.height - contentHeight) / 2;
-    const logicalX = Math.max(0, Math.min(stageSize.width, (event.clientX - rect.left - offsetX) / scale));
-    const logicalY = Math.max(0, Math.min(stageSize.height, (event.clientY - rect.top - offsetY) / scale));
+    const logicalX = minimapOrigin.x + Math.max(0, Math.min(minimapRect.width, (event.clientX - rect.left - offsetX) / scale));
+    const logicalY = minimapOrigin.y + Math.max(0, Math.min(minimapRect.height, (event.clientY - rect.top - offsetY) / scale));
 
-    viewport.scrollLeft = logicalX * zoom - viewport.clientWidth / 2;
-    viewport.scrollTop = logicalY * zoom - viewport.clientHeight / 2;
-    updateViewportMetrics();
+    setViewOrigin({
+      x: logicalX - viewportMetrics.width / 2,
+      y: logicalY - viewportMetrics.height / 2,
+    });
     event.stopPropagation();
   }
 
@@ -581,16 +753,16 @@ export function FlowChartCanvas({
   return (
     <div className="flowchart-canvas-shell">
       <div
-        className="flowchart-canvas-viewport"
+        className={`flowchart-canvas-viewport${panState ? " is-panning" : ""}`}
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onContextMenu={openCanvasContextMenu}
         onWheel={handleWheel}
         ref={viewportRef}
       >
-        <div className="flowchart-canvas-stage-sizer" style={{ width: stageSize.width * zoom, height: stageSize.height * zoom }}>
-          <div className="flowchart-canvas-stage" style={{ width: stageSize.width, height: stageSize.height, transform: `scale(${zoom})` }}>
-            <svg className="flowchart-canvas-svg" viewBox={`0 0 ${stageSize.width} ${stageSize.height}`}>
+        <div className="flowchart-canvas-stage-sizer">
+          <div className="flowchart-canvas-stage" style={{ width: stageRect.width, height: stageRect.height, transform: stageTransform }}>
+            <svg className="flowchart-canvas-svg" viewBox={`0 0 ${stageRect.width} ${stageRect.height}`}>
               {activeDocument.flowConnections.map((connection) => {
                 const sourceNode = nodesById.get(connection.sourceNodeId);
                 const targetNode = nodesById.get(connection.targetNodeId);
@@ -604,12 +776,15 @@ export function FlowChartCanvas({
                   return null;
                 }
 
+                const localSourceAnchor = offsetCanvasPoint(sourceAnchor, stageOrigin);
+                const localTargetAnchor = offsetCanvasPoint(targetAnchor, stageOrigin);
+
                 const connectionKey = buildFlowChartConnectionKey(connection);
                 return (
                   <g key={`flow-${connectionKey}`}>
                     <path
                       className={`flowchart-connection-hitbox${selectedFlowKeySet.has(connectionKey) ? " is-selected" : ""}`}
-                      d={buildCurvePath(sourceAnchor, targetAnchor)}
+                      d={buildCurvePath(localSourceAnchor, localTargetAnchor)}
                       onClick={(event) => {
                         event.stopPropagation();
                         onSelectConnection("flow", connectionKey, getPointerSelectionMode(event.nativeEvent));
@@ -617,7 +792,7 @@ export function FlowChartCanvas({
                     />
                     <path
                       className={`flowchart-connection-path flowchart-connection-path--flow${selectedFlowKeySet.has(connectionKey) ? " is-selected" : ""}`}
-                      d={buildCurvePath(sourceAnchor, targetAnchor)}
+                      d={buildCurvePath(localSourceAnchor, localTargetAnchor)}
                     />
                   </g>
                 );
@@ -636,12 +811,15 @@ export function FlowChartCanvas({
                   return null;
                 }
 
+                const localSourceAnchor = offsetCanvasPoint(sourceAnchor, stageOrigin);
+                const localTargetAnchor = offsetCanvasPoint(targetAnchor, stageOrigin);
+
                 const connectionKey = buildFlowChartConnectionKey(connection);
                 return (
                   <g key={`compute-${connectionKey}`}>
                     <path
                       className={`flowchart-connection-hitbox${selectedComputeKeySet.has(connectionKey) ? " is-selected" : ""}`}
-                      d={buildCurvePath(sourceAnchor, targetAnchor)}
+                      d={buildCurvePath(localSourceAnchor, localTargetAnchor)}
                       onClick={(event) => {
                         event.stopPropagation();
                         onSelectConnection("compute", connectionKey, getPointerSelectionMode(event.nativeEvent));
@@ -649,7 +827,7 @@ export function FlowChartCanvas({
                     />
                     <path
                       className={`flowchart-connection-path flowchart-connection-path--compute${selectedComputeKeySet.has(connectionKey) ? " is-selected" : ""}`}
-                      d={buildCurvePath(sourceAnchor, targetAnchor)}
+                      d={buildCurvePath(localSourceAnchor, localTargetAnchor)}
                     />
                   </g>
                 );
@@ -661,7 +839,7 @@ export function FlowChartCanvas({
             {marqueeRect ? (
               <div
                 className="flowchart-marquee"
-                style={{ left: marqueeRect.x, top: marqueeRect.y, width: marqueeRect.width, height: marqueeRect.height }}
+                style={{ left: marqueeRect.x - stageOrigin.x, top: marqueeRect.y - stageOrigin.y, width: marqueeRect.width, height: marqueeRect.height }}
               />
             ) : null}
 
@@ -681,9 +859,9 @@ export function FlowChartCanvas({
                     if (!selectedNodeIdSet.has(node.nodeId)) {
                       onSelectNode(node.nodeId, "replace");
                     }
-                    openCanvasContextMenu(event);
+                    openNodeContextMenu(event, node.nodeId);
                   }}
-                  style={{ left: node.layout.x, top: node.layout.y, width: flowChartNodeWidth, minHeight: metrics.height }}
+                  style={{ left: node.layout.x - stageOrigin.x, top: node.layout.y - stageOrigin.y, width: flowChartNodeWidth, minHeight: metrics.height }}
                 >
                   <div className="flowchart-node-header" onMouseDown={(event) => handleNodeHeaderMouseDown(event, node)}>
                     <div className="flowchart-node-title-block">
@@ -806,8 +984,8 @@ export function FlowChartCanvas({
 
       <div className="flowchart-minimap" onMouseDown={handleMinimapMouseDown} role="presentation">
         <div className="flowchart-minimap-header">小地图</div>
-        <svg className="flowchart-minimap-canvas" viewBox={`0 0 ${stageSize.width} ${stageSize.height}`}>
-          <rect className="flowchart-minimap-background" height={stageSize.height} width={stageSize.width} x={0} y={0} />
+        <svg className="flowchart-minimap-canvas" viewBox={`0 0 ${minimapRect.width} ${minimapRect.height}`}>
+          <rect className="flowchart-minimap-background" height={minimapRect.height} width={minimapRect.width} x={0} y={0} />
           {activeDocument.flowConnections.map((connection) => {
             const sourceNode = nodesById.get(connection.sourceNodeId);
             const targetNode = nodesById.get(connection.targetNodeId);
@@ -821,7 +999,7 @@ export function FlowChartCanvas({
               return null;
             }
 
-            return <path className="flowchart-minimap-path is-flow" d={buildCurvePath(sourceAnchor, targetAnchor)} key={`minimap-flow-${buildFlowChartConnectionKey(connection)}`} />;
+            return <path className="flowchart-minimap-path is-flow" d={buildCurvePath(offsetCanvasPoint(sourceAnchor, minimapOrigin), offsetCanvasPoint(targetAnchor, minimapOrigin))} key={`minimap-flow-${buildFlowChartConnectionKey(connection)}`} />;
           })}
           {activeDocument.computeConnections.map((connection) => {
             const sourceNode = nodesById.get(connection.sourceNodeId);
@@ -836,7 +1014,7 @@ export function FlowChartCanvas({
               return null;
             }
 
-            return <path className="flowchart-minimap-path is-compute" d={buildCurvePath(sourceAnchor, targetAnchor)} key={`minimap-compute-${buildFlowChartConnectionKey(connection)}`} />;
+            return <path className="flowchart-minimap-path is-compute" d={buildCurvePath(offsetCanvasPoint(sourceAnchor, minimapOrigin), offsetCanvasPoint(targetAnchor, minimapOrigin))} key={`minimap-compute-${buildFlowChartConnectionKey(connection)}`} />;
           })}
           {activeDocument.nodes.map((node) => {
             const definition = nodeDefinitionsByType[node.nodeType];
@@ -847,8 +1025,8 @@ export function FlowChartCanvas({
                 height={metrics.height}
                 key={`minimap-node-${node.nodeId}`}
                 width={flowChartNodeWidth}
-                x={node.layout.x}
-                y={node.layout.y}
+                x={node.layout.x - minimapOrigin.x}
+                y={node.layout.y - minimapOrigin.y}
               />
             );
           })}
@@ -864,84 +1042,96 @@ export function FlowChartCanvas({
 
       {contextMenuState ? (
         <div className="tree-context-menu flowchart-canvas-context-menu" ref={contextMenuRef} style={{ left: contextMenuState.x, top: contextMenuState.y }}>
-          <button className="tree-context-menu-item" onClick={() => {
-            setContextMenuState(null);
-            onOpenAddNodeDialog();
-          }} type="button">
-            新建节点
-          </button>
-          <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
-            setContextMenuState(null);
-            onAlignSelectedNodes("left");
-          }} type="button">
-            左对齐
-          </button>
-          <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
-            setContextMenuState(null);
-            onAlignSelectedNodes("center");
-          }} type="button">
-            水平居中
-          </button>
-          <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
-            setContextMenuState(null);
-            onAlignSelectedNodes("right");
-          }} type="button">
-            右对齐
-          </button>
-          <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
-            setContextMenuState(null);
-            onAlignSelectedNodes("top");
-          }} type="button">
-            顶对齐
-          </button>
-          <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
-            setContextMenuState(null);
-            onAlignSelectedNodes("middle");
-          }} type="button">
-            垂直居中
-          </button>
-          <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
-            setContextMenuState(null);
-            onAlignSelectedNodes("bottom");
-          }} type="button">
-            底对齐
-          </button>
-          <button className="tree-context-menu-item" disabled={!canDistributeSelection} onClick={() => {
-            setContextMenuState(null);
-            onDistributeSelectedNodes("horizontal");
-          }} type="button">
-            水平分布
-          </button>
-          <button className="tree-context-menu-item" disabled={!canDistributeSelection} onClick={() => {
-            setContextMenuState(null);
-            onDistributeSelectedNodes("vertical");
-          }} type="button">
-            垂直分布
-          </button>
-          <button className="tree-context-menu-item" disabled={!canAutoLayout} onClick={() => {
-            setContextMenuState(null);
-            onAutoLayoutNodes();
-          }} type="button">
-            自动排版
-          </button>
-          <button className="tree-context-menu-item" onClick={() => {
-            setContextMenuState(null);
-            zoomAt(zoom - 0.1);
-          }} type="button">
-            缩小
-          </button>
-          <button className="tree-context-menu-item" onClick={() => {
-            setContextMenuState(null);
-            zoomAt(1);
-          }} type="button">
-            100%
-          </button>
-          <button className="tree-context-menu-item" onClick={() => {
-            setContextMenuState(null);
-            zoomAt(zoom + 0.1);
-          }} type="button">
-            放大
-          </button>
+          {contextMenuState.target.kind === "canvas" ? (
+            <>
+              <button className="tree-context-menu-item" onClick={() => {
+                const targetPosition = contextMenuState.target.kind === "canvas" ? contextMenuState.target.canvasPoint ?? undefined : undefined;
+                setContextMenuState(null);
+                onOpenAddNodeDialog(targetPosition);
+              }} type="button">
+                新建节点
+              </button>
+              <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
+                setContextMenuState(null);
+                onAlignSelectedNodes("left");
+              }} type="button">
+                左对齐
+              </button>
+              <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
+                setContextMenuState(null);
+                onAlignSelectedNodes("center");
+              }} type="button">
+                水平居中
+              </button>
+              <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
+                setContextMenuState(null);
+                onAlignSelectedNodes("right");
+              }} type="button">
+                右对齐
+              </button>
+              <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
+                setContextMenuState(null);
+                onAlignSelectedNodes("top");
+              }} type="button">
+                顶对齐
+              </button>
+              <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
+                setContextMenuState(null);
+                onAlignSelectedNodes("middle");
+              }} type="button">
+                垂直居中
+              </button>
+              <button className="tree-context-menu-item" disabled={!canAlignSelection} onClick={() => {
+                setContextMenuState(null);
+                onAlignSelectedNodes("bottom");
+              }} type="button">
+                底对齐
+              </button>
+              <button className="tree-context-menu-item" disabled={!canDistributeSelection} onClick={() => {
+                setContextMenuState(null);
+                onDistributeSelectedNodes("horizontal");
+              }} type="button">
+                水平分布
+              </button>
+              <button className="tree-context-menu-item" disabled={!canDistributeSelection} onClick={() => {
+                setContextMenuState(null);
+                onDistributeSelectedNodes("vertical");
+              }} type="button">
+                垂直分布
+              </button>
+              <button className="tree-context-menu-item" disabled={!canAutoLayout} onClick={() => {
+                setContextMenuState(null);
+                onAutoLayoutNodes();
+              }} type="button">
+                自动排版
+              </button>
+              <button className="tree-context-menu-item" onClick={() => {
+                setContextMenuState(null);
+                zoomAt(zoom - 0.1);
+              }} type="button">
+                缩小
+              </button>
+              <button className="tree-context-menu-item" onClick={() => {
+                setContextMenuState(null);
+                zoomAt(1);
+              }} type="button">
+                100%
+              </button>
+              <button className="tree-context-menu-item" onClick={() => {
+                setContextMenuState(null);
+                zoomAt(zoom + 0.1);
+              }} type="button">
+                放大
+              </button>
+            </>
+          ) : (
+            <button className="tree-context-menu-item" onClick={() => {
+              setContextMenuState(null);
+              onDeleteSelection();
+            }} type="button">
+              {selectedNodeCount > 1 ? "删除所选节点" : "删除节点"}
+            </button>
+          )}
           {pendingConnection ? (
             <button className="tree-context-menu-item" onClick={() => {
               setContextMenuState(null);

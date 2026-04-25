@@ -93,6 +93,20 @@ app.MapGet("/api/workspace", (string workspacePath) =>
             error = exception.Message,
         });
     }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
     catch (LightyCoreException exception)
     {
         return Results.BadRequest(new
@@ -132,6 +146,20 @@ app.MapGet("/api/workspace/navigation", (string workspacePath) =>
             error = exception.Message,
         });
     }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
     catch (LightyCoreException exception)
     {
         return Results.BadRequest(new
@@ -167,6 +195,20 @@ app.MapGet("/api/workspace/flowcharts/navigation", (string workspacePath) =>
     catch (DirectoryNotFoundException exception)
     {
         return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
         {
             error = exception.Message,
         });
@@ -218,6 +260,20 @@ app.MapGet("/api/workspace/flowcharts/nodes/{**relativePath}", (string relativeP
             error = exception.Message,
         });
     }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
     catch (LightyCoreException exception)
     {
         return Results.BadRequest(new
@@ -261,6 +317,20 @@ app.MapGet("/api/workspace/flowcharts/files/{**relativePath}", (string relativeP
     catch (DirectoryNotFoundException exception)
     {
         return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
         {
             error = exception.Message,
         });
@@ -318,6 +388,20 @@ app.MapGet("/api/workspace/assets/{assetKind}/{**assetPath}", (string assetKind,
     catch (DirectoryNotFoundException exception)
     {
         return Results.NotFound(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (IOException exception)
+    {
+        return Results.BadRequest(new
+        {
+            error = exception.Message,
+        });
+    }
+    catch (UnauthorizedAccessException exception)
+    {
+        return Results.BadRequest(new
         {
             error = exception.Message,
         });

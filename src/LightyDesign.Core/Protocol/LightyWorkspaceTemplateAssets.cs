@@ -23,6 +23,19 @@ internal static class LightyWorkspaceTemplateAssets
         CopyAssets(workspaceRootPath, NodeResourcePrefix, overwriteExisting: false, targetRootPath: nodesRootPath);
     }
 
+    public static bool TryCopyMissingNodeDefinitions(string workspaceRootPath)
+    {
+        try
+        {
+            CopyMissingNodeDefinitions(workspaceRootPath);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     public static void RefreshNodeDefinitions(string workspaceRootPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);

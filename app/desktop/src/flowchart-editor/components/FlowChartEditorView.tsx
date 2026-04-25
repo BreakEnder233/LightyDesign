@@ -13,10 +13,19 @@ import { FlowChartSidebar } from "./FlowChartSidebar";
 
 type FlowChartEditorViewProps = {
   editor: ReturnType<typeof useFlowChartEditor>;
+  sidebarWidth: number;
+  onSidebarWidthChange: (width: number) => void;
+  onSidebarWidthCommit: (width: number) => void;
   workspacePath: string;
 };
 
-export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorViewProps) {
+export function FlowChartEditorView({
+  editor,
+  onSidebarWidthChange,
+  onSidebarWidthCommit,
+  sidebarWidth,
+  workspacePath,
+}: FlowChartEditorViewProps) {
   const selectedNodeDefinition = editor.selectedNode ? editor.resolvedDefinitionsByType[editor.selectedNode.nodeType] ?? null : null;
   const [metadataDialogMode, setMetadataDialogMode] = useState<"create" | "edit">("create");
   const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
@@ -27,6 +36,7 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
   const [codegenTargetPaths, setCodegenTargetPaths] = useState<string[]>([]);
   const codegenOutputInputRef = useRef<HTMLInputElement | null>(null);
   const [preferredNodeType, setPreferredNodeType] = useState<string | null>(null);
+  const [preferredNodePosition, setPreferredNodePosition] = useState<{ x: number; y: number } | null>(null);
   const [metadataDialogTarget, setMetadataDialogTarget] = useState<{
     previousRelativePath: string | null;
     relativePath: string;
@@ -65,6 +75,9 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
     ?? editor.activeSummary?.alias
     ?? editor.activeSummary?.name
     ?? "未打开流程图";
+  const hasActiveDocument = Boolean(editor.activeDocument && editor.activeSummary);
+  const isDirty = editor.activeFlowChartState.status === "ready" ? editor.activeFlowChartState.dirty : false;
+  const validationSummary = editor.validationIssues.length === 0 ? "结构校验通过" : `${editor.validationIssues.length} 个阻断问题`;
 
   function buildSuggestedCreateRelativePath(baseDirectory: string) {
     const existingPaths = new Set(editor.catalog?.files.map((file) => file.relativePath) ?? []);
@@ -206,7 +219,13 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
   }
 
   async function handleSubmitNode(nodeType: string) {
-    await editor.addNode(nodeType);
+    await editor.addNode(nodeType, preferredNodePosition ?? undefined);
+    handleCloseNodeDialog();
+  }
+
+  function handleCloseNodeDialog() {
+    setPreferredNodeType(null);
+    setPreferredNodePosition(null);
     setIsNodeDialogOpen(false);
   }
 
@@ -258,8 +277,9 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
     setIsMetadataDialogOpen(true);
   }
 
-  function handleOpenNodeDialog(nodeType?: string) {
+  function handleOpenNodeDialog(nodeType?: string, position?: { x: number; y: number }) {
     setPreferredNodeType(nodeType ?? null);
+    setPreferredNodePosition(position ?? null);
     setIsNodeDialogOpen(true);
   }
 
@@ -319,31 +339,127 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
         onOpenExportFlowChartDirectoryDialog={handleOpenExportFlowChartDirectoryDialog}
         onOpenFlowChart={editor.selectFlowChart}
         onOpenRenameDirectoryDialog={handleOpenRenameDirectoryDialog}
+        onSidebarWidthChange={onSidebarWidthChange}
+        onSidebarWidthCommit={onSidebarWidthCommit}
         onRequestDeleteDirectory={handleRequestDeleteDirectory}
         onRequestDeleteFlowChart={handleRequestDeleteFlowChart}
         onRetryLoad={editor.reloadCatalog}
+        sidebarWidth={sidebarWidth}
         workspacePath={workspacePath}
       />
 
       <main className="workspace-main">
         <section className="editor-panel flowchart-editor-panel">
           <div className="editor-workspace-header flowchart-header-bar">
-            <div className="flowchart-header-copy">
-              <p className="eyebrow">流程图编辑</p>
-              <strong>{activeFlowChartLabel}</strong>
-              <span className="status-detail">
-                {editor.activeSummary?.relativePath ?? "从左侧 Files / Nodes 根目录开始展开资源树；流程图和目录操作统一通过右键菜单完成。"}
-              </span>
+            <div className="flowchart-header-topline">
+              <div className="flowchart-header-copy">
+                <p className="eyebrow">流程图编辑</p>
+                <strong>{activeFlowChartLabel}</strong>
+                <span className="status-detail">
+                  {hasActiveDocument
+                    ? "中键拖拽或滚轮可平移画布，Ctrl+滚轮缩放，右键画布执行节点与布局操作。顶部左侧管理流程图信息，右侧聚焦当前选中对象。"
+                    : "从左侧流程图树打开一个流程图开始编辑。"}
+                </span>
+              </div>
+
+              <div className="flowchart-header-meta">
+                <span className="badge">{editor.catalog?.files.length ?? 0} 图文件</span>
+                <span className="badge">{editor.catalog?.fileDirectories.length ?? 0} 文件目录</span>
+                <span className="badge">{editor.catalog?.nodeDefinitions.length ?? 0} 节点</span>
+                <span className="badge">{editor.catalog?.nodeDirectories.length ?? 0} 节点目录</span>
+                <span className={`badge${editor.validationIssues.length > 0 ? " flowchart-badge-error" : ""}`}>
+                  {editor.validationIssues.length} 问题
+                </span>
+              </div>
             </div>
 
-            <div className="flowchart-header-meta">
-              <span className="badge">{editor.catalog?.files.length ?? 0} 图文件</span>
-              <span className="badge">{editor.catalog?.fileDirectories.length ?? 0} 文件目录</span>
-              <span className="badge">{editor.catalog?.nodeDefinitions.length ?? 0} 节点</span>
-              <span className="badge">{editor.catalog?.nodeDirectories.length ?? 0} 节点目录</span>
-              <span className={`badge${editor.validationIssues.length > 0 ? " flowchart-badge-error" : ""}`}>
-                {editor.validationIssues.length} 问题
-              </span>
+            <div className="flowchart-header-grid">
+              <section className="tree-card flowchart-inspector-panel flowchart-header-panel flowchart-overview-panel">
+                <div className="section-header">
+                  <div>
+                    <p className="eyebrow">流程图</p>
+                    <strong>{hasActiveDocument ? activeFlowChartLabel : "暂无活动流程图"}</strong>
+                  </div>
+                  <span className={`badge${isDirty ? " flowchart-badge-dirty" : ""}`}>
+                    {editor.saveState === "saving" ? "保存中" : isDirty ? "未保存" : "已同步"}
+                  </span>
+                </div>
+
+                {hasActiveDocument ? (
+                  <>
+                    <div className="flowchart-overview-fields">
+                      <div className="flowchart-dialog-static-field flowchart-overview-field is-wide">
+                        <span>文件路径</span>
+                        <strong>{editor.activeSummary?.relativePath ?? "未打开流程图"}</strong>
+                      </div>
+                      <div className="flowchart-dialog-static-field flowchart-overview-field">
+                        <span>名称</span>
+                        <strong>{editor.activeDocument?.name ?? "未设置"}</strong>
+                      </div>
+                      <div className="flowchart-dialog-static-field flowchart-overview-field">
+                        <span>别名</span>
+                        <strong>{editor.activeDocument?.alias?.trim() ? editor.activeDocument.alias : "未设置"}</strong>
+                      </div>
+                    </div>
+
+                    <div className="flowchart-inspector-actions compact-grid action-grid">
+                      <button className="secondary-button" onClick={() => handleOpenEditFlowChartDialog(editor.activeSummary?.relativePath)} type="button">
+                        编辑元信息
+                      </button>
+                      <button className="primary-button" disabled={editor.saveState === "saving"} onClick={() => {
+                        void editor.saveActiveFlowChart();
+                      }} type="button">
+                        {editor.saveState === "saving" ? "保存中" : "保存流程图"}
+                      </button>
+                      <button className="secondary-button" onClick={() => {
+                        void editor.reloadActiveFlowChart();
+                      }} type="button">
+                        重新加载
+                      </button>
+                    </div>
+
+                    {editor.saveError ? <p className="status-detail flowchart-save-error">{editor.saveError}</p> : null}
+
+                    <div className="flowchart-overview-validation">
+                      <div className="section-header">
+                        <div>
+                          <p className="eyebrow">校验</p>
+                          <strong>{validationSummary}</strong>
+                        </div>
+                        <span className={`badge${editor.validationIssues.length > 0 ? " flowchart-badge-error" : ""}`}>{editor.validationIssues.length}</span>
+                      </div>
+
+                      {editor.validationIssues.length === 0 ? (
+                        <p className="status-detail flowchart-overview-validation-empty">当前流程图满足本地结构校验，可以直接保存。</p>
+                      ) : (
+                        <div className="flowchart-issue-list flowchart-overview-validation-list">
+                          {editor.validationIssues.map((issue) => (
+                            <div className="flowchart-issue-card" key={issue.id}>
+                              <strong>{issue.message}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="status-detail">打开流程图后，这里会显示文件路径、名称、别名、保存入口和结构校验摘要。</p>
+                )}
+              </section>
+
+              <FlowChartInspector
+                activeDocument={editor.activeDocument}
+                onDeleteSelection={editor.deleteSelection}
+                onDeleteSelectedConnection={editor.deleteSelectedConnection}
+                onDeleteSelectedNode={editor.deleteSelectedNode}
+                onResetNodePropertyValue={editor.resetNodePropertyValue}
+                onUpdateNodePropertyValue={editor.updateNodePropertyValue}
+                selectedConnection={editor.selectedConnectionItem}
+                selectedConnectionCount={editor.selectedConnectionCount}
+                selectedNode={editor.selectedNode}
+                selectedNodeCount={editor.selectedNodeCount}
+                selectedNodeDefinition={selectedNodeDefinition}
+              />
             </div>
           </div>
 
@@ -351,14 +467,16 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
             <div className="flowchart-editor-canvas-panel">
               <FlowChartCanvas
                 activeDocument={editor.activeDocument}
+                documentKey={editor.activeFlowChartPath}
                 errorMessage={editor.activeFlowChartState.status === "error" ? editor.activeFlowChartState.error : null}
                 nodeDefinitionsByType={editor.resolvedDefinitionsByType}
                 onBeginConnection={editor.beginConnection}
                 onCancelPendingConnection={editor.cancelPendingConnection}
                 onClearSelection={editor.clearSelection}
                 onCompleteConnection={editor.completePendingConnection}
+                onDeleteSelection={editor.deleteSelection}
                 onMoveSelectedNodes={editor.moveSelectedNodes}
-                onOpenAddNodeDialog={() => handleOpenNodeDialog()}
+                onOpenAddNodeDialog={(position) => handleOpenNodeDialog(undefined, position)}
                 onAlignSelectedNodes={editor.alignSelectedNodes}
                 onDistributeSelectedNodes={editor.distributeSelectedNodes}
                 onAutoLayoutNodes={editor.autoLayoutNodes}
@@ -371,30 +489,6 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
                 status={editor.activeFlowChartState.status}
               />
             </div>
-
-            <FlowChartInspector
-              activeDocument={editor.activeDocument}
-              activeSummary={editor.activeSummary}
-              dirty={editor.activeFlowChartState.status === "ready" ? editor.activeFlowChartState.dirty : false}
-              onDeleteSelection={editor.deleteSelection}
-              onDeleteSelectedConnection={editor.deleteSelectedConnection}
-              onDeleteSelectedNode={editor.deleteSelectedNode}
-              onOpenMetaDialog={() => handleOpenEditFlowChartDialog(editor.activeSummary?.relativePath)}
-              onReload={editor.reloadActiveFlowChart}
-              onResetNodePropertyValue={editor.resetNodePropertyValue}
-              onSave={() => {
-                void editor.saveActiveFlowChart();
-              }}
-              onUpdateNodePropertyValue={editor.updateNodePropertyValue}
-              saveError={editor.saveError}
-              saveState={editor.saveState}
-              selectedConnection={editor.selectedConnectionItem}
-              selectedConnectionCount={editor.selectedConnectionCount}
-              selectedNode={editor.selectedNode}
-              selectedNodeCount={editor.selectedNodeCount}
-              selectedNodeDefinition={selectedNodeDefinition}
-              validationIssues={editor.validationIssues}
-            />
           </div>
         </section>
       </main>
@@ -451,7 +545,7 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
         catalog={editor.catalog}
         initialNodeType={preferredNodeType}
         isOpen={isNodeDialogOpen}
-        onClose={() => setIsNodeDialogOpen(false)}
+        onClose={handleCloseNodeDialog}
         onSubmit={handleSubmitNode}
       />
     </>

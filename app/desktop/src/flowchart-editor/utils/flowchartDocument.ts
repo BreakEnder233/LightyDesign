@@ -11,9 +11,10 @@ import type {
 
 export const flowChartNodeWidth = 292;
 
-const nodeHeaderHeight = 42;
-const sectionHeaderHeight = 20;
-const propertyRowHeight = 26;
+const nodeHeaderHeight = 56;
+const sectionBorderHeight = 1;
+const sectionHeaderHeight = 26;
+const propertyRowHeight = 24;
 const portRowHeight = 24;
 const nodeBottomPadding = 10;
 
@@ -49,17 +50,17 @@ export function getFlowChartNodeLayoutMetrics(definition: FlowChartNodeDefinitio
   let cursor = nodeHeaderHeight;
   const propertySectionStart = cursor;
   if (propertyCount > 0) {
-    cursor += sectionHeaderHeight + propertyCount * propertyRowHeight;
+    cursor += sectionBorderHeight + sectionHeaderHeight + propertyCount * propertyRowHeight;
   }
 
   const computeSectionStart = cursor;
   if (computeCount > 0) {
-    cursor += sectionHeaderHeight + computeCount * portRowHeight;
+    cursor += sectionBorderHeight + sectionHeaderHeight + computeCount * portRowHeight;
   }
 
   const flowSectionStart = cursor;
   if (flowCount > 0) {
-    cursor += sectionHeaderHeight + flowCount * portRowHeight;
+    cursor += sectionBorderHeight + sectionHeaderHeight + flowCount * portRowHeight;
   }
 
   return {
@@ -67,6 +68,7 @@ export function getFlowChartNodeLayoutMetrics(definition: FlowChartNodeDefinitio
     computeSectionStart,
     flowSectionStart,
     height: cursor + nodeBottomPadding,
+    sectionBorderHeight,
     sectionHeaderHeight,
     portRowHeight,
   };

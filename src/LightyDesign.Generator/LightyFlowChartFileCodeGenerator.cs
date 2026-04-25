@@ -409,7 +409,7 @@ public sealed class LightyFlowChartFileCodeGenerator
             writer.AppendLine();
         }
 
-        writer.AppendLine("private static readonly IReadOnlyList<FlowChartNodeDescriptor> NodeDescriptors = new[]");
+        writer.AppendLine("private static readonly IReadOnlyList<FlowChartNodeDescriptor> NodeDescriptors = new FlowChartNodeDescriptor[]");
         writer.AppendLine("{");
         writer.Indent();
         foreach (var resolvedNode in resolvedNodes)
@@ -419,7 +419,7 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.Outdent();
         writer.AppendLine("};");
         writer.AppendLine();
-        writer.AppendLine("private static readonly IReadOnlyList<FlowChartConnectionDescriptor> FlowConnectionDescriptors = new[]");
+        writer.AppendLine("private static readonly IReadOnlyList<FlowChartConnectionDescriptor> FlowConnectionDescriptors = new FlowChartConnectionDescriptor[]");
         writer.AppendLine("{");
         writer.Indent();
         foreach (var connection in flowChart.FlowConnections)
@@ -429,7 +429,7 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.Outdent();
         writer.AppendLine("};");
         writer.AppendLine();
-        writer.AppendLine("private static readonly IReadOnlyList<FlowChartConnectionDescriptor> ComputeConnectionDescriptors = new[]");
+        writer.AppendLine("private static readonly IReadOnlyList<FlowChartConnectionDescriptor> ComputeConnectionDescriptors = new FlowChartConnectionDescriptor[]");
         writer.AppendLine("{");
         writer.Indent();
         foreach (var connection in flowChart.ComputeConnections)

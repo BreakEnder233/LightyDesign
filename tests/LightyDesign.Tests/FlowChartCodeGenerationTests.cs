@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text.Json;
 using LightyDesign.Core;
+using LightyDesign.DesktopHost;
 using LightyDesign.Generator;
 
 namespace LightyDesign.Tests;
@@ -1013,6 +1015,93 @@ public class FlowChartCodeGenerationTests
                 Assert.Contains("_ = FlowChartCombatBossOpening;", content, StringComparison.Ordinal);
         }
 
+        [Fact]
+        public void GeneratedWorkbookAndFlowChartCode_ShouldCompileTogetherWithLddEntryPoint()
+        {
+                var workspaceRoot = CreateWorkspaceDirectory();
+
+                try
+                {
+                        LightyWorkspaceScaffolder.Create(workspaceRoot);
+                        CreateNodeDefinition(
+                                workspaceRoot,
+                                "Event/System/Start",
+                                """
+                                {
+                                    "formatVersion": "1.0",
+                                    "name": "Start",
+                                    "alias": "开始",
+                                    "nodeKind": "event",
+                                    "properties": [],
+                                    "computePorts": [],
+                                    "flowPorts": [
+                                        {
+                                            "portId": 251,
+                                            "name": "Then",
+                                            "alias": "然后",
+                                            "direction": "output"
+                                        }
+                                    ]
+                                }
+                                """);
+                        CreateFlowChartFile(
+                                workspaceRoot,
+                                "Quest/Intro",
+                                """
+                                {
+                                    "formatVersion": "1.0",
+                                    "name": "Intro",
+                                    "alias": "任务开场",
+                                    "nodes": [
+                                        {
+                                            "nodeId": 1,
+                                            "nodeType": "Event/System/Start",
+                                            "layout": { "x": 80, "y": 80 },
+                                            "propertyValues": []
+                                        },
+                                        {
+                                            "nodeId": 2,
+                                            "nodeType": "Builtin/Control/Pause",
+                                            "layout": { "x": 280, "y": 80 },
+                                            "propertyValues": []
+                                        }
+                                    ],
+                                    "flowConnections": [
+                                        {
+                                            "sourceNodeId": 1,
+                                            "sourcePortId": 251,
+                                            "targetNodeId": 2,
+                                            "targetPortId": 201
+                                        }
+                                    ],
+                                    "computeConnections": []
+                                }
+                                """);
+
+                        var workspace = WithOutputRelativePath(LightyWorkspaceLoader.Load(workspaceRoot), "Codegen");
+                        var workbookGenerator = new LightyWorkbookCodeGenerator();
+                        var workbookPackages = workspace.Workbooks
+                                .Select(workbook => (workbook.Name, workbookGenerator.Generate(workspace, workbook)))
+                                .ToArray();
+                        var flowChartPackage = new LightyFlowChartFileCodeGenerator().Generate(workspace, "Quest/Intro");
+
+                        var generatedOutputPath = GeneratedCodeOutputWriter.WriteGeneratedWorkspacePackages(workspace.RootPath, workbookPackages);
+                        GeneratedCodeOutputWriter.WriteGeneratedFlowChartPackage(workspace.RootPath, "Quest/Intro", flowChartPackage);
+
+                        var projectPath = CreateGeneratedCodeCompilationProject(workspaceRoot, generatedOutputPath);
+                        var buildResult = BuildGeneratedCodeProject(projectPath);
+
+                        Assert.True(buildResult.ExitCode == 0, buildResult.Output);
+                }
+                finally
+                {
+                        if (Directory.Exists(workspaceRoot))
+                        {
+                                Directory.Delete(workspaceRoot, recursive: true);
+                        }
+                }
+        }
+
     private static LightyWorkspace WithOutputRelativePath(LightyWorkspace workspace, string outputRelativePath)
     {
         return new LightyWorkspace(
@@ -1045,4 +1134,58 @@ public class FlowChartCodeGenerationTests
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
         File.WriteAllText(filePath, json);
     }
+
+    private static string CreateGeneratedCodeCompilationProject(string workspaceRoot, string generatedOutputPath)
+    {
+        var projectDirectory = Path.Combine(workspaceRoot, "GeneratedCodeCompile");
+        Directory.CreateDirectory(projectDirectory);
+
+        var generatedIncludePath = Path.GetRelativePath(projectDirectory, generatedOutputPath)
+            .Replace('\\', '/');
+        var projectPath = Path.Combine(projectDirectory, "GeneratedCodeCompile.csproj");
+        File.WriteAllText(
+            projectPath,
+            $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net9.0</TargetFramework>
+                <OutputType>Library</OutputType>
+                <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+                <ImplicitUsings>enable</ImplicitUsings>
+                <Nullable>disable</Nullable>
+              </PropertyGroup>
+
+              <ItemGroup>
+                <Compile Include="{generatedIncludePath}/**/*.cs" />
+              </ItemGroup>
+            </Project>
+            """);
+
+        return projectPath;
+    }
+
+    private static BuildResult BuildGeneratedCodeProject(string projectPath)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"build \"{projectPath}\" --nologo",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = Path.GetDirectoryName(projectPath)!,
+        };
+
+        using var process = Process.Start(startInfo);
+        Assert.NotNull(process);
+
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        return new BuildResult(process.ExitCode, standardOutput + Environment.NewLine + standardError);
+    }
+
+    private sealed record BuildResult(int ExitCode, string Output);
 }

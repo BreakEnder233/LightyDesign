@@ -124,6 +124,7 @@ dotnet test .\LightyDesign.sln
 npm ci
 npm run dev
 npm run build
+.\node_modules\.bin\tsc.cmd --noEmit -p tsconfig.json
 ```
 
 单独启动 DesktopHost：
@@ -154,6 +155,7 @@ LightyDesign/
 4. Core 已支持 validation 规则执行、validation schema 查询和规则结构预校验。
 5. DesktopHost 已提供健康检查、工作区读取、sheet 元信息、Excel 导入导出、workbook 保存、validation schema 和代码导出/校验接口。
 6. Electron 已能在开发模式和部署目录中自动拉起 DesktopHost，并在表头编辑器中显示 validation 侧边说明区与规则预校验结果。
+7. WorkbookEditor 已支持 number 列专用行内输入，以及 number、reference、list、dictionary、object 的按类型值编辑入口；其中 list / dictionary 支持递归弹窗编辑，object 当前走 JSON fallback。
 
 ## 前端维护约定
 

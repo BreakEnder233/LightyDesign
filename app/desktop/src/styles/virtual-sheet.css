@@ -421,6 +421,12 @@
   font-family: "Cascadia Mono", "Consolas", monospace;
 }
 
+.virtual-cell-display.is-number,
+.virtual-cell-input.is-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .virtual-cell-select {
   appearance: none;
   padding-right: 28px;

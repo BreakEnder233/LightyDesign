@@ -2,10 +2,13 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
+import { NumericCellInput } from "./NumericCellInput";
+
 import {
   buildCellKey,
   getColumnEditorKind,
   getColumnExportScope,
+  getColumnNumericKind,
   getSelectionBounds,
   type SheetColumn,
   type SheetSelection,
@@ -1148,6 +1151,7 @@ export function VirtualSheetTable({
     const cellKey = buildCellKey(rowEntry.rowIndex, columnIndex);
     const isDirty = Object.prototype.hasOwnProperty.call(editedCells, cellKey);
     const editorKind = getColumnEditorKind(column);
+    const numericKind = getColumnNumericKind(column);
     const cellValue = rowEntry.row[columnIndex] ?? "";
     const isSelected = selectedCell?.rowIndex === rowEntry.rowIndex && selectedCell?.columnIndex === columnIndex;
     const isInRange = isCellInRange(rowEntry.rowIndex, columnIndex);
@@ -1255,10 +1259,67 @@ export function VirtualSheetTable({
           </select>
         ) : null}
 
-        {editorKind !== "boolean" && isEditing ? (
+        {editorKind === "number" && isEditing ? (
+          <NumericCellInput
+            className="virtual-cell-input is-number"
+            numericKind={numericKind ?? "decimal"}
+            onBlur={() => {
+              logIme("editor.blur", {
+                cellKey,
+              });
+              stopEditingCell();
+            }}
+            onChangeValue={(nextValue) => onEditCell(rowEntry.rowIndex, columnIndex, nextValue)}
+            onCompositionEnd={(event) => {
+              logIme("editor.compositionend", {
+                cellKey,
+                data: event.data,
+                value: event.currentTarget.value,
+              });
+            }}
+            onCompositionStart={(event) => {
+              logIme("editor.compositionstart", {
+                cellKey,
+                data: event.data,
+                value: event.currentTarget.value,
+              });
+            }}
+            onCompositionUpdate={(event) => {
+              logIme("editor.compositionupdate", {
+                cellKey,
+                data: event.data,
+                value: event.currentTarget.value,
+              });
+            }}
+            onFocus={() => {
+              logIme("editor.focus", {
+                cellKey,
+              });
+              if (!isSelected) {
+                onSelectCell(rowEntry.rowIndex, columnIndex);
+              }
+            }}
+            onInput={(event) => {
+              const nativeEvent = event.nativeEvent as InputEvent;
+              logIme("editor.input", {
+                cellKey,
+                value: event.currentTarget.value,
+                data: nativeEvent.data ?? null,
+                inputType: nativeEvent.inputType ?? null,
+                isComposing: nativeEvent.isComposing ?? false,
+              });
+            }}
+            onKeyDown={(event) => handleCellKeyDown(event, rowEntry.rowIndex, columnIndex)}
+            ref={(element: HTMLInputElement | null) => registerInputRef(cellKey, element)}
+            spellCheck={false}
+            value={cellValue}
+          />
+        ) : null}
+
+        {editorKind !== "boolean" && editorKind !== "number" && isEditing ? (
           <input
             className={`virtual-cell-input${editorKind === "reference" || editorKind === "list" ? " is-code" : ""}`}
-            inputMode={editorKind === "number" ? "decimal" : "text"}
+            inputMode="text"
             onChange={(event) => onEditCell(rowEntry.rowIndex, columnIndex, event.target.value)}
             onFocus={() => {
               logIme("editor.focus", {
@@ -1320,7 +1381,11 @@ export function VirtualSheetTable({
           />
         ) : null}
 
-        {!isEditing ? <span className={`virtual-cell-display${editorKind === "reference" || editorKind === "list" ? " is-code" : ""}`}>{cellValue || " "}</span> : null}
+        {!isEditing ? (
+          <span className={`virtual-cell-display${editorKind === "reference" || editorKind === "list" ? " is-code" : ""}${editorKind === "number" ? " is-number" : ""}`}>
+            {cellValue || " "}
+          </span>
+        ) : null}
         {isAutoFillHandleCell && !isEditing ? (
           <button
             aria-label="拖动填充选区"

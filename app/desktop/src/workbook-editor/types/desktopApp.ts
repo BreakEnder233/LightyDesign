@@ -280,6 +280,8 @@ export type WorkbookSaveState = {
   error?: string;
 };
 
+export type NumericColumnKind = "integer" | "decimal";
+
 export type ColumnEditorKind = "text" | "number" | "boolean" | "reference" | "list";
 
 export type ShortcutBinding = {
@@ -493,6 +495,20 @@ export function updateRowsAtCell(rows: string[][], rowIndex: number, columnIndex
   return nextRows;
 }
 
+export function getColumnNumericKind(column: Pick<SheetColumn, "type">): NumericColumnKind | null {
+  const normalizedType = column.type.trim().toLocaleLowerCase();
+
+  if (normalizedType === "int" || normalizedType === "long") {
+    return "integer";
+  }
+
+  if (normalizedType === "float" || normalizedType === "double") {
+    return "decimal";
+  }
+
+  return null;
+}
+
 export function getColumnEditorKind(column: SheetColumn): ColumnEditorKind {
   const normalizedType = column.type.trim().toLocaleLowerCase();
 
@@ -500,7 +516,7 @@ export function getColumnEditorKind(column: SheetColumn): ColumnEditorKind {
     return "boolean";
   }
 
-  if (["int", "long", "float", "double"].includes(normalizedType)) {
+  if (getColumnNumericKind(column)) {
     return "number";
   }
 

@@ -342,6 +342,13 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         writer.AppendLine();
+        writer.AppendLine("public interface IFlowChartTimeContext");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("DateTime UtcNow { get; }");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
         writer.AppendLine("public sealed class FlowChartNodeState");
         writer.AppendLine("{");
         writer.Indent();
@@ -855,6 +862,14 @@ public sealed class LightyFlowChartFileCodeGenerator
             {
                 AppendPauseExecution(writer, resolvedNode);
             }
+            else if (string.Equals(resolvedNode.Definition.RelativePath, "Builtin/Control/WaitUntil", StringComparison.Ordinal))
+            {
+                AppendWaitUntilExecution(writer, resolvedNode);
+            }
+            else if (string.Equals(resolvedNode.Definition.RelativePath, "Builtin/Control/PauseSeconds", StringComparison.Ordinal))
+            {
+                AppendPauseSecondsExecution(writer, resolvedNode);
+            }
             else if (string.Equals(resolvedNode.Definition.RelativePath, "Builtin/List/ForEach", StringComparison.Ordinal))
             {
                 AppendListForEachExecution(writer, resolvedNode);
@@ -944,6 +959,80 @@ public sealed class LightyFlowChartFileCodeGenerator
         writer.AppendLine("}");
         writer.AppendLine();
         writer.AppendLine("IsPaused = true;");
+        writer.AppendLine("return;");
+    }
+
+    private static void AppendWaitUntilExecution(CodeWriter writer, ResolvedNodeInstance resolvedNode)
+    {
+        writer.AppendLine($"var condition = ResolveComputeInput<bool>({resolvedNode.Node.NodeId}u, 101u);");
+        writer.AppendLine("if (!condition)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine($"CurrentNodeId = {resolvedNode.Node.NodeId}u;");
+        writer.AppendLine("IsPaused = true;");
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 251u);");
+        writer.AppendLine("if (CurrentNodeId is null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("CompleteFlow();");
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("return;");
+    }
+
+    private static void AppendPauseSecondsExecution(CodeWriter writer, ResolvedNodeInstance resolvedNode)
+    {
+        writer.AppendLine("var timeContext = Context as IFlowChartTimeContext;");
+        writer.AppendLine("if (timeContext == null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine($"throw new InvalidOperationException(\"Flow context must implement IFlowChartTimeContext to execute node '{resolvedNode.Definition.RelativePath}'.\");");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"var durationSeconds = {BuildPropertyLiteralExpression(resolvedNode)};");
+        writer.AppendLine("if (durationSeconds < 0)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("throw new InvalidOperationException(\"PauseSeconds duration cannot be negative.\");");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine($"var state = GetNodeState({resolvedNode.Node.NodeId}u);");
+        writer.AppendLine("var wakeUpUtc = state.Payload as DateTime?;");
+        writer.AppendLine("if (!wakeUpUtc.HasValue)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("wakeUpUtc = timeContext.UtcNow.AddSeconds(durationSeconds);");
+        writer.AppendLine("state.Payload = wakeUpUtc.Value;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("if (timeContext.UtcNow < wakeUpUtc.Value)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine($"CurrentNodeId = {resolvedNode.Node.NodeId}u;");
+        writer.AppendLine("IsPaused = true;");
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("state.Reset();");
+        writer.AppendLine($"CurrentNodeId = ResolveFlowTarget({resolvedNode.Node.NodeId}u, 251u);");
+        writer.AppendLine("if (CurrentNodeId is null)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("CompleteFlow();");
+        writer.AppendLine("return;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
         writer.AppendLine("return;");
     }
 

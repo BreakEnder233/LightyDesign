@@ -1,0 +1,34 @@
+{
+  "formatVersion": "1.0",
+  "name": "PauseSeconds",
+  "alias": "暂停数秒",
+  "nodeKind": "flow",
+  "typeParameters": [],
+  "properties": [
+    {
+      "propertyId": 1,
+      "name": "Seconds",
+      "alias": "秒数",
+      "type": {
+        "kind": "builtin",
+        "name": "int32"
+      },
+      "defaultValue": 1
+    }
+  ],
+  "computePorts": [],
+  "flowPorts": [
+    {
+      "portId": 201,
+      "name": "In",
+      "alias": "输入",
+      "direction": "input"
+    },
+    {
+      "portId": 251,
+      "name": "Then",
+      "alias": "继续",
+      "direction": "output"
+    }
+  ]
+}

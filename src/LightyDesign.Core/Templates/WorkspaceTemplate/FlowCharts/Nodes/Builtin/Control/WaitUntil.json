@@ -1,0 +1,34 @@
+{
+  "formatVersion": "1.0",
+  "name": "WaitUntil",
+  "alias": "等待直到",
+  "nodeKind": "flow",
+  "typeParameters": [],
+  "properties": [],
+  "computePorts": [
+    {
+      "portId": 101,
+      "name": "Condition",
+      "alias": "等待条件",
+      "direction": "input",
+      "type": {
+        "kind": "builtin",
+        "name": "bool"
+      }
+    }
+  ],
+  "flowPorts": [
+    {
+      "portId": 201,
+      "name": "In",
+      "alias": "输入",
+      "direction": "input"
+    },
+    {
+      "portId": 251,
+      "name": "Then",
+      "alias": "继续",
+      "direction": "output"
+    }
+  ]
+}

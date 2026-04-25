@@ -205,6 +205,25 @@ public class FlowChartCodeGenerationTests
             Assert.Empty(pauseNode.ComputePorts);
             Assert.Equal(2, pauseNode.FlowPorts.Count);
             Assert.Null(pauseNode.CodegenBinding);
+
+            var waitUntilDocument = Assert.Single(
+                workspace.FlowChartNodeDefinitions,
+                document => document.RelativePath == "Builtin/Control/WaitUntil");
+            var waitUntilNode = LightyFlowChartNodeDefinitionParser.Parse(waitUntilDocument);
+            Assert.Equal(LightyFlowChartNodeKind.Flow, waitUntilNode.NodeKind);
+            Assert.Single(waitUntilNode.ComputePorts);
+            Assert.Equal(2, waitUntilNode.FlowPorts.Count);
+            Assert.Null(waitUntilNode.CodegenBinding);
+
+            var pauseSecondsDocument = Assert.Single(
+                workspace.FlowChartNodeDefinitions,
+                document => document.RelativePath == "Builtin/Control/PauseSeconds");
+            var pauseSecondsNode = LightyFlowChartNodeDefinitionParser.Parse(pauseSecondsDocument);
+            Assert.Equal(LightyFlowChartNodeKind.Flow, pauseSecondsNode.NodeKind);
+            Assert.Empty(pauseSecondsNode.ComputePorts);
+            Assert.Equal(2, pauseSecondsNode.FlowPorts.Count);
+            Assert.Single(pauseSecondsNode.Properties);
+            Assert.Null(pauseSecondsNode.CodegenBinding);
         }
         finally
         {
@@ -246,6 +265,8 @@ public class FlowChartCodeGenerationTests
             Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/Control/IfNode.cs");
             Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/Control/WhileNode.cs");
             Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/Control/PauseNode.cs");
+            Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/Control/WaitUntilNode.cs");
+            Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/Control/PauseSecondsNode.cs");
             Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/List/AddNode.cs");
             Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/List/CountNode.cs");
             Assert.Contains(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/List/GetAtNode.cs");
@@ -334,6 +355,12 @@ public class FlowChartCodeGenerationTests
 
             var pauseFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/Control/PauseNode.cs");
             Assert.Contains("public partial class PauseNode", pauseFile.Content, StringComparison.Ordinal);
+
+            var waitUntilFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/Control/WaitUntilNode.cs");
+            Assert.Contains("public partial class WaitUntilNode", waitUntilFile.Content, StringComparison.Ordinal);
+
+            var pauseSecondsFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/Control/PauseSecondsNode.cs");
+            Assert.Contains("public partial class PauseSecondsNode", pauseSecondsFile.Content, StringComparison.Ordinal);
 
             var listFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/Nodes/Builtin/List/AddNode.cs");
             Assert.Contains("namespace LightyDesignData.FlowCharts.Nodes.Builtin.List", listFile.Content, StringComparison.Ordinal);
@@ -844,6 +871,133 @@ public class FlowChartCodeGenerationTests
         }
 
         [Fact]
+        public void FlowChartFileCodeGenerator_ShouldGenerateRuntimeDispatchForWaitingNodes()
+        {
+                var workspaceRoot = CreateWorkspaceDirectory();
+
+                try
+                {
+                        LightyWorkspaceScaffolder.Create(workspaceRoot);
+                        CreateNodeDefinition(
+                                workspaceRoot,
+                                "Event/System/Start",
+                                """
+                                {
+                                    "formatVersion": "1.0",
+                                    "name": "Start",
+                                    "alias": "开始",
+                                    "nodeKind": "event",
+                                    "properties": [],
+                                    "computePorts": [],
+                                    "flowPorts": [
+                                        {
+                                            "portId": 251,
+                                            "name": "Then",
+                                            "alias": "然后",
+                                            "direction": "output"
+                                        }
+                                    ]
+                                }
+                                """);
+                        CreateFlowChartFile(
+                                workspaceRoot,
+                                "Quest/WaitingRuntime",
+                                """
+                                {
+                                    "formatVersion": "1.0",
+                                    "name": "WaitingRuntime",
+                                    "alias": "等待运行时",
+                                    "nodes": [
+                                        {
+                                            "nodeId": 1,
+                                            "nodeType": "Event/System/Start",
+                                            "layout": { "x": 80, "y": 80 },
+                                            "propertyValues": []
+                                        },
+                                        {
+                                            "nodeId": 2,
+                                            "nodeType": "Builtin/Constant/Bool",
+                                            "layout": { "x": 80, "y": 220 },
+                                            "propertyValues": [
+                                                {
+                                                    "propertyId": 1,
+                                                    "value": true
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "nodeId": 3,
+                                            "nodeType": "Builtin/Control/WaitUntil",
+                                            "layout": { "x": 320, "y": 80 },
+                                            "propertyValues": []
+                                        },
+                                        {
+                                            "nodeId": 4,
+                                            "nodeType": "Builtin/Control/PauseSeconds",
+                                            "layout": { "x": 560, "y": 80 },
+                                            "propertyValues": [
+                                                {
+                                                    "propertyId": 1,
+                                                    "value": 3
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "flowConnections": [
+                                        {
+                                            "sourceNodeId": 1,
+                                            "sourcePortId": 251,
+                                            "targetNodeId": 3,
+                                            "targetPortId": 201
+                                        },
+                                        {
+                                            "sourceNodeId": 3,
+                                            "sourcePortId": 251,
+                                            "targetNodeId": 4,
+                                            "targetPortId": 201
+                                        }
+                                    ],
+                                    "computeConnections": [
+                                        {
+                                            "sourceNodeId": 2,
+                                            "sourcePortId": 151,
+                                            "targetNodeId": 3,
+                                            "targetPortId": 101
+                                        }
+                                    ]
+                                }
+                                """);
+
+                        var workspace = WithOutputRelativePath(LightyWorkspaceLoader.Load(workspaceRoot), "Generated/Config");
+                        var generator = new LightyFlowChartFileCodeGenerator();
+
+                        var package = generator.Generate(workspace, "Quest/WaitingRuntime");
+
+                        var runtimeSupportFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/FlowChartRuntimeSupport.cs");
+                        Assert.Contains("public interface IFlowChartTimeContext", runtimeSupportFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("DateTime UtcNow { get; }", runtimeSupportFile.Content, StringComparison.Ordinal);
+
+                        var flowFile = Assert.Single(package.Files, file => file.RelativePath == "FlowCharts/Files/Quest/WaitingRuntime/WaitingRuntimeFlow.cs");
+                        Assert.Contains("case 3u:", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("var condition = ResolveComputeInput<bool>(3u, 101u);", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("CurrentNodeId = 3u;", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("case 4u:", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("var timeContext = Context as IFlowChartTimeContext;", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("var durationSeconds = JsonSerializer.Deserialize<int>(\"3\")", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("var wakeUpUtc = state.Payload as DateTime?;", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("wakeUpUtc = timeContext.UtcNow.AddSeconds(durationSeconds);", flowFile.Content, StringComparison.Ordinal);
+                        Assert.Contains("CurrentNodeId = 4u;", flowFile.Content, StringComparison.Ordinal);
+                }
+                finally
+                {
+                        if (Directory.Exists(workspaceRoot))
+                        {
+                                Directory.Delete(workspaceRoot, recursive: true);
+                        }
+                }
+        }
+
+        [Fact]
         public void FlowChartFileCodeGenerator_ShouldGeneratePropertyBackedLiteralRuntimeForDefaultConstantAndConfigNodes()
         {
                 var workspaceRoot = CreateWorkspaceDirectory();
@@ -1061,20 +1215,55 @@ public class FlowChartCodeGenerationTests
                                         },
                                         {
                                             "nodeId": 2,
-                                            "nodeType": "Builtin/Control/Pause",
+                                            "nodeType": "Builtin/Constant/Bool",
+                                            "layout": { "x": 80, "y": 220 },
+                                            "propertyValues": [
+                                                {
+                                                    "propertyId": 1,
+                                                    "value": true
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "nodeId": 3,
+                                            "nodeType": "Builtin/Control/WaitUntil",
                                             "layout": { "x": 280, "y": 80 },
                                             "propertyValues": []
+                                        },
+                                        {
+                                            "nodeId": 4,
+                                            "nodeType": "Builtin/Control/PauseSeconds",
+                                            "layout": { "x": 520, "y": 80 },
+                                            "propertyValues": [
+                                                {
+                                                    "propertyId": 1,
+                                                    "value": 1
+                                                }
+                                            ]
                                         }
                                     ],
                                     "flowConnections": [
                                         {
                                             "sourceNodeId": 1,
                                             "sourcePortId": 251,
-                                            "targetNodeId": 2,
+                                            "targetNodeId": 3,
+                                            "targetPortId": 201
+                                        },
+                                        {
+                                            "sourceNodeId": 3,
+                                            "sourcePortId": 251,
+                                            "targetNodeId": 4,
                                             "targetPortId": 201
                                         }
                                     ],
-                                    "computeConnections": []
+                                    "computeConnections": [
+                                        {
+                                            "sourceNodeId": 2,
+                                            "sourcePortId": 151,
+                                            "targetNodeId": 3,
+                                            "targetPortId": 101
+                                        }
+                                    ]
                                 }
                                 """);
 

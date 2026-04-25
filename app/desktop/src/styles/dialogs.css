@@ -132,6 +132,14 @@
   width: min(720px, 100%);
 }
 
+.cell-value-editor-dialog {
+  width: min(760px, 100%);
+}
+
+.cell-value-editor-dialog--nested {
+  width: min(680px, 100%);
+}
+
 .mcp-config-dialog {
   width: min(760px, 100%);
 }
@@ -172,6 +180,123 @@
 
 .column-editor-body {
   gap: 12px;
+}
+
+.cell-value-editor-body {
+  gap: 12px;
+}
+
+.cell-value-editor-summary {
+  align-items: center;
+}
+
+.cell-value-editor-mode-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.cell-value-editor-mode-tabs .secondary-button.is-active {
+  color: #ffffff;
+  border-color: #1177bb;
+  background: #0e639c;
+}
+
+.cell-value-editor-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cell-value-editor-caption {
+  margin: 0;
+  color: #a8adb4;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cell-value-editor-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cell-value-editor-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #333333;
+  background: #181818;
+}
+
+.cell-value-editor-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cell-value-editor-entry-header span {
+  color: #a8adb4;
+  font-size: 12px;
+}
+
+.cell-value-editor-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cell-value-editor-json-textarea {
+  min-height: 220px;
+  resize: vertical;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+}
+
+.cell-value-editor-reference {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cell-value-editor-reference-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.cell-value-editor-reference-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid #333333;
+  text-align: left;
+  background: #1a1a1a;
+}
+
+.cell-value-editor-reference-option:hover {
+  border-color: #1177bb;
+  background: #202b36;
+}
+
+.cell-value-editor-reference-option.is-active {
+  border-color: #1177bb;
+  background: #0f3554;
+}
+
+.cell-value-editor-reference-option strong {
+  color: #f3f4f6;
+}
+
+.cell-value-editor-reference-option span {
+  color: #a8adb4;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .column-editor-summary {

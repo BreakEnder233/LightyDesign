@@ -175,6 +175,7 @@ function App() {
     copiedSelectionSnapshot,
     currentSelectionContext,
     currentSheetContext,
+    editingCellValue,
     editSheetAliasTarget,
     editSheetAliasValue,
     editingColumn,
@@ -191,6 +192,7 @@ function App() {
     handleAutoFillSelection,
     handleAutoSizeColumn,
     handleChooseCodegenOutputDirectory,
+    handleCloseCellValueEditor,
     handleClearSelectionContents,
     handleCloseColumnEditor,
     handleCloseCodegenDialog,
@@ -229,6 +231,8 @@ function App() {
     handleInsertCopiedRows,
     handleInsertRow,
     handleInsertRowAbove,
+    handleLoadValueEditorReferenceSheet,
+    handleOpenCellValueEditor,
     handleOpenColumnEditor,
     handleOpenCreateSheetDialog,
     handleOpenCreateWorkbookDialog,
@@ -243,6 +247,7 @@ function App() {
     handlePasteSelectionFromClipboard,
     handleResolveValidationSchema,
     handleResizeColumn,
+    handleApplyCellValueEditor,
     handleSaveColumnDefinition,
     handleSaveWorkspaceCodegenConfig,
     handleSelectAll,
@@ -1663,6 +1668,7 @@ function App() {
           canSaveActiveWorkbook={canSaveActiveWorkbook}
           canUndoActiveSheet={canUndoActiveSheet}
           columnWidths={activeColumnWidths}
+          editingCellValue={editingCellValue}
           editingColumn={editingColumn}
           editingColumnIndex={editingColumnIndex}
           filteredRowEntries={filteredRowEntries}
@@ -1673,7 +1679,9 @@ function App() {
           onAppendRow={handleAppendRow}
           onAutoFillSelection={handleAutoFillSelection}
           onAutoSizeColumn={handleAutoSizeColumn}
+          onApplyCellValueEditor={handleApplyCellValueEditor}
           onClearSelection={handleClearSelectionContents}
+          onCloseCellValueEditor={handleCloseCellValueEditor}
           onCloseColumnEditor={handleCloseColumnEditor}
           onCopySelection={handleCopySelection}
           onCopySelectionToClipboard={() => {
@@ -1700,6 +1708,8 @@ function App() {
           onInsertCopiedRowsBelow={(rowIndex) => handleInsertCopiedRows(rowIndex + 1)}
           onInsertRow={handleInsertRow}
           onInsertRowAbove={handleInsertRowAbove}
+          onLoadValueEditorReferenceSheet={handleLoadValueEditorReferenceSheet}
+          onOpenCellValueEditor={handleOpenCellValueEditor}
           onOpenColumnEditor={handleOpenColumnEditor}
           onOpenFreezeDialog={handleOpenFreezeDialog}
           onOpenSheet={openSheet}

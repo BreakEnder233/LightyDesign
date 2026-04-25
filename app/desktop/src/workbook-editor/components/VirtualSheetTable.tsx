@@ -6,9 +6,11 @@ import { NumericCellInput } from "./NumericCellInput";
 
 import {
   buildCellKey,
+  getCellValueEditorLabel,
   getColumnEditorKind,
   getColumnExportScope,
   getColumnNumericKind,
+  getColumnValueEditorKind,
   getSelectionBounds,
   type SheetColumn,
   type SheetSelection,
@@ -63,6 +65,7 @@ type VirtualSheetTableProps = {
   onPasteSelection: (rowIndex: number, columnIndex: number, clipboardText: string) => void;
   onPasteSelectionFromClipboard: (rowIndex: number, columnIndex: number) => void;
   onPasteIntoCurrentSelectionFromClipboard: () => void;
+  onOpenCellValueEditor: (rowIndex: number, columnIndex: number) => void;
   onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
   onScrollSnapshotChange?: (snapshot: { scrollLeft: number; scrollTop: number }) => void;
 };
@@ -236,6 +239,7 @@ export function VirtualSheetTable({
   onPasteSelection,
   onPasteSelectionFromClipboard,
   onPasteIntoCurrentSelectionFromClipboard,
+  onOpenCellValueEditor,
   onEditCell,
   onScrollSnapshotChange,
 }: VirtualSheetTableProps) {
@@ -278,6 +282,7 @@ export function VirtualSheetTable({
   const selectedCellKey = selectedCell ? buildCellKey(selectedCell.rowIndex, selectedCell.columnIndex) : null;
   const selectedColumn = selectedCell ? (columns[selectedCell.columnIndex] ?? null) : null;
   const selectedEditorKind = selectedColumn ? getColumnEditorKind(selectedColumn) : null;
+  const selectedValueEditorKind = selectedColumn ? getColumnValueEditorKind(selectedColumn) : null;
   const selectionBounds = selectionRange ? getSelectionBounds(selectionRange) : null;
   const rowVirtualizer = useVirtualizer({
     count: scrollRows.length,
@@ -1588,6 +1593,21 @@ export function VirtualSheetTable({
         >
           {contextMenuState.kind === "cell" ? (
             <>
+              {selectedCell?.rowIndex === contextMenuState.rowIndex &&
+              selectedCell?.columnIndex === contextMenuState.columnIndex &&
+              selectionBounds?.startRowIndex === contextMenuState.rowIndex &&
+              selectionBounds?.endRowIndex === contextMenuState.rowIndex &&
+              selectionBounds?.startColumnIndex === contextMenuState.columnIndex &&
+              selectionBounds?.endColumnIndex === contextMenuState.columnIndex &&
+              selectedValueEditorKind ? (
+                <button
+                  className="sheet-context-menu-item"
+                  onClick={() => runContextMenuAction(() => onOpenCellValueEditor(contextMenuState.rowIndex, contextMenuState.columnIndex))}
+                  type="button"
+                >
+                  {getCellValueEditorLabel(selectedValueEditorKind)}
+                </button>
+              ) : null}
               <button className="sheet-context-menu-item" onClick={() => runContextMenuAction(() => onPasteIntoCurrentSelectionFromClipboard())} type="button">
                 粘贴到当前选区
               </button>

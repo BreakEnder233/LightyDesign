@@ -19,11 +19,13 @@ import {
   parseClipboardMatrix,
   tryGetWorkspaceRelativePath,
 } from "../../utils/appHelpers";
+import { fetchJson } from "../../utils/desktopHost";
 import {
   buildWorkspaceScopedStorageKey,
   cloneColumns,
   getSelectionBounds,
   type SheetColumn,
+  type SheetResponse,
   type SheetSelection,
   type SheetSelectionRange,
   type ShortcutBinding,
@@ -45,6 +47,14 @@ type SheetScrollSnapshot = {
 };
 
 type CodegenDialogMode = "single" | "all";
+
+type CellValueEditorState = {
+  rowIndex: number;
+  columnIndex: number;
+  cellAddress: string;
+  rawValue: string;
+  column: SheetColumn;
+};
 
 type PushToastInput = Omit<ToastNotification, "id" | "summary" | "timestamp"> & {
   summary?: string;
@@ -155,6 +165,7 @@ export function useWorkbookEditorUi({
   const [freezeDialogColumnCount, setFreezeDialogColumnCount] = useState(0);
   const [editingColumnIndex, setEditingColumnIndex] = useState<number | null>(null);
   const [editingColumnSnapshot, setEditingColumnSnapshot] = useState<SheetColumn | null>(null);
+  const [editingCellValue, setEditingCellValue] = useState<CellValueEditorState | null>(null);
   const [focusedWorkbookName, setFocusedWorkbookName] = useState<string | null>(null);
   const [workbookContextMenu, setWorkbookContextMenu] = useState<{
     workbookName: string;
@@ -1043,6 +1054,59 @@ export function useWorkbookEditorUi({
     }
   }
 
+  async function handleLoadValueEditorReferenceSheet(workbookName: string, sheetName: string) {
+    if (!hostInfo || !workspacePath) {
+      throw new Error("工作区未连接，无法读取引用目标表。");
+    }
+
+    const query = new URLSearchParams({ workspacePath });
+    const encodedWorkbookName = encodeURIComponent(workbookName);
+    const encodedSheetName = encodeURIComponent(sheetName);
+
+    return fetchJson<SheetResponse>(
+      `${hostInfo.desktopHostUrl}/api/workspace/workbooks/${encodedWorkbookName}/sheets/${encodedSheetName}?${query.toString()}`,
+    );
+  }
+
+  function handleOpenCellValueEditor(rowIndex: number, columnIndex: number) {
+    if (!activeSheetData || !activeTab) {
+      return;
+    }
+
+    const column = activeSheetColumns[columnIndex];
+    if (!column) {
+      return;
+    }
+
+    const draftRows = activeSheetState?.draftRows ?? activeSheetData.rows;
+    const rawValue = draftRows[rowIndex]?.[columnIndex] ?? "";
+    const cellAddress = formatSelectionAddress({
+      anchor: { rowIndex, columnIndex },
+      focus: { rowIndex, columnIndex },
+    });
+
+    setEditingCellValue({
+      rowIndex,
+      columnIndex,
+      cellAddress,
+      rawValue,
+      column: cloneSheetColumnSnapshot(column),
+    });
+  }
+
+  function handleCloseCellValueEditor() {
+    setEditingCellValue(null);
+  }
+
+  function handleApplyCellValueEditor(nextValue: string) {
+    if (!editingCellValue) {
+      return;
+    }
+
+    updateCellValue(editingCellValue.rowIndex, editingCellValue.columnIndex, nextValue);
+    setEditingCellValue(null);
+  }
+
   async function handleValidateColumnValidationRule(type: string, validation: unknown) {
     if (!hostInfo || !workspacePath) {
       return {
@@ -1801,6 +1865,7 @@ export function useWorkbookEditorUi({
   useEffect(() => {
     setEditingColumnIndex(null);
     setEditingColumnSnapshot(null);
+    setEditingCellValue(null);
   }, [activeTabId]);
 
   useEffect(() => {
@@ -1913,6 +1978,7 @@ export function useWorkbookEditorUi({
     copiedSelectionSnapshot,
     currentSelectionContext,
     currentSheetContext,
+    editingCellValue,
     editSheetAliasTarget,
     editSheetAliasValue,
     editingColumn,
@@ -1929,6 +1995,7 @@ export function useWorkbookEditorUi({
     handleAutoFillSelection,
     handleAutoSizeColumn,
     handleClearSelectionContents,
+    handleCloseCellValueEditor,
     handleCloseColumnEditor,
     handleCloseCodegenDialog,
     handleCloseCreateSheetDialog,
@@ -1967,6 +2034,8 @@ export function useWorkbookEditorUi({
     handleInsertCopiedRows,
     handleInsertRow,
     handleInsertRowAbove,
+    handleLoadValueEditorReferenceSheet,
+    handleOpenCellValueEditor,
     handleOpenCodegenDialog: handleConvertWorkbookCode,
     handleOpenColumnEditor,
     handleOpenCreateSheetDialog,
@@ -1982,6 +2051,7 @@ export function useWorkbookEditorUi({
     handlePasteSelectionFromClipboard,
     handleResolveValidationSchema,
     handleResizeColumn,
+    handleApplyCellValueEditor,
     handleSaveColumnDefinition,
     handleSaveWorkspaceCodegenConfig,
     handleSelectAll,

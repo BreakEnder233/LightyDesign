@@ -1,5 +1,6 @@
 import { useMemo, type MouseEvent } from "react";
 
+import { CellValueEditorDialog } from "./CellValueEditorDialog";
 import { ColumnEditorDialog } from "./ColumnEditorDialog";
 import { EditorWorkspaceHeader, type ActiveSheetHeaderState } from "./EditorWorkspaceHeader";
 import { VirtualSheetTable } from "./VirtualSheetTable";
@@ -77,7 +78,9 @@ type WorkbookEditorViewProps = {
   onCopySelectionToClipboard: () => void;
   onCutSelection: () => void;
   onClearSelection: () => void;
+  onOpenCellValueEditor: (rowIndex: number, columnIndex: number) => void;
   onEditCell: (rowIndex: number, columnIndex: number, nextValue: string) => void;
+  onLoadValueEditorReferenceSheet: (workbookName: string, sheetName: string) => Promise<SheetResponse>;
   onFreezeColumns: (columnCount: number) => void;
   onFreezeRows: (rowCount: number) => void;
   onAutoFillSelection: (targetRowIndex: number, targetColumnIndex: number) => void;
@@ -109,8 +112,19 @@ type WorkbookEditorViewProps = {
       }
     | null;
   selectionRange: SheetSelectionRange | null;
+  editingCellValue:
+    | {
+        rowIndex: number;
+        columnIndex: number;
+        cellAddress: string;
+        rawValue: string;
+        column: SheetColumn;
+      }
+    | null;
   editingColumn: SheetColumn | null;
   editingColumnIndex: number | null;
+  onApplyCellValueEditor: (nextValue: string) => void;
+  onCloseCellValueEditor: () => void;
   onCloseColumnEditor: () => void;
   onResolveValidationSchema: (type: string) => Promise<ValidationSchemaResolveResponse>;
   onSaveColumnDefinition: (columnIndex: number, nextColumn: SheetColumn) => void;
@@ -178,7 +192,9 @@ export function WorkbookEditorView({
   onCopySelectionToClipboard,
   onCutSelection,
   onClearSelection,
+  onOpenCellValueEditor,
   onEditCell,
+  onLoadValueEditorReferenceSheet,
   onFreezeColumns,
   onFreezeRows,
   onAutoFillSelection,
@@ -204,8 +220,11 @@ export function WorkbookEditorView({
   filteredRowEntries,
   restoreScrollRequest,
   selectionRange,
+  editingCellValue,
   editingColumn,
   editingColumnIndex,
+  onApplyCellValueEditor,
+  onCloseCellValueEditor,
   onCloseColumnEditor,
   onResolveValidationSchema,
   onSaveColumnDefinition,
@@ -345,6 +364,7 @@ export function WorkbookEditorView({
                   onCopySelectionToClipboard={onCopySelectionToClipboard}
                   onCutSelection={onCutSelection}
                   onClearSelection={onClearSelection}
+                  onOpenCellValueEditor={onOpenCellValueEditor}
                   onEditCell={onEditCell}
                   onFreezeColumns={onFreezeColumns}
                   onFreezeRows={onFreezeRows}
@@ -387,6 +407,17 @@ export function WorkbookEditorView({
               onValidateValidationRule={onValidateColumnValidationRule}
               propertySchemas={propertySchemas}
               typeMetadata={typeMetadata}
+            />
+
+            <CellValueEditorDialog
+              cellAddress={editingCellValue?.cellAddress ?? ""}
+              column={editingCellValue?.column ?? null}
+              initialValue={editingCellValue?.rawValue ?? ""}
+              isOpen={editingCellValue !== null}
+              onApply={onApplyCellValueEditor}
+              onClose={onCloseCellValueEditor}
+              onLoadReferenceSheet={onLoadValueEditorReferenceSheet}
+              onResolveType={onValidateColumnType}
             />
           </div>
         </section>

@@ -282,6 +282,8 @@ export type WorkbookSaveState = {
 
 export type NumericColumnKind = "integer" | "decimal";
 
+export type CellValueEditorKind = "number" | "reference" | "list" | "dictionary" | "object";
+
 export type ColumnEditorKind = "text" | "number" | "boolean" | "reference" | "list";
 
 export type ShortcutBinding = {
@@ -495,8 +497,8 @@ export function updateRowsAtCell(rows: string[][], rowIndex: number, columnIndex
   return nextRows;
 }
 
-export function getColumnNumericKind(column: Pick<SheetColumn, "type">): NumericColumnKind | null {
-  const normalizedType = column.type.trim().toLocaleLowerCase();
+export function getNumericColumnKindFromType(type: string): NumericColumnKind | null {
+  const normalizedType = type.trim().toLocaleLowerCase();
 
   if (normalizedType === "int" || normalizedType === "long") {
     return "integer";
@@ -507,6 +509,53 @@ export function getColumnNumericKind(column: Pick<SheetColumn, "type">): Numeric
   }
 
   return null;
+}
+
+export function getColumnNumericKind(column: Pick<SheetColumn, "type">): NumericColumnKind | null {
+  return getNumericColumnKindFromType(column.type);
+}
+
+export function getColumnValueEditorKind(
+  column: Pick<SheetColumn, "type" | "isReferenceType" | "isListType">,
+): CellValueEditorKind | null {
+  if (getNumericColumnKindFromType(column.type)) {
+    return "number";
+  }
+
+  if (column.isReferenceType) {
+    return "reference";
+  }
+
+  if (/^dictionary\s*</i.test(column.type.trim())) {
+    return "dictionary";
+  }
+
+  if (column.isListType) {
+    return "list";
+  }
+
+  if (/^object$/i.test(column.type.trim())) {
+    return "object";
+  }
+
+  return null;
+}
+
+export function getCellValueEditorLabel(kind: CellValueEditorKind): string {
+  switch (kind) {
+    case "number":
+      return "编辑数值...";
+    case "reference":
+      return "编辑引用...";
+    case "list":
+      return "编辑列表...";
+    case "dictionary":
+      return "编辑字典...";
+    case "object":
+      return "编辑对象...";
+    default:
+      return "编辑值...";
+  }
 }
 
 export function getColumnEditorKind(column: SheetColumn): ColumnEditorKind {

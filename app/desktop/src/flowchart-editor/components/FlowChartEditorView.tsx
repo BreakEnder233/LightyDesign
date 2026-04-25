@@ -377,8 +377,8 @@ export function FlowChartEditorView({
               <section className="tree-card flowchart-inspector-panel flowchart-header-panel flowchart-overview-panel">
                 <div className="section-header">
                   <div>
-                    <p className="eyebrow">流程图</p>
-                    <strong>{hasActiveDocument ? activeFlowChartLabel : "暂无活动流程图"}</strong>
+                    <p className="eyebrow">文件与保存</p>
+                    <strong>{hasActiveDocument ? "当前流程图文件" : "暂无活动流程图"}</strong>
                   </div>
                   <span className={`badge${isDirty ? " flowchart-badge-dirty" : ""}`}>
                     {editor.saveState === "saving" ? "保存中" : isDirty ? "未保存" : "已同步"}
@@ -391,14 +391,6 @@ export function FlowChartEditorView({
                       <div className="flowchart-dialog-static-field flowchart-overview-field is-wide">
                         <span>文件路径</span>
                         <strong>{editor.activeSummary?.relativePath ?? "未打开流程图"}</strong>
-                      </div>
-                      <div className="flowchart-dialog-static-field flowchart-overview-field">
-                        <span>名称</span>
-                        <strong>{editor.activeDocument?.name ?? "未设置"}</strong>
-                      </div>
-                      <div className="flowchart-dialog-static-field flowchart-overview-field">
-                        <span>别名</span>
-                        <strong>{editor.activeDocument?.alias?.trim() ? editor.activeDocument.alias : "未设置"}</strong>
                       </div>
                     </div>
 
@@ -443,7 +435,7 @@ export function FlowChartEditorView({
                     </div>
                   </>
                 ) : (
-                  <p className="status-detail">打开流程图后，这里会显示文件路径、名称、别名、保存入口和结构校验摘要。</p>
+                  <p className="status-detail">打开流程图后，这里会显示文件路径、保存入口和结构校验摘要。</p>
                 )}
               </section>
 

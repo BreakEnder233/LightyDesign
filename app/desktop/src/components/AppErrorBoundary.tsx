@@ -30,7 +30,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     componentStack: "",
   };
 
-  static override getDerivedStateFromError(error: Error): AppErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
     return {
       error,
       componentStack: "",
@@ -39,7 +39,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Unhandled React render error", error, errorInfo.componentStack);
-    this.setState({ componentStack: errorInfo.componentStack });
+    this.setState({ componentStack: errorInfo.componentStack ?? "" });
   }
 
   private readonly handleReset = () => {

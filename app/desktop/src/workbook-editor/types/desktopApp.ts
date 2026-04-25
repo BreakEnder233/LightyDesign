@@ -143,6 +143,7 @@ export type SheetMetadata = {
 export type WorkspaceNavigationSheet = {
   workbookName: string;
   name: string;
+  alias?: string | null;
   dataFilePath: string;
   headerFilePath: string;
   rowCount: number;
@@ -151,6 +152,7 @@ export type WorkspaceNavigationSheet = {
 
 export type WorkspaceNavigationWorkbook = {
   name: string;
+  alias?: string | null;
   directoryPath: string;
   codegen: {
     outputRelativePath?: string | null;

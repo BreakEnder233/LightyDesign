@@ -10,8 +10,9 @@ export function useDesktopHostConnection() {
 
   useEffect(() => {
     let disposed = false;
+    const desktopBridge = window.lightyDesign;
 
-    if (!window.lightyDesign) {
+    if (!desktopBridge) {
       setBridgeStatus("unavailable");
       setBridgeError(
         "当前运行环境未注入 Electron bridge。请通过 Electron 桌面壳启动应用，而不是只打开 Vite 页面。推荐命令：powershell -ExecutionPolicy Bypass -File .\\ShellFiles\\Bootstrap-LightyDesign.ps1 -RunDesktop",
@@ -19,9 +20,11 @@ export function useDesktopHostConnection() {
       return;
     }
 
+    const bridge = desktopBridge;
+
     async function loadInfo() {
       try {
-        const info = await window.lightyDesign.getDesktopHostInfo();
+        const info = await bridge.getDesktopHostInfo();
         if (!disposed) {
           setHostInfo(info);
           setBridgeStatus("ready");
@@ -37,7 +40,7 @@ export function useDesktopHostConnection() {
 
     async function loadHealth() {
       try {
-        const health = await window.lightyDesign.getDesktopHostHealth();
+        const health = await bridge.getDesktopHostHealth();
         if (!disposed) {
           setHostHealth(health);
         }

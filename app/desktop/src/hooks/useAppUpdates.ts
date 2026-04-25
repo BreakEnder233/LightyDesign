@@ -46,16 +46,19 @@ export function useAppUpdates({ bridgeStatus, onToast }: UseAppUpdatesOptions) {
 
   useEffect(() => {
     let disposed = false;
+    const desktopBridge = window.lightyDesign;
 
-    if (bridgeStatus !== "ready" || !window.lightyDesign) {
+    if (bridgeStatus !== "ready" || !desktopBridge) {
       return;
     }
+
+    const bridge = desktopBridge;
 
     async function initialize() {
       try {
         const [info, downloadState] = await Promise.all([
-          window.lightyDesign?.getAppUpdateInfo(),
-          window.lightyDesign?.getAppUpdateDownloadState(),
+          bridge.getAppUpdateInfo(),
+          bridge.getAppUpdateDownloadState(),
         ]);
 
         if (disposed || !info || !downloadState) {
@@ -74,7 +77,7 @@ export function useAppUpdates({ bridgeStatus, onToast }: UseAppUpdatesOptions) {
         }
 
         setState((currentState) => ({ ...currentState, status: "checking" }));
-        const result = await window.lightyDesign.checkForAppUpdates();
+        const result = await bridge.checkForAppUpdates();
         if (disposed) {
           return;
         }
@@ -129,14 +132,17 @@ export function useAppUpdates({ bridgeStatus, onToast }: UseAppUpdatesOptions) {
 
   useEffect(() => {
     let disposed = false;
+    const desktopBridge = window.lightyDesign;
 
-    if (bridgeStatus !== "ready" || !window.lightyDesign) {
+    if (bridgeStatus !== "ready" || !desktopBridge) {
       return;
     }
 
+    const bridge = desktopBridge;
+
     async function syncDownloadState() {
       try {
-        const downloadState = await window.lightyDesign?.getAppUpdateDownloadState();
+        const downloadState = await bridge.getAppUpdateDownloadState();
         if (disposed || !downloadState) {
           return;
         }
@@ -169,12 +175,13 @@ export function useAppUpdates({ bridgeStatus, onToast }: UseAppUpdatesOptions) {
   }, [bridgeStatus, state.downloadState?.status]);
 
   async function checkForUpdates(options?: { manual?: boolean }) {
-    if (!window.lightyDesign) {
+    const bridge = window.lightyDesign;
+    if (!bridge) {
       return null;
     }
 
     setState((currentState) => ({ ...currentState, status: "checking" }));
-    const result = await window.lightyDesign.checkForAppUpdates();
+    const result = await bridge.checkForAppUpdates();
 
     setState((currentState) => ({
       ...currentState,
@@ -219,7 +226,8 @@ export function useAppUpdates({ bridgeStatus, onToast }: UseAppUpdatesOptions) {
   }
 
   async function installUpdate(options?: { manual?: boolean }) {
-    if (!window.lightyDesign) {
+    const bridge = window.lightyDesign;
+    if (!bridge) {
       return null;
     }
 
@@ -240,7 +248,7 @@ export function useAppUpdates({ bridgeStatus, onToast }: UseAppUpdatesOptions) {
       },
     }));
 
-    const downloadState = await window.lightyDesign.downloadAndInstallAppUpdate();
+    const downloadState = await bridge.downloadAndInstallAppUpdate();
 
     setState((currentState) => ({
       ...currentState,

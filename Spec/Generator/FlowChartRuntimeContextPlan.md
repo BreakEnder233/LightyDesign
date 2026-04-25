@@ -9,7 +9,7 @@
 3. `FlowChartRuntimeSupport.cs` 运行时辅助类型。
 4. 内置 `If`、`While`、`Pause`、`List.ForEach`、`Dictionary.ForEach` 的首版调度分派。
 
-但当前生成模型仍有一个关键偏差：生成出的 `*Flow<TContext>` 同时承担了“无状态解释器”和“执行态容器”两种职责。当前运行时中的以下成员仍挂在 Flow 上：
+当前生成模型的核心形态其实已经接近目标：生成出的 `*Flow<TContext>` 既持有流程图定义引用，也持有单次运行所需的通用执行态。当前运行时中的以下成员挂在 Flow 上：
 
 1. `CurrentNodeId`
 2. `IsPaused`
@@ -17,14 +17,14 @@
 4. `_nodeStates`
 5. `_stepComputeCache`
 
-这与新的目标不一致。新的目标是：Flow 保持无状态，所有可变运行态都进入与流程图实例绑定的 generated Context。
+这些成员应继续保留在 Flow 上，因为它们只与单次 Flow 运行相关，且逻辑在不同图之间是统一的。真正需要继续规划的，是哪些“图专属/业务专属数据”应进入 generated Context，以及是否值得为某些图生成更强类型的 Context 视图。
 
 ## 结论
 
-1. 需要调整当前流程图运行时机制，但调整点集中在生成运行时模型与节点执行契约。
+1. 不需要把 `CurrentNodeId`、`IsPaused`、`IsCompleted`、`_nodeStates` 从 Flow 挪出；当前这部分机制方向是对的。
 2. 不需要调整 FlowChart 文件格式、节点/端口/连线模型、流程回路规则或类型系统主方向。
-3. 如果只考虑内置控制节点和迭代节点，这一轮调整可以先在 Generator 模板与运行时辅助类型内完成。
-4. 如果后续要支持“自定义且有节点实例状态”的节点，则还需要补一个共享运行时接口层。
+3. 需要继续规划的是 generated Context 的职责，以及它与 Flow 持有通用运行态之间的边界。
+4. 如果后续要支持“自定义且有节点实例状态”的节点，仍然可能需要补一个共享运行时接口层。
 
 ## 目标模型
 
@@ -34,43 +34,33 @@
 
 1. `QuestIntroDefinition`
    静态定义对象，描述节点、端口、连接关系和节点运行时单例。
-2. `QuestIntroFlow<TExternalContext>`
-   无状态解释器，负责根据连接关系和节点绑定逻辑推进 Context。
+2. `QuestIntroFlow<TContext>`
+   单次运行实例，负责根据连接关系和节点绑定逻辑推进自己持有的 Context。
 3. `QuestIntroContext<TExternalContext>`
-   与单次流程图实例运行绑定的可变状态容器。
+   与该图关联的强类型上下文视图，用于承载业务数据和图专属上下文字段。
 
 推荐的使用方式如下：
 
 ```csharp
 var definition = QuestIntroDefinition.Create();
-var flow = definition.CreateFlow<GameContext>();
-var context = definition.CreateContext(new GameContext());
+var flow = definition.CreateFlow(new GameContext());
 
-flow.RunUntilPaused(context);
-flow.Resume(context);
-flow.RunToCompletion(context);
+flow.RunUntilPaused();
+flow.Resume();
+flow.RunToCompletion();
 ```
 
-如果需要显式选择入口，则建议由 `CreateContext(entryNodeId, externalContext)` 或同等接口负责记录入口，而不是让 Flow 自身保存一份可变入口状态。
+如果需要显式选择入口，则更自然的做法仍是由 `CreateFlow(entryNodeId, context)` 或同等接口负责初始化 Flow 自身状态。
 
 ### 2. Context 内容
 
-生成出的 `*Context<TExternalContext>` 至少需要承载以下信息：
+生成出的 `*Context<TExternalContext>` 更适合承载以下信息：
 
 1. `ExternalContext`
    业务侧传入的外部上下文。
-2. `EntryNodeId`
-   本次运行的入口节点。
-3. `CurrentNodeId`
-   当前执行位置。
-4. `IsPaused`
-   当前是否暂停。
-5. `IsCompleted`
-   当前是否结束。
-6. `NodeStates`
-   节点实例状态集合。
-7. `StoredOutputs`
-   需要跨步保留的流程节点输出。
+2. 图专属业务字段或黑板数据。
+3. 需要对节点逻辑暴露的强类型访问入口。
+4. 该图专属的辅助服务或快照视图。
 
 可以按需追加：
 
@@ -81,38 +71,37 @@ flow.RunToCompletion(context);
 
 ### 3. Flow 职责
 
-调整后的 Flow 应只负责以下事情：
+Flow 应负责以下事情：
 
 1. 解析流程连接与计算连接。
 2. 在单步范围内求值 compute outputs。
 3. 调用节点运行时代码。
-4. 把所有持久变化写回传入的 Context。
+4. 改写当前 Flow 的生命周期状态和节点状态。
+5. 在需要时通过 Context 读写业务和图专属数据。
 
-调整后的 Flow 不应再持有：
+Flow 应继续持有：
 
 1. `CurrentNodeId`
 2. `IsPaused`
 3. `IsCompleted`
 4. `_nodeStates`
-5. 任何跨步生存的缓存
+5. 单次运行范围内需要的临时缓存
 
-`_stepComputeCache` 这类只服务单次步进的结构，可改成 `StepOnce(context)` 内部的局部变量；只要它不跨步持久化，就不属于 Context 模型冲突点。
+`_stepComputeCache` 是否做成字段还是局部变量，属于实现细节；只要它绑定当前 Flow，而不是挂到共享定义对象上，就不构成模型问题。
 
 ## 节点实例状态策略
 
 ### 1. 首轮迁移策略
 
-第一轮不必马上把所有节点状态生成成强类型字段。更稳妥的做法是：
+第一轮不必调整节点状态归属。更稳妥的做法是：
 
-1. 先把当前 `Dictionary<uint, FlowChartNodeState>` 从 Flow 挪到 generated Context。
+1. 继续把当前 `Dictionary<uint, FlowChartNodeState>` 保留在 Flow 上。
 2. 让现有 `If`、`While`、`Pause`、`List.ForEach`、`Dictionary.ForEach` 继续沿用当前调度逻辑。
-3. 先完成“状态归属正确”这一件事，再做状态强类型化。
-
-这样可以在不推翻当前 dispatch 模板的前提下，先满足“所有可变状态归 Context”这一目标。
+3. 若未来需要强类型化节点状态，再先论证它是应挂在 Flow 上，还是应暴露为图专属 Context 的一部分。
 
 ### 2. 目标状态形态
 
-中期目标应是只为真正有状态的节点生成状态槽，而不是把所有节点都放入统一对象字典。典型例子如下：
+中期目标仍可考虑只为真正有状态的节点生成状态槽，而不是把所有节点都放入统一对象字典。典型例子如下：
 
 1. `Pause`
    通常不需要节点局部状态，只改写 `IsPaused` 和 `CurrentNodeId`。
@@ -165,13 +154,12 @@ flow.RunToCompletion(context);
 
 ### 需要调整的部分
 
-以下内容需要进入下一轮实现：
+以下内容更值得进入下一轮实现：
 
-1. `Definition.CreateFlow(...)` 的 API 形态。
-2. `Definition.CreateContext(...)` 的新增或等价入口。
-3. `*Flow<TContext>` 到 `*Flow<TExternalContext> + *Context<TExternalContext>` 的职责拆分。
-4. `FlowChartRuntimeSupport.cs` 中运行时状态辅助类型的位置与用途。
-5. 相关单元测试对生成代码形状的断言。
+1. `Context` 是否需要为图专属数据生成更强类型的访问视图。
+2. `Definition.CreateFlow(...)` 与可选的 `Definition.CreateContext(...)` 如何协同。
+3. `FlowChartRuntimeSupport.cs` 中运行时辅助类型是否需要拆分“通用 Flow 状态”和“图专属上下文”两层。
+4. 相关单元测试对生成代码形状的断言。
 
 ### 可能需要新增的机制
 
@@ -183,13 +171,12 @@ flow.RunToCompletion(context);
 
 ## 分阶段实施建议
 
-### 阶段 1：状态迁移到 Context
+### 阶段 1：澄清 Flow 与 Context 的职责
 
-1. 生成 `*Context<TExternalContext>`。
-2. 把 `CurrentNodeId`、`IsPaused`、`IsCompleted`、`_nodeStates` 从 Flow 挪入 Context。
-3. 把 `_stepComputeCache` 改成 `StepOnce` 局部临时变量。
-4. 把 Definition 的创建 API 拆成“创建 Flow”和“创建 Context”两步。
-5. 更新现有字符串断言测试。
+1. 明确保留 `CurrentNodeId`、`IsPaused`、`IsCompleted`、`_nodeStates` 在 Flow 上。
+2. 判断哪些图专属字段值得进入 generated Context。
+3. 视需要把 Definition 的 API 扩成“直接创建 Flow”以及“创建图专属 Context 视图”两步。
+4. 更新现有字符串断言测试与规范文档。
 
 ### 阶段 2：内置状态节点强类型化
 
@@ -214,19 +201,19 @@ flow.RunToCompletion(context);
 
 下一轮至少应补以下测试：
 
-1. 生成出的 `Definition` 是否同时暴露 `CreateFlow` 与 `CreateContext`。
-2. 生成出的 `Context` 是否包含 `CurrentNodeId`、`IsPaused`、`IsCompleted`、节点状态存储。
-3. 生成出的 `Flow` 是否不再持有 `_nodeStates` 和运行态字段。
-4. `Pause`、`ForEach`、未来 `PauseSeconds` 的状态写入是否落在 Context 上。
+1. 生成出的 `Flow` 是否继续持有 `CurrentNodeId`、`IsPaused`、`IsCompleted`、节点状态存储。
+2. 生成出的 `Context` 是否只承载业务和图专属数据。
+3. `Pause`、`ForEach`、未来 `PauseSeconds` 的状态写入是否仍然正确落在当前 Flow 上。
+4. 若引入 `CreateContext`，它是否只负责图专属上下文构造，而不是复制 Flow 生命周期状态。
 5. 若引入共享运行时契约，自定义节点 skeleton 是否生成了正确签名。
 
 ## 最终判断
 
-对当前流程图机制的调整是需要的，但这是一次“运行时对象模型”和“生成契约”的调整，不是一次“文件格式”和“图结构协议”的调整。
+对当前流程图机制的调整仍然需要，但重点不再是“把运行态从 Flow 挪到 Context”，而是“把 Flow 通用运行态和图专属 Context 的职责说清楚”。
 
 更具体地说：
 
-1. 现在就应该调整 Flow 与 Context 的职责边界。
-2. 现在还不需要改动 FlowChart 文件结构。
-3. 如果短期目标只覆盖内置控制节点与迭代节点，Generator 可以先独立完成这次迁移。
-4. 如果中期目标包含自定义有状态节点，则必须补共享运行时接口，这会成为下一轮真正的机制扩展点。
+1. 现在就应该修正 Flow 与 Context 的职责边界表述。
+2. 现在还不需要改动 FlowChart 文件结构，也不需要强行搬迁 `CurrentNodeId`、`IsPaused`、`IsCompleted`、`_nodeStates`。
+3. 如果短期目标只覆盖内置控制节点与迭代节点，Generator 现有运行时模型可以继续沿用。
+4. 如果中期目标包含自定义有状态节点，则共享运行时接口仍会成为下一轮真正的机制扩展点。

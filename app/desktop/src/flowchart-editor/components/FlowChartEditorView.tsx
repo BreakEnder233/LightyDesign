@@ -382,7 +382,9 @@ export function FlowChartEditorView({ editor, workspacePath }: FlowChartEditorVi
               onOpenMetaDialog={() => handleOpenEditFlowChartDialog(editor.activeSummary?.relativePath)}
               onReload={editor.reloadActiveFlowChart}
               onResetNodePropertyValue={editor.resetNodePropertyValue}
-              onSave={editor.saveActiveFlowChart}
+              onSave={() => {
+                void editor.saveActiveFlowChart();
+              }}
               onUpdateNodePropertyValue={editor.updateNodePropertyValue}
               saveError={editor.saveError}
               saveState={editor.saveState}

@@ -17,6 +17,30 @@ const propertyRowHeight = 26;
 const portRowHeight = 24;
 const nodeBottomPadding = 10;
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isFlowChartTypeRefValue(value: unknown): value is FlowChartTypeRef {
+  return isObjectRecord(value);
+}
+
+function isBuiltinFlowChartTypeRef(typeRef: FlowChartTypeRef | null | undefined): typeRef is Extract<FlowChartTypeRef, { kind: "builtin" }> {
+  return isObjectRecord(typeRef) && typeRef.kind === "builtin" && typeof typeRef.name === "string";
+}
+
+function isCustomFlowChartTypeRef(typeRef: FlowChartTypeRef | null | undefined): typeRef is Extract<FlowChartTypeRef, { kind: "custom" }> {
+  return isObjectRecord(typeRef) && typeRef.kind === "custom" && typeof typeRef.name === "string";
+}
+
+function isListFlowChartTypeRef(typeRef: FlowChartTypeRef | null | undefined): typeRef is Extract<FlowChartTypeRef, { kind: "list" }> {
+  return isObjectRecord(typeRef) && typeRef.kind === "list" && "elementType" in typeRef;
+}
+
+function isDictionaryFlowChartTypeRef(typeRef: FlowChartTypeRef | null | undefined): typeRef is Extract<FlowChartTypeRef, { kind: "dictionary" }> {
+  return isObjectRecord(typeRef) && typeRef.kind === "dictionary" && "keyType" in typeRef && "valueType" in typeRef;
+}
+
 export function getFlowChartNodeLayoutMetrics(definition: FlowChartNodeDefinitionDocument | undefined) {
   const propertyCount = definition?.properties.length ?? 0;
   const computeCount = definition?.computePorts.length ?? 0;
@@ -59,22 +83,25 @@ export function getFlowChartNodeRect(node: FlowChartNodeInstance, definition: Fl
 }
 
 export function formatFlowChartTypeRef(typeRef: FlowChartTypeRef | null | undefined): string {
-  if (!typeRef || typeof typeRef !== "object" || !("kind" in typeRef)) {
-    return "unknown";
+  if (isBuiltinFlowChartTypeRef(typeRef)) {
+    return typeRef.name;
   }
 
-  switch (typeRef.kind) {
-    case "builtin":
-      return typeRef.name;
-    case "custom":
-      return typeRef.fullName ?? typeRef.name;
-    case "list":
-      return `List<${formatFlowChartTypeRef(typeRef.elementType)}>`;
-    case "dictionary":
-      return `Dictionary<${formatFlowChartTypeRef(typeRef.keyType)}, ${formatFlowChartTypeRef(typeRef.valueType)}>`;
-    default:
-      return "unknown";
+  if (isCustomFlowChartTypeRef(typeRef)) {
+    return typeof typeRef.fullName === "string" && typeRef.fullName.length > 0 ? typeRef.fullName : typeRef.name;
   }
+
+  if (isListFlowChartTypeRef(typeRef)) {
+    return `List<${formatFlowChartTypeRef(isFlowChartTypeRefValue(typeRef.elementType) ? typeRef.elementType : undefined)}>`;
+  }
+
+  if (isDictionaryFlowChartTypeRef(typeRef)) {
+    const keyType = isFlowChartTypeRefValue(typeRef.keyType) ? typeRef.keyType : undefined;
+    const valueType = isFlowChartTypeRefValue(typeRef.valueType) ? typeRef.valueType : undefined;
+    return `Dictionary<${formatFlowChartTypeRef(keyType)}, ${formatFlowChartTypeRef(valueType)}>`;
+  }
+
+  return "unknown";
 }
 
 export function buildFlowChartConnectionKey(connection: FlowChartConnection) {

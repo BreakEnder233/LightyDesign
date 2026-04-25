@@ -572,127 +572,148 @@ export function FlowChartSidebar({
 
       {contextMenu ? (
         <div className="tree-context-menu" ref={contextMenuRef} style={{ left: contextMenu.x, top: contextMenu.y }}>
-          {contextMenu.target.kind === "directory" ? (
-            <>
-              {!isSearchActive ? (
-                <button
-                  className="tree-context-menu-item"
-                  onClick={() => runMenuAction(() => toggleDirectory(contextMenu.target.key))}
-                  type="button"
-                >
-                  {contextMenu.target.expanded ? "折叠目录" : "展开目录"}
-                </button>
-              ) : null}
-
-              {contextMenu.target.scope === "files" ? (
-                <button
-                  className="tree-context-menu-item"
-                  onClick={() => runMenuAction(() => onOpenCreateFlowChartDialog(contextMenu.target.relativePath ?? ""))}
-                  type="button"
-                >
-                  新建流程图
-                </button>
-              ) : null}
-
-              {contextMenu.target.scope === "files" ? (
-                contextMenu.target.isRoot ? (
-                  <button
-                    className="tree-context-menu-item"
-                    disabled={getFlowChartCountInDirectory(null) === 0}
-                    onClick={() => runMenuAction(() => onOpenExportAllFlowChartsDialog())}
-                    type="button"
-                  >
-                    导出全部代码
-                  </button>
-                ) : (
-                  <button
-                    className="tree-context-menu-item"
-                    disabled={getFlowChartCountInDirectory(contextMenu.target.relativePath) === 0}
-                    onClick={() => runMenuAction(() => onOpenExportFlowChartDirectoryDialog(contextMenu.target.relativePath ?? ""))}
-                    type="button"
-                  >
-                    导出目录代码
-                  </button>
-                )
-              ) : null}
-
-              <button
-                className="tree-context-menu-item"
-                onClick={() => runMenuAction(() => onOpenCreateDirectoryDialog(contextMenu.target.scope, contextMenu.target.relativePath ?? ""))}
-                type="button"
-              >
-                新建目录
-              </button>
-
-              {!contextMenu.target.isRoot ? (
-                <button
-                  className="tree-context-menu-item"
-                  onClick={() => runMenuAction(() => onOpenRenameDirectoryDialog(contextMenu.target.scope, contextMenu.target.relativePath ?? ""))}
-                  type="button"
-                >
-                  重命名目录
-                </button>
-              ) : null}
-
-              {!contextMenu.target.isRoot ? (
-                <button
-                  className="tree-context-menu-item is-danger"
-                  onClick={() => runMenuAction(() => onRequestDeleteDirectory(contextMenu.target.scope, contextMenu.target.relativePath ?? "", contextMenu.target.label))}
-                  type="button"
-                >
-                  删除目录
-                </button>
-              ) : null}
-            </>
-          ) : null}
-
-          {contextMenu.target.kind === "flowchart-file" ? (
-            <>
-              <button
-                className="tree-context-menu-item"
-                onClick={() => runMenuAction(() => onOpenFlowChart(contextMenu.target.relativePath))}
-                type="button"
-              >
-                打开流程图
-              </button>
-              <button
-                className="tree-context-menu-item"
-                onClick={() => runMenuAction(() => onOpenEditFlowChartDialog(contextMenu.target.relativePath))}
-                type="button"
-              >
-                重命名 / 编辑元信息
-              </button>
-              <button
-                className="tree-context-menu-item"
-                onClick={() => runMenuAction(() => onOpenExportFlowChartDialog(contextMenu.target.relativePath))}
-                type="button"
-              >
-                导出流程图代码
-              </button>
-              <button
-                className="tree-context-menu-item is-danger"
-                onClick={() => runMenuAction(() => onRequestDeleteFlowChart(contextMenu.target.relativePath, contextMenu.target.label))}
-                type="button"
-              >
-                删除流程图
-              </button>
-            </>
-          ) : null}
-
-          {contextMenu.target.kind === "node-definition" ? (
-            <button
-              className="tree-context-menu-item"
-              disabled={!canAddNode}
-              onClick={() => runMenuAction(() => {
-                if (canAddNode) {
-                  void onAddNode(contextMenu.target.relativePath);
+          {contextMenu.target.kind === "directory"
+            ? (() => {
+                const target = contextMenu.target;
+                if (target.kind !== "directory") {
+                  return null;
                 }
-              })}
-              type="button"
-            >
-              添加到当前流程图
-            </button>
-          ) : null}
+
+                return (
+                  <>
+                    {!isSearchActive ? (
+                      <button className="tree-context-menu-item" onClick={() => runMenuAction(() => toggleDirectory(target.key))} type="button">
+                        {target.expanded ? "折叠目录" : "展开目录"}
+                      </button>
+                    ) : null}
+
+                    {target.scope === "files" ? (
+                      <button
+                        className="tree-context-menu-item"
+                        onClick={() => runMenuAction(() => onOpenCreateFlowChartDialog(target.relativePath ?? ""))}
+                        type="button"
+                      >
+                        新建流程图
+                      </button>
+                    ) : null}
+
+                    {target.scope === "files"
+                      ? target.isRoot
+                        ? (
+                            <button
+                              className="tree-context-menu-item"
+                              disabled={getFlowChartCountInDirectory(null) === 0}
+                              onClick={() => runMenuAction(() => onOpenExportAllFlowChartsDialog())}
+                              type="button"
+                            >
+                              导出全部代码
+                            </button>
+                          )
+                        : (
+                            <button
+                              className="tree-context-menu-item"
+                              disabled={getFlowChartCountInDirectory(target.relativePath) === 0}
+                              onClick={() => runMenuAction(() => onOpenExportFlowChartDirectoryDialog(target.relativePath ?? ""))}
+                              type="button"
+                            >
+                              导出目录代码
+                            </button>
+                          )
+                      : null}
+
+                    <button
+                      className="tree-context-menu-item"
+                      onClick={() => runMenuAction(() => onOpenCreateDirectoryDialog(target.scope, target.relativePath ?? ""))}
+                      type="button"
+                    >
+                      新建目录
+                    </button>
+
+                    {!target.isRoot ? (
+                      <button
+                        className="tree-context-menu-item"
+                        onClick={() => runMenuAction(() => onOpenRenameDirectoryDialog(target.scope, target.relativePath ?? ""))}
+                        type="button"
+                      >
+                        重命名目录
+                      </button>
+                    ) : null}
+
+                    {!target.isRoot ? (
+                      <button
+                        className="tree-context-menu-item is-danger"
+                        onClick={() => runMenuAction(() => onRequestDeleteDirectory(target.scope, target.relativePath ?? "", target.label))}
+                        type="button"
+                      >
+                        删除目录
+                      </button>
+                    ) : null}
+                  </>
+                );
+              })()
+            : null}
+
+          {contextMenu.target.kind === "flowchart-file"
+            ? (() => {
+                const target = contextMenu.target;
+                if (target.kind !== "flowchart-file") {
+                  return null;
+                }
+
+                return (
+                  <>
+                    <button className="tree-context-menu-item" onClick={() => runMenuAction(() => onOpenFlowChart(target.relativePath))} type="button">
+                      打开流程图
+                    </button>
+                    <button
+                      className="tree-context-menu-item"
+                      onClick={() => runMenuAction(() => onOpenEditFlowChartDialog(target.relativePath))}
+                      type="button"
+                    >
+                      重命名 / 编辑元信息
+                    </button>
+                    <button
+                      className="tree-context-menu-item"
+                      onClick={() => runMenuAction(() => onOpenExportFlowChartDialog(target.relativePath))}
+                      type="button"
+                    >
+                      导出流程图代码
+                    </button>
+                    <button
+                      className="tree-context-menu-item is-danger"
+                      onClick={() => runMenuAction(() => onRequestDeleteFlowChart(target.relativePath, target.label))}
+                      type="button"
+                    >
+                      删除流程图
+                    </button>
+                  </>
+                );
+              })()
+            : null}
+
+          {contextMenu.target.kind === "node-definition"
+            ? (() => {
+                const target = contextMenu.target;
+                if (target.kind !== "node-definition") {
+                  return null;
+                }
+
+                return (
+                  <button
+                    className="tree-context-menu-item"
+                    disabled={!canAddNode}
+                    onClick={() => runMenuAction(() => {
+                      if (canAddNode) {
+                        void onAddNode(target.relativePath);
+                      }
+                    })}
+                    type="button"
+                  >
+                    添加到当前流程图
+                  </button>
+                );
+              })()
+            : null}
         </div>
       ) : null}
     </aside>

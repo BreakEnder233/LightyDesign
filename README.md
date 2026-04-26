@@ -179,4 +179,4 @@ LightyDesign/
 
 ## AI 助手技能
 
-- 项目根目录包含一份 `SKILL.md`，用于指导 AI 通过 MCP/宿主 API 理解并编辑策划表（planning sheet），包含工作流、决策点、示例 prompts 与 patch 模板。参见： [SKILL.md](SKILL.md)
+- 项目根目录包含AgentSkills文件夹，内部含有各类用于提升AI使用本工具的能力。例如 `AgentSkills/lighty-design/SKILL.md`，用于指导 AI 通过 MCP/宿主 API 理解并编辑策划表（planning sheet），包含工作流、决策点、示例 prompts 与 patch 模板。参见： [SKILL.md](AgentSkills/lighty-design/SKILL.md)

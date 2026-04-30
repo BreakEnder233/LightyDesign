@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\LightyDesign.Application\LightyDesign.Application.csproj" />
     <ProjectReference Include="..\..\src\LightyDesign.Core\LightyDesign.Core.csproj" />
     <ProjectReference Include="..\..\src\LightyDesign.DesktopHost\LightyDesign.DesktopHost.csproj" />
     <ProjectReference Include="..\..\src\LightyDesign.Generator\LightyDesign.Generator.csproj" />

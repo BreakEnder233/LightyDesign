@@ -9,6 +9,7 @@
     ".NETCoreApp,Version=v9.0/win-x64": {
       "LightyDesign.DesktopHost/0.1.0": {
         "dependencies": {
+          "LightyDesign.Application": "0.1.0",
           "LightyDesign.Core": "0.1.0",
           "LightyDesign.FileProcess": "0.1.0",
           "LightyDesign.Generator": "0.1.0",
@@ -111,6 +112,19 @@
           "lib/net8.0/System.IO.Packaging.dll": {
             "assemblyVersion": "8.0.0.0",
             "fileVersion": "8.0.1024.46610"
+          }
+        }
+      },
+      "LightyDesign.Application/0.1.0": {
+        "dependencies": {
+          "LightyDesign.Core": "0.1.0",
+          "LightyDesign.FileProcess": "0.1.0",
+          "LightyDesign.Generator": "0.1.0"
+        },
+        "runtime": {
+          "LightyDesign.Application.dll": {
+            "assemblyVersion": "0.1.0.0",
+            "fileVersion": "0.1.0.0"
           }
         }
       },
@@ -222,6 +236,11 @@
       "sha512": "sha512-KYkIOAvPexQOLDxPO2g0BVoWInnQhPpkFzRqvNrNrMhVT6kqhVr0zEb6KCHlptLFukxnZrjuMVAnxK7pOGUYrw==",
       "path": "system.io.packaging/8.0.1",
       "hashPath": "system.io.packaging.8.0.1.nupkg.sha512"
+    },
+    "LightyDesign.Application/0.1.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
     },
     "LightyDesign.Core/0.1.0": {
       "type": "project",

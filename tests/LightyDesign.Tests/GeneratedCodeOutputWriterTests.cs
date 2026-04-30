@@ -1,4 +1,4 @@
-using LightyDesign.DesktopHost;
+using LightyDesign.Application;
 using LightyDesign.Generator;
 
 namespace LightyDesign.Tests;
@@ -33,8 +33,8 @@ public class GeneratedCodeOutputWriterTests
             Assert.True(File.Exists(preservedFilePath));
             Assert.True(Directory.Exists(Path.Combine(outputRootPath, GeneratedCodeOutputWriter.ExtendedDirectoryName)));
             Assert.True(File.Exists(Path.Combine(generatedOutputPath, "DesignDataReference.cs")));
-            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "ItemWorkbook.cs")));
-            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "ConsumableTable.cs")));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Workbooks", "Item", "ItemWorkbook.cs")));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Workbooks", "Item", "ConsumableTable.cs")));
             Assert.True(File.Exists(Path.Combine(generatedOutputPath, "LDD.cs")));
             Assert.False(File.Exists(Path.Combine(outputRootPath, "LDD.cs")));
         }
@@ -56,8 +56,8 @@ public class GeneratedCodeOutputWriterTests
         {
             var outputRootPath = Path.Combine(workspaceRoot, "Codegen");
             var generatedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName);
-            var existingWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Monster");
-            var targetWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Item");
+            var existingWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Workbooks", "Monster");
+            var targetWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Workbooks", "Item");
 
             Directory.CreateDirectory(existingWorkbookDirectoryPath);
             Directory.CreateDirectory(targetWorkbookDirectoryPath);
@@ -102,7 +102,7 @@ public class GeneratedCodeOutputWriterTests
             var outputRootPath = Path.Combine(workspaceRoot, "Codegen");
             var generatedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName);
             var extendedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.ExtendedDirectoryName);
-            var legacyWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Legacy");
+            var legacyWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Workbooks", "Legacy");
             var extendedUserFilePath = Path.Combine(extendedOutputPath, "ItemExtensions.cs");
 
             Directory.CreateDirectory(legacyWorkbookDirectoryPath);
@@ -137,8 +137,8 @@ public class GeneratedCodeOutputWriterTests
 
             Assert.Equal(generatedOutputPath, writtenOutputPath);
             Assert.False(Directory.Exists(legacyWorkbookDirectoryPath));
-            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "ItemWorkbook.cs")));
-            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Monster", "MonsterWorkbook.cs")));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Workbooks", "Item", "ItemWorkbook.cs")));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Workbooks", "Monster", "MonsterWorkbook.cs")));
             Assert.True(File.Exists(extendedUserFilePath));
             Assert.Contains("public static ItemWorkbook Item", entryPointContent, StringComparison.Ordinal);
             Assert.Contains("public static MonsterWorkbook Monster", entryPointContent, StringComparison.Ordinal);
@@ -209,7 +209,7 @@ public class GeneratedCodeOutputWriterTests
         {
             var outputRootPath = Path.Combine(workspaceRoot, "Codegen");
             var generatedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName);
-            var workbookDirectoryPath = Path.Combine(generatedOutputPath, "Monster");
+            var workbookDirectoryPath = Path.Combine(generatedOutputPath, "Workbooks", "Monster");
             var otherFlowChartDirectoryPath = Path.Combine(generatedOutputPath, "FlowCharts", "Files", "Combat", "Boss", "Opening");
             var targetFlowChartDirectoryPath = Path.Combine(generatedOutputPath, "FlowCharts", "Files", "Quest", "Intro");
             var oldNodeDirectoryPath = Path.Combine(generatedOutputPath, "FlowCharts", "Nodes", "Legacy");
@@ -266,7 +266,7 @@ public class GeneratedCodeOutputWriterTests
             var outputRootPath = Path.Combine(workspaceRoot, "Codegen");
             var generatedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName);
             var flowChartDirectoryPath = Path.Combine(generatedOutputPath, "FlowCharts", "Files", "Quest", "Intro");
-            var legacyWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Legacy");
+            var legacyWorkbookDirectoryPath = Path.Combine(generatedOutputPath, "Workbooks", "Legacy");
 
             Directory.CreateDirectory(flowChartDirectoryPath);
             Directory.CreateDirectory(legacyWorkbookDirectoryPath);
@@ -291,7 +291,7 @@ public class GeneratedCodeOutputWriterTests
             var entryPointContent = File.ReadAllText(Path.Combine(generatedOutputPath, "LDD.cs"));
             Assert.False(Directory.Exists(legacyWorkbookDirectoryPath));
             Assert.True(File.Exists(Path.Combine(flowChartDirectoryPath, "IntroDefinition.cs")));
-            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Item", "ItemWorkbook.cs")));
+            Assert.True(File.Exists(Path.Combine(generatedOutputPath, "Workbooks", "Item", "ItemWorkbook.cs")));
             Assert.Contains("public static ItemWorkbook Item", entryPointContent, StringComparison.Ordinal);
             Assert.Contains("public static FlowCharts.Files.Quest.Intro.IntroDefinition FlowChartQuestIntro", entryPointContent, StringComparison.Ordinal);
         }
@@ -313,7 +313,7 @@ public class GeneratedCodeOutputWriterTests
         {
             var outputRootPath = Path.Combine(workspaceRoot, "Codegen");
             var generatedOutputPath = Path.Combine(outputRootPath, GeneratedCodeOutputWriter.GeneratedDirectoryName);
-            var workbookDirectoryPath = Path.Combine(generatedOutputPath, "Item");
+            var workbookDirectoryPath = Path.Combine(generatedOutputPath, "Workbooks", "Item");
             var legacyFlowChartDirectoryPath = Path.Combine(generatedOutputPath, "FlowCharts", "Files", "Legacy", "OldFlow");
 
             Directory.CreateDirectory(workbookDirectoryPath);

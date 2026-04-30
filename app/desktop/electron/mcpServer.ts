@@ -882,113 +882,16 @@ async function patchSheetRows(args: Record<string, unknown>, context: Record<str
     throw new Error("patch_sheet_rows 至少需要一个操作。");
   }
 
-  const workbook = await loadWorkbook(target.workspacePath, target.workbookName);
-  const sheetIndex = findSheetIndex(workbook, target.sheetName);
-  if (sheetIndex < 0) {
-    throw new Error(`Sheet '${target.sheetName}' 不存在。`);
-  }
-
-  const nextWorkbook: WorkbookResponse = {
-    ...workbook,
-    sheets: workbook.sheets.map((sheet) => cloneSheet(sheet)),
-  };
-  const sheet = nextWorkbook.sheets[sheetIndex];
-  const rows = sheet.rows.map((row) => [...row]);
-  const columns = sheet.metadata.columns.map((column) => normalizeColumn(column));
-  const affectedRowIndices: number[] = [];
-  let insertedCount = 0;
-  let updatedCount = 0;
-  let deletedCount = 0;
-
-  operations.forEach((operation, operationIndex) => {
-    if (!operation || typeof operation.kind !== "string") {
-      throw new Error(`第 ${operationIndex + 1} 个行操作无效。`);
-    }
-
-    if (operation.kind === "insert") {
-      const rowIndex = Math.max(0, Math.min(rows.length, Math.trunc(getNumber(operation.rowIndex, rows.length))));
-      rows.splice(rowIndex, 0, buildInsertRow(operation, columns));
-      insertedCount += 1;
-      affectedRowIndices.push(rowIndex);
-      return;
-    }
-
-    const rowIndex = Math.trunc(getNumber(operation.rowIndex, -1));
-    if (rowIndex < 0 || rowIndex >= rows.length) {
-      throw new Error(`第 ${operationIndex + 1} 个行操作引用了无效的 rowIndex: ${operation.rowIndex ?? "<missing>"}。`);
-    }
-
-    if (operation.kind === "update") {
-      const fieldValues = normalizeFieldValues(operation.fieldValues);
-      if (operation.cells !== undefined && Object.keys(fieldValues).length > 0) {
-        throw new Error("update 操作不能同时提供 cells 和 fieldValues。");
-      }
-
-      let nextRow = ensureRowExists(rows, rowIndex, columns.length);
-      if (operation.cells !== undefined) {
-        nextRow = normalizeStringMatrixRow(operation.cells, columns.length);
-      }
-
-      if (Object.keys(fieldValues).length > 0) {
-        nextRow = applyFieldValuesToRow(nextRow, columns, fieldValues);
-      }
-
-      rows[rowIndex] = nextRow;
-      updatedCount += 1;
-      affectedRowIndices.push(rowIndex);
-      return;
-    }
-
-    if (operation.kind === "delete") {
-      rows.splice(rowIndex, 1);
-      deletedCount += 1;
-      affectedRowIndices.push(Math.min(rowIndex, Math.max(0, rows.length - 1)));
-      return;
-    }
-
-    throw new Error(`不支持的行操作: ${operation.kind}`);
-  });
-
-  sheet.rows = rows;
-  sheet.metadata = {
-    ...sheet.metadata,
-    rowCount: rows.length,
-    columnCount: columns.length,
-    columns,
-  };
-
-  if (dryRun) {
-    return {
+  return postJson(
+    `${desktopHostUrl}/api/workspace/workbooks/${encodeURIComponent(target.workbookName)}/sheets/${encodeURIComponent(target.sheetName)}/rows/patch`,
+    {
       workspacePath: target.workspacePath,
       workbookName: target.workbookName,
       sheetName: target.sheetName,
-      dryRun: true,
-      summary: {
-        insertedCount,
-        updatedCount,
-        deletedCount,
-        rowCount: rows.length,
-      },
-      previewRows: buildRowPreview(sheet, affectedRowIndices),
-    };
-  }
-
-  const savedWorkbook = await saveWorkbook(target.workspacePath, nextWorkbook);
-  const savedSheetIndex = findSheetIndex(savedWorkbook, target.sheetName);
-  const savedSheet = savedWorkbook.sheets[savedSheetIndex];
-  return {
-    workspacePath: target.workspacePath,
-    workbookName: target.workbookName,
-    sheetName: target.sheetName,
-    dryRun: false,
-    summary: {
-      insertedCount,
-      updatedCount,
-      deletedCount,
-      rowCount: savedSheet?.metadata.rowCount ?? rows.length,
+      dryRun,
+      operations,
     },
-    previewRows: savedSheet ? buildRowPreview(savedSheet, affectedRowIndices) : [],
-  };
+  );
 }
 
 async function patchSheetColumns(args: Record<string, unknown>, context: Record<string, unknown> | null) {
@@ -999,157 +902,16 @@ async function patchSheetColumns(args: Record<string, unknown>, context: Record<
     throw new Error("patch_sheet_columns 至少需要一个操作。");
   }
 
-  const workbook = await loadWorkbook(target.workspacePath, target.workbookName);
-  const sheetIndex = findSheetIndex(workbook, target.sheetName);
-  if (sheetIndex < 0) {
-    throw new Error(`Sheet '${target.sheetName}' 不存在。`);
-  }
-
-  const nextWorkbook: WorkbookResponse = {
-    ...workbook,
-    sheets: workbook.sheets.map((sheet) => cloneSheet(sheet)),
-  };
-  const sheet = nextWorkbook.sheets[sheetIndex];
-  const rows = sheet.rows.map((row) => [...row]);
-  const columns = sheet.metadata.columns.map((column) => normalizeColumn(column));
-  let insertedCount = 0;
-  let updatedCount = 0;
-  let deletedCount = 0;
-  let movedCount = 0;
-
-  operations.forEach((operation, operationIndex) => {
-    if (!operation || typeof operation.kind !== "string") {
-      throw new Error(`第 ${operationIndex + 1} 个列操作无效。`);
-    }
-
-    if (operation.kind === "insert") {
-      const nextColumn = createColumnFromOperation(operation);
-      if (getColumnIndex(columns, nextColumn.fieldName) >= 0) {
-        throw new Error(`列 '${nextColumn.fieldName}' 已存在。`);
-      }
-
-      const insertIndex = Math.max(0, Math.min(columns.length, Math.trunc(getNumber(operation.index, columns.length))));
-      columns.splice(insertIndex, 0, nextColumn);
-      const defaultValue = operation.defaultValue == null ? "" : String(operation.defaultValue);
-      rows.forEach((row, rowIndex) => {
-        const normalizedRow = Array.from({ length: Math.max(row.length, columns.length - 1) }, (_, columnIndex) => row[columnIndex] ?? "");
-        normalizedRow.splice(insertIndex, 0, defaultValue);
-        rows[rowIndex] = normalizedRow;
-      });
-      insertedCount += 1;
-      return;
-    }
-
-    if (operation.kind === "move") {
-      const sourceFieldName = getString(operation.fieldName);
-      if (!sourceFieldName) {
-        throw new Error("move 列操作缺少 fieldName。");
-      }
-
-      const sourceIndex = ensureColumnIndex(columns, sourceFieldName);
-      const targetIndex = Math.max(0, Math.min(columns.length - 1, Math.trunc(getNumber(operation.toIndex, sourceIndex))));
-      const [movedColumn] = columns.splice(sourceIndex, 1);
-      columns.splice(targetIndex, 0, movedColumn);
-      rows.forEach((row, rowIndex) => {
-        const normalizedRow = Array.from({ length: Math.max(row.length, columns.length) }, (_, columnIndex) => row[columnIndex] ?? "");
-        const [movedValue] = normalizedRow.splice(sourceIndex, 1);
-        normalizedRow.splice(targetIndex, 0, movedValue ?? "");
-        rows[rowIndex] = normalizedRow;
-      });
-      movedCount += 1;
-      return;
-    }
-
-    const targetFieldName = getString(operation.targetFieldName) ?? getString(operation.fieldName);
-    if (!targetFieldName) {
-      throw new Error(`第 ${operationIndex + 1} 个列操作缺少 fieldName。`);
-    }
-
-    const columnIndex = ensureColumnIndex(columns, targetFieldName);
-
-    if (operation.kind === "update") {
-      const existingColumn = columns[columnIndex];
-      const nextFieldName = getString(operation.fieldName) ?? existingColumn.fieldName;
-      const nextType = getString(operation.type) ?? existingColumn.type;
-      const nextDisplayName = operation.displayName === undefined
-        ? existingColumn.displayName ?? null
-        : getString(operation.displayName);
-      const nextAttributes = {
-        ...existingColumn.attributes,
-        ...asRecord(operation.attributes),
-      };
-
-      if (nextFieldName !== existingColumn.fieldName && getColumnIndex(columns, nextFieldName) >= 0) {
-        throw new Error(`列 '${nextFieldName}' 已存在，不能重命名为重复字段。`);
-      }
-
-      columns[columnIndex] = {
-        ...existingColumn,
-        fieldName: nextFieldName,
-        type: nextType,
-        displayName: nextDisplayName,
-        attributes: nextAttributes,
-      };
-      updatedCount += 1;
-      return;
-    }
-
-    if (operation.kind === "delete") {
-      columns.splice(columnIndex, 1);
-      rows.forEach((row, rowIndex) => {
-        const normalizedRow = [...row];
-        normalizedRow.splice(columnIndex, 1);
-        rows[rowIndex] = normalizedRow;
-      });
-      deletedCount += 1;
-      return;
-    }
-
-    throw new Error(`不支持的列操作: ${operation.kind}`);
-  });
-
-  sheet.rows = rows.map((row) => Array.from({ length: columns.length }, (_, columnIndex) => row[columnIndex] ?? ""));
-  sheet.metadata = {
-    ...sheet.metadata,
-    rowCount: rows.length,
-    columnCount: columns.length,
-    columns,
-  };
-
-  if (dryRun) {
-    return {
+  return postJson(
+    `${desktopHostUrl}/api/workspace/workbooks/${encodeURIComponent(target.workbookName)}/sheets/${encodeURIComponent(target.sheetName)}/columns/patch`,
+    {
       workspacePath: target.workspacePath,
       workbookName: target.workbookName,
       sheetName: target.sheetName,
-      dryRun: true,
-      summary: {
-        insertedCount,
-        updatedCount,
-        deletedCount,
-        movedCount,
-        columnCount: columns.length,
-      },
-      schema: summarizeSheetSchema(sheet),
-    };
-  }
-
-  const savedWorkbook = await saveWorkbook(target.workspacePath, nextWorkbook);
-  const savedSheetIndex = findSheetIndex(savedWorkbook, target.sheetName);
-  const savedSheet = savedWorkbook.sheets[savedSheetIndex];
-  return {
-    workspacePath: target.workspacePath,
-    workbookName: target.workbookName,
-    sheetName: target.sheetName,
-    dryRun: false,
-    summary: {
-      insertedCount,
-      updatedCount,
-      deletedCount,
-      movedCount,
-      columnCount: savedSheet?.metadata.columnCount ?? columns.length,
+      dryRun,
+      operations,
     },
-    schema: savedSheet ? summarizeSheetSchema(savedSheet) : summarizeSheetSchema(sheet),
-  };
+  );
 }
 
 async function handleToolCall(name: string, rawArguments: unknown) {

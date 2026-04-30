@@ -20,6 +20,38 @@ Tooling 子系统主要对应 ShellFiles 和仓库级开发辅助配置，用于
 2. 发布说明模板与更完整的发版编排。
 3. 自动化版本号管理。
 
+## 大规模更改后自动打包规则
+
+完成涉及以下任意一项的大规模更改后，**必须**在本地构建 Windows 安装器，并在完成后将绝对路径发送给用户：
+
+1. 修改了 Core 协议层（工作区模型、引用模型、惰性值解析、validation 等）。
+2. 修改了 DesktopHost API（新增/变更接口、修改宿主行为）。
+3. 修改了 Electron 桌面壳（主进程、预加载脚本、渲染进程关键流程）。
+4. 修改了 FileProcess 导入导出逻辑。
+5. 修改了 Generator 代码生成逻辑。
+6. 修改了 ShellFiles 中的构建/部署脚本。
+
+**例外情况**：如果用户明确说了”不需要打安装包”、”不用打包”、”don't build package”或类似表达，则跳过本地打包步骤。
+
+**打包命令**：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Build-LightyDesignInstaller.ps1
+```
+
+如在非中国大陆网络环境，也可不加 `-UseChinaMirror`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ShellFiles\Build-LightyDesignInstaller.ps1
+```
+
+打包完成后，安装器默认输出到 `app\desktop\dist-installer`，产物包括：
+
+- `LightyDesign Setup x.y.z.exe`（NSIS 安装器）
+- `latest.yml`（electron-updater 更新元数据）
+
+如果构建过程中出现网络超时（如 `winCodeSign`、`nsis` 资源下载失败），可重试并追加 `-UseChinaMirror` 参数使用国内镜像源。
+
 ## 当前状态结论
 
-Tooling 现在已经覆盖“本地开发引导”、“目录级部署产物生成”、“Windows 安装器构建”和“GitHub Actions 自动打包”四条链路。当前已经可以稳定产出独立运行目录和可覆盖安装的 Windows 安装器，并通过 CI 快速分发到 GitHub Release。
+Tooling 现在已经覆盖”本地开发引导”、”目录级部署产物生成”、”Windows 安装器构建”、”大规模更改后自动打包规则”和”GitHub Actions 自动打包”五条链路。当前已经可以稳定产出独立运行目录和可覆盖安装的 Windows 安装器，并通过 CI 快速分发到 GitHub Release。

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using LightyDesign.Core;
-using LightyDesign.DesktopHost;
+using LightyDesign.Application;
 using LightyDesign.Generator;
 
 namespace LightyDesign.Tests;

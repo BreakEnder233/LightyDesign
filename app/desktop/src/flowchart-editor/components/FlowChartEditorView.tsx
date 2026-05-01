@@ -465,6 +465,7 @@ export function FlowChartEditorView({
                 onCompleteConnection={editor.completePendingConnection}
                 onDeleteSelection={editor.deleteSelection}
                 onDisconnectPort={editor.disconnectPort}
+                onPushUndoEntry={editor.pushUndoEntry}
                 onMoveSelectedNodes={editor.moveSelectedNodes}
                 onOpenAddNodeDialog={(position) => handleOpenNodeDialog(undefined, position)}
                 onAlignSelectedNodes={editor.alignSelectedNodes}

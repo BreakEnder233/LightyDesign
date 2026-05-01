@@ -56,6 +56,7 @@ type FlowChartCanvasProps = {
   onSelectConnection: (kind: FlowChartConnectionKind, connectionKey: string, mode?: SelectionMode) => void;
   onClearSelection: () => void;
   onDeleteSelection: () => void;
+  onPushUndoEntry: () => void;
   onMoveSelectedNodes: (nodeIds: number[], delta: { x: number; y: number }) => void;
   onBeginConnection: (kind: FlowChartConnectionKind, sourceNodeId: number, sourcePortId: number) => void;
   onCompleteConnection: (targetNodeId: number, targetPortId: number) => void;
@@ -261,6 +262,7 @@ export const FlowChartCanvas = forwardRef<FlowChartCanvasHandle, FlowChartCanvas
   onSelectConnection,
   onClearSelection,
   onDeleteSelection,
+  onPushUndoEntry,
   onMoveSelectedNodes,
   onBeginConnection,
   onCompleteConnection,
@@ -803,6 +805,7 @@ export const FlowChartCanvas = forwardRef<FlowChartCanvasHandle, FlowChartCanvas
       onSelectNode(node.nodeId, "replace");
     }
 
+    onPushUndoEntry();
     setDragState({
       nodeIds: dragNodeIds,
       lastX: point.x,

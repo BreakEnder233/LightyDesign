@@ -404,6 +404,24 @@ function App() {
         run: flowChartEditor.pasteClipboard,
       },
       {
+        id: "undo-flowchart-edit",
+        label: "撤销流程图编辑",
+        hint: "Ctrl+Z",
+        enabled: flowChartEditor.canUndo,
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "z",
+        run: flowChartEditor.undo,
+      },
+      {
+        id: "redo-flowchart-edit",
+        label: "恢复流程图编辑",
+        hint: "Ctrl+Y / Ctrl+Shift+Z",
+        enabled: flowChartEditor.canRedo,
+        matches: (event) =>
+          isShortcutModifierPressed(event) &&
+          ((event.key.toLowerCase() === "y" && !event.shiftKey) || (event.key.toLowerCase() === "z" && event.shiftKey)),
+        run: flowChartEditor.redo,
+      },
+      {
         id: "delete-selected-flowchart-item",
         label: "删除当前流程图选择",
         hint: "Delete",

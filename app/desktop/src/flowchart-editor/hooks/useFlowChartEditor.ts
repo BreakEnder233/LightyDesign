@@ -86,6 +86,11 @@ type FlowChartAssetScope = "nodes" | "files";
 type FlowChartAlignMode = "left" | "center" | "right" | "top" | "middle" | "bottom";
 type FlowChartDistributionAxis = "horizontal" | "vertical";
 
+type FlowChartUndoEntry = {
+  document: FlowChartFileDocument;
+  selection: FlowChartSelection;
+};
+
 function buildEmptySelection(): FlowChartSelection {
   return {
     nodeIds: [],
@@ -423,6 +428,8 @@ export function useFlowChartEditor({
     snapshot: null,
     pasteSequence: 0,
   });
+  const [undoStack, setUndoStack] = useState<FlowChartUndoEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<FlowChartUndoEntry[]>([]);
 
   const activeSummary = activeFlowChartState.status === "ready" ? activeFlowChartState.response : null;
   const activeDocument = activeFlowChartState.status === "ready" ? activeFlowChartState.document : null;
@@ -481,6 +488,8 @@ export function useFlowChartEditor({
   const hasSelection = selection.nodeIds.length > 0 || selectedConnectionCount > 0;
   const canSaveActiveFlowChart = activeFlowChartState.status === "ready" && saveState !== "saving";
   const canPasteClipboard = clipboardStateRef.current.snapshot !== null && activeFlowChartState.status === "ready";
+  const canUndo = undoStack.length > 0;
+  const canRedo = redoStack.length > 0;
 
   const applyCatalog = useCallback((nextCatalog: FlowChartCatalogResponse) => {
     setCatalog(nextCatalog);
@@ -495,6 +504,8 @@ export function useFlowChartEditor({
     setPendingConnection(null);
     setSaveState("idle");
     setSaveError(null);
+    setUndoStack([]);
+    setRedoStack([]);
   }, []);
 
   const loadFlowChartFile = useCallback(
@@ -662,6 +673,8 @@ export function useFlowChartEditor({
     let cancelled = false;
     setActiveFlowChartState({ status: "loading", dirty: false });
     setSelection(buildEmptySelection());
+    setUndoStack([]);
+    setRedoStack([]);
     setPendingConnection(null);
     setSaveState("idle");
     setSaveError(null);
@@ -689,6 +702,8 @@ export function useFlowChartEditor({
           response,
           document: cloneFlowChartFileDocument(response.document),
         });
+        setUndoStack([]);
+        setRedoStack([]);
       })
       .catch((error) => {
         if (cancelled) {
@@ -1048,6 +1063,7 @@ export function useFlowChartEditor({
           ? { x: selectionBounds.maxX + 104, y: selectionBounds.minY + 24 }
           : { x: 120 + activeDocument.nodes.length * 18, y: 96 + activeDocument.nodes.length * 18 });
 
+      pushUndoEntry();
       updateActiveDocument((document) => {
         document.nodes.push({
           nodeId: nextNodeId,
@@ -1370,6 +1386,7 @@ export function useFlowChartEditor({
             ? Math.max(...selectedRects.map((entry) => entry.rect.y + entry.rect.height))
             : null;
 
+      pushUndoEntry();
       updateActiveDocument((document) => {
         document.nodes.forEach((node) => {
           if (!selectedNodeIds.has(node.nodeId)) {
@@ -1426,6 +1443,7 @@ export function useFlowChartEditor({
         positionByNodeId.set(node.nodeId, start + step * index);
       });
 
+      pushUndoEntry();
       updateActiveDocument((document) => {
         document.nodes.forEach((node) => {
           const targetCenter = positionByNodeId.get(node.nodeId);
@@ -1558,6 +1576,7 @@ export function useFlowChartEditor({
           });
       });
 
+    pushUndoEntry();
     updateActiveDocument((document) => {
       document.nodes.forEach((node) => {
         const nextPosition = nextPositions.get(node.nodeId);
@@ -1575,6 +1594,7 @@ export function useFlowChartEditor({
 
   const updateNodePropertyValue = useCallback(
     (nodeId: number, propertyId: number, value: unknown) => {
+      pushUndoEntry();
       updateActiveDocument((document) => {
         const node = document.nodes.find((candidate) => candidate.nodeId === nodeId);
         if (!node) {
@@ -1589,6 +1609,7 @@ export function useFlowChartEditor({
 
   const resetNodePropertyValue = useCallback(
     (nodeId: number, propertyId: number) => {
+      pushUndoEntry();
       updateActiveDocument((document) => {
         const node = document.nodes.find((candidate) => candidate.nodeId === nodeId);
         if (!node) {
@@ -1610,6 +1631,7 @@ export function useFlowChartEditor({
     const selectedFlowKeys = new Set(selection.flowConnectionKeys);
     const selectedComputeKeys = new Set(selection.computeConnectionKeys);
 
+    pushUndoEntry();
     updateActiveDocument((document) => {
       document.nodes = document.nodes.filter((node) => !selectedNodeIds.has(node.nodeId));
       document.flowConnections = document.flowConnections.filter((connection) => {
@@ -1631,6 +1653,7 @@ export function useFlowChartEditor({
       return;
     }
 
+    pushUndoEntry();
     setSelection(buildNodeSelection([selectedNode.nodeId], "replace", buildEmptySelection(), selectedNode.nodeId));
     updateActiveDocument((document) => {
       document.nodes = document.nodes.filter((node) => node.nodeId !== selectedNode.nodeId);
@@ -1649,6 +1672,7 @@ export function useFlowChartEditor({
       return;
     }
 
+    pushUndoEntry();
     const connectionKey = buildFlowChartConnectionKey(selectedConnectionItem.connection);
     updateActiveDocument((document) => {
       if (selectedConnectionItem.kind === "flow") {
@@ -1693,6 +1717,7 @@ export function useFlowChartEditor({
         return current;
       });
 
+      pushUndoEntry();
       updateActiveDocument((document) => {
         if (kind === "flow") {
           document.flowConnections = document.flowConnections.filter(
@@ -1769,6 +1794,7 @@ export function useFlowChartEditor({
       };
       const nextKey = buildFlowChartConnectionKey(nextConnection);
 
+      pushUndoEntry();
       updateActiveDocument((document) => {
         const connections = pendingConnection.kind === "flow" ? document.flowConnections : document.computeConnections;
         // 检查是否已存在完全相同的连线，防止重复
@@ -1871,6 +1897,7 @@ export function useFlowChartEditor({
       };
     };
 
+    pushUndoEntry();
     updateActiveDocument((document) => {
       document.nodes.push(...nextNodes);
       document.flowConnections.push(...snapshot.flowConnections.map(remapConnection).filter((value): value is FlowChartConnection => value !== null));
@@ -1881,6 +1908,82 @@ export function useFlowChartEditor({
     setSelection(buildNodeSelection(nextNodeIds, "replace", buildEmptySelection(), nextNodeIds[0]));
     return true;
   }, [activeFlowChartState, updateActiveDocument]);
+
+  const pushUndoEntry = useCallback(() => {
+    if (!activeDocument) {
+      return;
+    }
+
+    setUndoStack((prev) => {
+      const next = [
+        ...prev,
+        {
+          document: cloneFlowChartFileDocument(activeDocument),
+          selection: JSON.parse(JSON.stringify(selection)) as FlowChartSelection,
+        },
+      ];
+      return next.length <= 50 ? next : next.slice(next.length - 50);
+    });
+    setRedoStack([]);
+  }, [activeDocument, selection]);
+
+  const undo = useCallback(() => {
+    const entry = undoStack[undoStack.length - 1];
+    if (!entry) {
+      return;
+    }
+
+    const currentEntry: FlowChartUndoEntry = {
+      document: cloneFlowChartFileDocument(activeDocument!),
+      selection: JSON.parse(JSON.stringify(selection)) as FlowChartSelection,
+    };
+
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev, currentEntry]);
+
+    const restoredDoc = cloneFlowChartFileDocument(entry.document);
+    setActiveFlowChartState((prev) => {
+      if (prev.status !== "ready") return prev;
+      return {
+        ...prev,
+        dirty: true,
+        document: restoredDoc,
+        response: { ...prev.response, document: restoredDoc },
+      };
+    });
+    setSelection(entry.selection);
+    setSaveState("idle");
+    setSaveError(null);
+  }, [undoStack, activeDocument, selection]);
+
+  const redo = useCallback(() => {
+    const entry = redoStack[redoStack.length - 1];
+    if (!entry) {
+      return;
+    }
+
+    const currentEntry: FlowChartUndoEntry = {
+      document: cloneFlowChartFileDocument(activeDocument!),
+      selection: JSON.parse(JSON.stringify(selection)) as FlowChartSelection,
+    };
+
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev, currentEntry]);
+
+    const restoredDoc = cloneFlowChartFileDocument(entry.document);
+    setActiveFlowChartState((prev) => {
+      if (prev.status !== "ready") return prev;
+      return {
+        ...prev,
+        dirty: true,
+        document: restoredDoc,
+        response: { ...prev.response, document: restoredDoc },
+      };
+    });
+    setSelection(entry.selection);
+    setSaveState("idle");
+    setSaveError(null);
+  }, [redoStack, activeDocument, selection]);
 
   const selectAll = useCallback(() => {
     if (!activeDocument) {
@@ -2269,6 +2372,11 @@ export function useFlowChartEditor({
     saveError,
     canSaveActiveFlowChart,
     canPasteClipboard,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    pushUndoEntry,
     clipboardVersion,
     workspaceCodegenOutputRelativePath: workspaceCodegenOutputRelativePath ?? "",
     createFlowChart,

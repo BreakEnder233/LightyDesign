@@ -742,7 +742,7 @@ export function useFlowChartEditor({
 
     const sourceDefinition = resolvedDefinitionsByType[sourceNode.nodeType];
     const sourcePort = getFlowChartPortDescriptor(sourceDefinition, pendingConnection.kind, pendingConnection.sourcePortId);
-    if (!sourcePort || sourcePort.direction !== "output") {
+    if (!sourcePort) {
       setPendingConnection(null);
     }
   }, [activeDocument, pendingConnection, resolvedDefinitionsByType]);
@@ -1677,6 +1677,42 @@ export function useFlowChartEditor({
     setPendingConnection(null);
   }, []);
 
+  const disconnectPort = useCallback(
+    (nodeId: number, kind: FlowChartConnectionKind, portId: number) => {
+      // If there is a pending connection involving this port, cancel it
+      setPendingConnection((current) => {
+        if (
+          current
+          && current.kind === kind
+          && current.sourceNodeId === nodeId
+          && current.sourcePortId === portId
+        ) {
+          return null;
+        }
+
+        return current;
+      });
+
+      updateActiveDocument((document) => {
+        if (kind === "flow") {
+          document.flowConnections = document.flowConnections.filter(
+            (connection) =>
+              !(connection.sourceNodeId === nodeId && connection.sourcePortId === portId)
+              && !(connection.targetNodeId === nodeId && connection.targetPortId === portId),
+          );
+          return;
+        }
+
+        document.computeConnections = document.computeConnections.filter(
+          (connection) =>
+            !(connection.sourceNodeId === nodeId && connection.sourcePortId === portId)
+            && !(connection.targetNodeId === nodeId && connection.targetPortId === portId),
+        );
+      });
+    },
+    [updateActiveDocument],
+  );
+
   const completePendingConnection = useCallback(
     (targetNodeId: number, targetPortId: number) => {
       if (!activeDocument || !pendingConnection) {
@@ -1694,22 +1730,55 @@ export function useFlowChartEditor({
       const targetDefinition = resolvedDefinitionsByType[targetNode.nodeType];
       const sourcePort = getFlowChartPortDescriptor(sourceDefinition, pendingConnection.kind, pendingConnection.sourcePortId);
       const targetPort = getFlowChartPortDescriptor(targetDefinition, pendingConnection.kind, targetPortId);
-      if (!sourcePort || sourcePort.direction !== "output" || !targetPort || targetPort.direction !== "input") {
+      if (!sourcePort || !targetPort) {
+        setPendingConnection(null);
+        return;
+      }
+
+      // Determine the actual source (output port) and target (input port).
+      // The user may have started the connection from either an output or input port,
+      // so we need to swap if needed to ensure the connection flows output → input.
+      let actualSourceNodeId: number;
+      let actualSourcePortId: number;
+      let actualTargetNodeId: number;
+      let actualTargetPortId: number;
+
+      if (sourcePort.direction === "output" && targetPort.direction === "input") {
+        // Normal case: started from output, ended on input
+        actualSourceNodeId = sourceNode.nodeId;
+        actualSourcePortId = pendingConnection.sourcePortId;
+        actualTargetNodeId = targetNodeId;
+        actualTargetPortId = targetPortId;
+      } else if (sourcePort.direction === "input" && targetPort.direction === "output") {
+        // Reversed case: started from input, ended on output — swap
+        actualSourceNodeId = targetNodeId;
+        actualSourcePortId = targetPortId;
+        actualTargetNodeId = sourceNode.nodeId;
+        actualTargetPortId = pendingConnection.sourcePortId;
+      } else {
+        // Both ports are the same direction — invalid connection
         setPendingConnection(null);
         return;
       }
 
       const nextConnection: FlowChartConnection = {
-        sourceNodeId: sourceNode.nodeId,
-        sourcePortId: pendingConnection.sourcePortId,
-        targetNodeId,
-        targetPortId,
+        sourceNodeId: actualSourceNodeId,
+        sourcePortId: actualSourcePortId,
+        targetNodeId: actualTargetNodeId,
+        targetPortId: actualTargetPortId,
       };
       const nextKey = buildFlowChartConnectionKey(nextConnection);
 
       updateActiveDocument((document) => {
         const connections = pendingConnection.kind === "flow" ? document.flowConnections : document.computeConnections;
-        if (connections.some((connection) => buildFlowChartConnectionKey(connection) === nextKey)) {
+        // 检查是否已存在完全相同的连线，防止重复
+        if (connections.some(
+          (connection) =>
+            connection.sourceNodeId === nextConnection.sourceNodeId
+            && connection.sourcePortId === nextConnection.sourcePortId
+            && connection.targetNodeId === nextConnection.targetNodeId
+            && connection.targetPortId === nextConnection.targetPortId,
+        )) {
           return;
         }
 
@@ -2228,6 +2297,7 @@ export function useFlowChartEditor({
     beginConnection,
     cancelPendingConnection,
     completePendingConnection,
+    disconnectPort,
     reloadNodeDefinitions,
     reloadCatalog,
     reloadActiveFlowChart,

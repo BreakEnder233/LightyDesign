@@ -2,43 +2,40 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+/* ── Compact single-row header ── */
 .flowchart-header-bar {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px;
-}
-
-.flowchart-header-topline {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  min-height: 40px;
 }
 
 .flowchart-header-copy {
-  min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.flowchart-header-copy .eyebrow {
+  margin: 0;
+  flex: 0 0 auto;
 }
 
 .flowchart-header-copy strong {
   color: #dcdcdc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.flowchart-header-meta {
+.flowchart-header-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 6px;
-}
-
-.flowchart-header-grid {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(320px, 0.95fr) minmax(340px, 1.05fr);
-  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .flowchart-editor-body {
@@ -47,10 +44,6 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-}
-
-.flowchart-header-action {
-  min-height: 26px;
 }
 
 .flowchart-editor-canvas-panel {
@@ -838,4 +831,193 @@
     width: 180px;
     height: 136px;
   }
+}
+
+/* ── Canvas toolbar ── */
+.flowchart-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  background: #2a2a2a;
+  border-bottom: 1px solid #3c3c3c;
+  flex: 0 0 auto;
+}
+
+.flowchart-canvas-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.flowchart-canvas-toolbar-separator {
+  width: 1px;
+  height: 18px;
+  background: #3c3c3c;
+  margin: 0 6px;
+}
+
+.flowchart-canvas-toolbar-action {
+  min-height: 26px;
+  min-width: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #cccccc;
+  font-size: 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.flowchart-canvas-toolbar-action:hover {
+  border-color: #4f4f4f;
+  background: #313131;
+}
+
+.flowchart-canvas-toolbar-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.flowchart-canvas-toolbar-action svg {
+  display: block;
+}
+
+.flowchart-zoom-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid #3c3c3c;
+  background: #1f1f1f;
+  color: #dcdcdc;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 2px;
+  cursor: default;
+  user-select: none;
+}
+
+/* ── Floating Inspector ── */
+.flowchart-floating-inspector {
+  position: fixed;
+  z-index: 30;
+  min-width: 280px;
+  max-width: 420px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  border: 1px solid #3c3c3c;
+  background: rgba(37, 37, 38, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.flowchart-floating-inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #333333;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.flowchart-floating-inspector-header:active {
+  cursor: grabbing;
+}
+
+.flowchart-floating-inspector-header .section-header {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.flowchart-floating-inspector-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #8b8b8b;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.flowchart-floating-inspector-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #dcdcdc;
+}
+
+.flowchart-floating-inspector-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+/* ── Leaf vs Directory tree distinction ── */
+.flowchart-tree-row-directory {
+  border: 1px solid #333333;
+}
+
+.flowchart-tree-row-leaf {
+  border: none;
+  background: transparent;
+}
+
+.flowchart-tree-row-leaf:hover {
+  background: #252526;
+}
+
+.flowchart-tree-row-leaf.is-selected {
+  background: #0f2434;
+  border: none;
+  box-shadow: inset 2px 0 0 #007acc;
+}
+
+/* ── Inline SVG icon helper ── */
+.flowchart-svg-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.flowchart-tree-expander svg,
+.flowchart-tree-expander.is-leaf svg {
+  display: block;
+}
+
+/* ── Checkbox-like select for boolean ── */
+.flowchart-boolean-select {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #3c3c3c;
+  background: #1f1f1f;
+  color: #dcdcdc;
+  border-radius: 2px;
+  font-size: 13px;
+}
+
+.flowchart-boolean-select:focus {
+  border-color: #007acc;
+  outline: none;
 }

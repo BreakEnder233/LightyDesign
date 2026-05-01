@@ -104,7 +104,7 @@ function buildSidebarPreferenceKey(workspacePath: string) {
   return `lightydesign.workspacePath:${workspacePath}:flowchart-sidebar-expanded-v1`;
 }
 
-const minSidebarWidth = 280;
+const minSidebarWidth = 220;
 const maxSidebarWidth = 520;
 
 function clampSidebarWidth(width: number) {
@@ -415,7 +415,8 @@ export function FlowChartSidebar({
   const activeKeyword = activeTab === "files" ? filesKeyword : nodesKeyword;
   const activeSearchText = activeTab === "files" ? filesSearchText : nodesSearchText;
   const activeTree = activeTab === "files" ? filesTree : nodesTree;
-  const hasVisibleEntries = Boolean(activeTree && activeTree.children.length > 0);
+  const activeTreeDir = activeTree?.kind === "directory" ? activeTree : null;
+  const hasVisibleEntries = Boolean(activeTreeDir && activeTreeDir.children.length > 0);
   const isSearchActive = activeKeyword.length > 0;
 
   function setActiveSearchText(value: string) {
@@ -497,7 +498,17 @@ export function FlowChartSidebar({
             style={{ paddingLeft: 10 + depth * 18 }}
             type="button"
           >
-            <span className="flowchart-tree-expander">{isExpanded ? "v" : ">"}</span>
+            <span className="flowchart-tree-expander">
+              {isExpanded ? (
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                  <path d="M1 3l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              ) : (
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                  <path d="M3 1l3 3-3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </span>
             <span className="flowchart-tree-label">{entry.name}</span>
             {entry.count !== null ? <span className="badge">{entry.count}</span> : null}
           </button>
@@ -534,7 +545,11 @@ export function FlowChartSidebar({
           title={entry.relativePath}
           type="button"
         >
-          <span className="flowchart-tree-expander is-leaf">•</span>
+          <span className="flowchart-tree-expander is-leaf">
+            <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
+              <circle cx="3" cy="3" r="2" fill="currentColor" opacity="0.5"/>
+            </svg>
+          </span>
           <span className="flowchart-tree-copy">
             <strong>{entry.label}</strong>
           </span>
@@ -563,7 +578,11 @@ export function FlowChartSidebar({
         title={entry.relativePath}
         type="button"
       >
-        <span className="flowchart-tree-expander is-leaf">•</span>
+        <span className="flowchart-tree-expander is-leaf">
+          <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
+            <circle cx="3" cy="3" r="2" fill="currentColor" opacity="0.5"/>
+          </svg>
+        </span>
         <span className="flowchart-tree-copy">
           <strong>{entry.label}</strong>
         </span>

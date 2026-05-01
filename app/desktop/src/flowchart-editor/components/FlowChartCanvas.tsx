@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react";
 
 import { clampContextMenuPosition } from "../../utils/appHelpers";
 
@@ -60,11 +60,22 @@ type FlowChartCanvasProps = {
   onBeginConnection: (kind: FlowChartConnectionKind, sourceNodeId: number, sourcePortId: number) => void;
   onCompleteConnection: (targetNodeId: number, targetPortId: number) => void;
   onCancelPendingConnection: () => void;
+  onDisconnectPort: (nodeId: number, kind: FlowChartConnectionKind, portId: number) => void;
   onOpenAddNodeDialog: (position?: CanvasPoint) => void;
   onAlignSelectedNodes: (mode: AlignMode) => void;
   onDistributeSelectedNodes: (axis: DistributionAxis) => void;
   onAutoLayoutNodes: () => void;
   selectedNodeCount: number;
+  /** Called whenever zoom or viewOrigin changes, so parent can sync toolbar display */
+  onViewTransformChange?: (transform: { zoom: number; viewOrigin: CanvasPoint }) => void;
+};
+
+export type FlowChartCanvasHandle = {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomToFit: () => void;
+  getZoom: () => number;
+  getViewOrigin: () => CanvasPoint;
 };
 
 const minZoom = 0.5;
@@ -237,7 +248,7 @@ function rectIntersectsNode(
   );
 }
 
-export function FlowChartCanvas({
+export const FlowChartCanvas = forwardRef<FlowChartCanvasHandle, FlowChartCanvasProps>(function FlowChartCanvas({
   status,
   errorMessage,
   documentKey,
@@ -254,12 +265,14 @@ export function FlowChartCanvas({
   onBeginConnection,
   onCompleteConnection,
   onCancelPendingConnection,
+  onDisconnectPort,
   onOpenAddNodeDialog,
   onAlignSelectedNodes,
   onDistributeSelectedNodes,
   onAutoLayoutNodes,
   selectedNodeCount,
-}: FlowChartCanvasProps) {
+  onViewTransformChange,
+}: FlowChartCanvasProps, ref: React.ForwardedRef<FlowChartCanvasHandle>) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const minimapRef = useRef<HTMLDivElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
@@ -326,8 +339,8 @@ export function FlowChartCanvas({
     [stageOrigin.x, stageOrigin.y, viewOrigin.x, viewOrigin.y, zoom],
   );
   const minimapBounds = useMemo(
-    () => expandCanvasBounds(unionCanvasBounds(documentBounds, viewportBounds), minimapPadding),
-    [documentBounds, viewportBounds],
+    () => expandCanvasBounds(documentBounds, minimapPadding),
+    [documentBounds],
   );
   const minimapRect = useMemo(() => buildCanvasRect(minimapBounds), [minimapBounds]);
   const minimapOrigin = useMemo(() => ({ x: minimapBounds.minX, y: minimapBounds.minY }), [minimapBounds.minX, minimapBounds.minY]);
@@ -338,9 +351,13 @@ export function FlowChartCanvas({
       return;
     }
 
-    setViewportSize({
-      width: viewport.clientWidth,
-      height: viewport.clientHeight,
+    const nextWidth = viewport.clientWidth;
+    const nextHeight = viewport.clientHeight;
+    setViewportSize((current) => {
+      if (current.width === nextWidth && current.height === nextHeight) {
+        return current;
+      }
+      return { width: nextWidth, height: nextHeight };
     });
   }, []);
 
@@ -388,15 +405,78 @@ export function FlowChartCanvas({
     [viewOrigin.x, viewOrigin.y, zoom],
   );
 
+  const zoomIn = useCallback(() => {
+    zoomAt(zoom * 1.2);
+  }, [zoom, zoomAt]);
+
+  const zoomOut = useCallback(() => {
+    zoomAt(zoom * 0.8);
+  }, [zoom, zoomAt]);
+
+  const zoomToFit = useCallback(() => {
+    const bounds = documentBounds;
+    if (bounds.minX === 0 && bounds.minY === 0 && bounds.maxX === 0 && bounds.maxY === 0) {
+      return;
+    }
+
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const docWidth = bounds.maxX - bounds.minX;
+    const docHeight = bounds.maxY - bounds.minY;
+    if (docWidth <= 0 || docHeight <= 0) {
+      return;
+    }
+
+    const padding = 80;
+    const scaleX = (viewport.clientWidth - padding * 2) / docWidth;
+    const scaleY = (viewport.clientHeight - padding * 2) / docHeight;
+    const fitZoom = clampZoom(Math.min(scaleX, scaleY));
+
+    setZoom(fitZoom);
+    setViewOrigin({
+      x: bounds.minX - (viewport.clientWidth / fitZoom - docWidth) / 2,
+      y: bounds.minY - (viewport.clientHeight / fitZoom - docHeight) / 2,
+    });
+  }, [documentBounds]);
+
+  // Notify parent of zoom/viewport changes for toolbar sync
+  // Use a ref to avoid depending on the callback identity, which is an inline
+  // function from FlowChartEditorView and would create an infinite re-render loop.
+  const onViewTransformChangeRef = useRef(onViewTransformChange);
+  onViewTransformChangeRef.current = onViewTransformChange;
+  useEffect(() => {
+    if (onViewTransformChangeRef.current) {
+      onViewTransformChangeRef.current({ zoom, viewOrigin });
+    }
+  }, [zoom, viewOrigin]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      zoomIn,
+      zoomOut,
+      zoomToFit,
+      getZoom: () => zoom,
+      getViewOrigin: () => viewOrigin,
+    }),
+    [zoomIn, zoomOut, zoomToFit, zoom, viewOrigin],
+  );
+
   useLayoutEffect(() => {
     updateViewportSize();
-  }, [updateViewportSize]);
+  });
 
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
       return;
     }
+
+    // Re-measure whenever the viewport becomes available or the document changes
+    updateViewportSize();
 
     const resizeObserver = new ResizeObserver(() => {
       updateViewportSize();
@@ -408,7 +488,7 @@ export function FlowChartCanvas({
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateViewportSize);
     };
-  }, [updateViewportSize]);
+  }, [updateViewportSize, documentKey]);
 
   useEffect(() => {
     if (!dragState && !marqueeState && !panState && !minimapDragState) {
@@ -603,12 +683,24 @@ export function FlowChartCanvas({
     ? buildSelectionRect(marqueeState.anchorX, marqueeState.anchorY, marqueeState.currentX, marqueeState.currentY)
     : null;
 
-  const minimapViewportRect = {
-    x: viewportMetrics.left - minimapOrigin.x,
-    y: viewportMetrics.top - minimapOrigin.y,
-    width: Math.min(minimapRect.width, viewportMetrics.width),
-    height: Math.min(minimapRect.height, viewportMetrics.height),
-  };
+  const minimapViewportRect = (() => {
+    const vpLocal = {
+      x: viewportMetrics.left - minimapOrigin.x,
+      y: viewportMetrics.top - minimapOrigin.y,
+      width: viewportMetrics.width,
+      height: viewportMetrics.height,
+    };
+    const x = Math.max(0, vpLocal.x);
+    const y = Math.max(0, vpLocal.y);
+    const right = Math.min(minimapRect.width, vpLocal.x + vpLocal.width);
+    const bottom = Math.min(minimapRect.height, vpLocal.y + vpLocal.height);
+    return {
+      x,
+      y,
+      width: Math.max(0, right - x),
+      height: Math.max(0, bottom - y),
+    };
+  })();
   const canAlignSelection = selectedNodeCount >= 2;
   const canDistributeSelection = selectedNodeCount >= 3;
   const canAutoLayout = selectedNodeCount >= 2 || (activeDocument?.nodes.length ?? 0) >= 2;
@@ -952,7 +1044,12 @@ export function FlowChartCanvas({
                                       return;
                                     }
 
-                                    onSelectNode(node.nodeId, "replace");
+                                    onBeginConnection("compute", node.nodeId, port.portId);
+                                  }}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onDisconnectPort(node.nodeId, "compute", port.portId);
                                   }}
                                   type="button"
                                 />
@@ -968,8 +1065,17 @@ export function FlowChartCanvas({
                                   className="flowchart-port-handle is-compute"
                                   onClick={(event) => {
                                     event.stopPropagation();
+                                    if (pendingConnection?.kind === "compute") {
+                                      onCompleteConnection(node.nodeId, port.portId);
+                                      return;
+                                    }
+
                                     onBeginConnection("compute", node.nodeId, port.portId);
-                                    onSelectNode(node.nodeId, "replace");
+                                  }}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onDisconnectPort(node.nodeId, "compute", port.portId);
                                   }}
                                   type="button"
                                 />
@@ -994,7 +1100,12 @@ export function FlowChartCanvas({
                                       return;
                                     }
 
-                                    onSelectNode(node.nodeId, "replace");
+                                    onBeginConnection("flow", node.nodeId, port.portId);
+                                  }}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onDisconnectPort(node.nodeId, "flow", port.portId);
                                   }}
                                   type="button"
                                 />
@@ -1010,8 +1121,17 @@ export function FlowChartCanvas({
                                   className="flowchart-port-handle is-flow"
                                   onClick={(event) => {
                                     event.stopPropagation();
+                                    if (pendingConnection?.kind === "flow") {
+                                      onCompleteConnection(node.nodeId, port.portId);
+                                      return;
+                                    }
+
                                     onBeginConnection("flow", node.nodeId, port.portId);
-                                    onSelectNode(node.nodeId, "replace");
+                                  }}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onDisconnectPort(node.nodeId, "flow", port.portId);
                                   }}
                                   type="button"
                                 />
@@ -1191,4 +1311,4 @@ export function FlowChartCanvas({
       ) : null}
     </div>
   );
-}
+});

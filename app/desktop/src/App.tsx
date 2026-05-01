@@ -805,7 +805,11 @@ function App() {
   }) {
     return (
       <button className="toolbar-menu-item" disabled={disabled} onClick={onClick} type="button">
-        <span className={`toolbar-menu-check${checked ? " is-visible" : ""}`} aria-hidden="true">✓</span>
+        <span className={`toolbar-menu-check${checked ? " is-visible" : ""}`} aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
         <span className="toolbar-menu-label">{label}</span>
         <span className="toolbar-menu-shortcut">{shortcut ?? ""}</span>
       </button>

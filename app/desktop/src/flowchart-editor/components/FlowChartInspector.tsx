@@ -90,6 +90,14 @@ type FlowChartPropertyInputProps = {
   onReset: (nodeId: number, propertyId: number) => void;
 };
 
+function isBooleanType(rawType: string): boolean {
+  return /^bool(ean)?$/i.test(rawType.trim());
+}
+
+function isNumericType(rawType: string): boolean {
+  return /^(int(eger)?|long|float|double|decimal|number)$/i.test(rawType.trim());
+}
+
 function FlowChartPropertyInput({ nodeId, property, value, onCommit, onReset }: FlowChartPropertyInputProps) {
   const [draftValue, setDraftValue] = useState(formatEditorValue(value));
   const multiline = typeof value === "object" && value !== null;
@@ -98,13 +106,40 @@ function FlowChartPropertyInput({ nodeId, property, value, onCommit, onReset }: 
     setDraftValue(formatEditorValue(value));
   }, [value]);
 
+  const handleBlur = () => onCommit(nodeId, property.propertyId, parseEditorValue(draftValue));
+
+  // Detect type from the formatted type string
+  const formattedType = formatFlowChartTypeRef(property.type);
+  const isBoolean = isBooleanType(formattedType);
+  const isNumeric = isNumericType(formattedType);
+
   return (
     <label className="flowchart-inspector-field">
       <span>{property.alias ?? property.name}</span>
-      {multiline ? (
+
+      {isBoolean ? (
+        <select
+          className="flowchart-boolean-select"
+          onBlur={() => onCommit(nodeId, property.propertyId, draftValue === "true" ? true : draftValue === "false" ? false : draftValue)}
+          onChange={(event) => setDraftValue(event.target.value)}
+          value={draftValue}
+        >
+          <option value="">(空)</option>
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>
+      ) : isNumeric ? (
+        <input
+          className="dialog-field-input"
+          onBlur={handleBlur}
+          onChange={(event) => setDraftValue(event.target.value)}
+          type="number"
+          value={draftValue === "" ? "" : draftValue}
+        />
+      ) : multiline ? (
         <textarea
           className="dialog-field-textarea flowchart-inspector-textarea"
-          onBlur={() => onCommit(nodeId, property.propertyId, parseEditorValue(draftValue))}
+          onBlur={handleBlur}
           onChange={(event) => setDraftValue(event.target.value)}
           rows={4}
           value={draftValue}
@@ -112,12 +147,13 @@ function FlowChartPropertyInput({ nodeId, property, value, onCommit, onReset }: 
       ) : (
         <input
           className="dialog-field-input"
-          onBlur={() => onCommit(nodeId, property.propertyId, parseEditorValue(draftValue))}
+          onBlur={handleBlur}
           onChange={(event) => setDraftValue(event.target.value)}
           type="text"
           value={draftValue}
         />
       )}
+
       <div className="flowchart-inspector-field-meta">
         <span>{formatFlowChartTypeRef(property.type)}</span>
         <span>默认值 {formatEditorValue(property.defaultValue)}</span>

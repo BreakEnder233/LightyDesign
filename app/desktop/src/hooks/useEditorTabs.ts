@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SheetTab } from "../workbook-editor/types/desktopApp";
 import type { EditorTabInfo, FlowChartTabInfo } from "../types/editorTabs";
 import {
@@ -65,6 +65,16 @@ export function useEditorTabs(options: UseEditorTabsOptions): UseEditorTabsResul
     workspacePath ? loadPersistedFlowChartTabs(workspacePath) : [],
   );
   const [activeFlowChartTabId, setActiveFlowChartTabId] = useState<string | null>(null);
+
+  // When workspacePath changes (workspace switch), reload flowchart tabs for the new workspace.
+  useEffect(() => {
+    if (workspacePath) {
+      setFlowChartTabs(loadPersistedFlowChartTabs(workspacePath));
+    } else {
+      setFlowChartTabs([]);
+    }
+    setActiveFlowChartTabId(null);
+  }, [workspacePath]);
 
   // Merge sheet tabs and flowchart tabs into a single ordered list.
   const tabs = useMemo<EditorTabInfo[]>(() => {

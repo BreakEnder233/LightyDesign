@@ -790,12 +790,13 @@ export function useFlowChartEditor({
   }, [activeFlowChartPath]);
 
   /** Open a specific flowchart file by relative path. Returns true if successful. */
-  const openFlowChartByPath = useCallback(async (relativePath: string): Promise<boolean> => {
+  const openFlowChartByPath = useCallback((relativePath: string): boolean => {
     if (catalogStatus !== "ready" || !catalog?.files) {
       return false;
     }
 
-    const summary = catalog.files.find((f) => f.relativePath === relativePath);
+    const normalizedRelativePath = normalizeFlowChartRelativePath(relativePath);
+    const summary = catalog.files.find((f) => f.relativePath === normalizedRelativePath);
     if (!summary) {
       return false;
     }

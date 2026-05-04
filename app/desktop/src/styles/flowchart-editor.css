@@ -74,13 +74,20 @@
 }
 
 .flowchart-node-dialog {
-  width: min(920px, 100%);
+  width: min(1280px, 100%);
 }
 .flowchart-node-dialog-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.9fr);
+  grid-template-columns: 1.5fr 1fr 1fr 1.2fr;
   gap: 10px;
   min-height: 320px;
+}
+.flowchart-node-dialog-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow: hidden;
 }
 .flowchart-node-dialog-list {
   display: flex;
@@ -819,7 +826,7 @@
   }
 
   .flowchart-node-dialog-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1.5fr 1fr 1fr 1.2fr;
   }
 
   .flowchart-header-panel,
@@ -830,6 +837,18 @@
   .flowchart-minimap {
     width: 180px;
     height: 136px;
+  }
+}
+
+@media (max-width: 1000px) {
+  .flowchart-node-dialog-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .flowchart-node-dialog-grid {
+    grid-template-columns: 1fr;
   }
 }
 

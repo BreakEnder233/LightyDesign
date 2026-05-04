@@ -291,223 +291,205 @@ export function FlowChartNodeDefinitionDialog({
         </div>
 
         <div className="workspace-create-body">
+          {/* ── 基础信息行（flex-wrap，在 grid 外部，可自动换行） ── */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            <label className="search-field compact-field" style={{ flex: "1 1 200px" }}>
+              <span>相对路径</span>
+              <input
+                onChange={(e) => setRelativePath(e.target.value)}
+                placeholder="Event/Player/OnEnterScene"
+                type="text"
+                value={relativePath}
+              />
+            </label>
+            <label className="search-field compact-field" style={{ flex: "1 1 160px" }}>
+              <span>名称 (name) *</span>
+              <input
+                onChange={(e) => setName(e.target.value)}
+                placeholder="OnEnterScene"
+                type="text"
+                value={name}
+              />
+            </label>
+            <label className="search-field compact-field" style={{ flex: "1 1 160px" }}>
+              <span>别名 (alias)</span>
+              <input
+                onChange={(e) => setAlias(e.target.value)}
+                placeholder="进入场景"
+                type="text"
+                value={alias}
+              />
+            </label>
+            <label className="search-field compact-field" style={{ flex: "0 0 120px" }}>
+              <span>节点种类</span>
+              <select
+                className="dialog-field-select"
+                onChange={(e) => setNodeKind(e.target.value as FlowChartNodeKind)}
+                value={nodeKind}
+              >
+                <option value="event">event</option>
+                <option value="flow">flow</option>
+                <option value="compute">compute</option>
+              </select>
+            </label>
+          </div>
+
+          {/* ── 4列网格 ── */}
           <div className="flowchart-node-dialog-grid">
-            {/* ── 左侧：主编辑区 ── */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, overflow: "auto" }}>
-              {/* 顶层字段 */}
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <label className="search-field compact-field" style={{ flex: "1 1 160px" }}>
-                  <span>相对路径</span>
-                  <input
-                    onChange={(e) => setRelativePath(e.target.value)}
-                    placeholder="Event/Player/OnEnterScene"
-                    type="text"
-                    value={relativePath}
-                  />
-                </label>
+            {/* 列1：属性 */}
+            <div className="flowchart-node-dialog-column">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flex: "0 0 auto" }}>
+                <span className="flowchart-node-section-header" style={{ padding: 0 }}>属性</span>
+                <button className="secondary-button flowchart-library-add-button" onClick={addProperty} type="button">+ 添加</button>
               </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <label className="search-field compact-field" style={{ flex: "1 1 160px" }}>
-                  <span>名称 (name) *</span>
-                  <input
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="OnEnterScene"
-                    type="text"
-                    value={name}
-                  />
-                </label>
-                <label className="search-field compact-field" style={{ flex: "1 1 160px" }}>
-                  <span>别名 (alias)</span>
-                  <input
-                    onChange={(e) => setAlias(e.target.value)}
-                    placeholder="进入场景"
-                    type="text"
-                    value={alias}
-                  />
-                </label>
-                <label className="search-field compact-field" style={{ flex: "0 0 120px" }}>
-                  <span>节点种类</span>
-                  <select
-                    className="dialog-field-select"
-                    onChange={(e) => setNodeKind(e.target.value as FlowChartNodeKind)}
-                    value={nodeKind}
-                  >
-                    <option value="event">event</option>
-                    <option value="flow">flow</option>
-                    <option value="compute">compute</option>
-                  </select>
-                </label>
-              </div>
-
-              {/* 属性表格 */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="flowchart-node-section-header" style={{ padding: 0 }}>属性</span>
-                  <button className="secondary-button flowchart-library-add-button" onClick={addProperty} type="button">+ 添加属性</button>
-                </div>
-                {properties.length === 0 ? (
-                  <p className="status-detail" style={{ padding: "4px 0" }}>暂无属性定义，点击上方按钮添加。</p>
-                ) : (
-                  <div style={{ background: "#1f1f1f", border: "1px solid #3c3c3c", maxHeight: 160, overflow: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                      <thead>
-                        <tr style={{ borderBottom: "1px solid #333", color: "#8b8b8b" }}>
-                          <th style={{ padding: "4px 6px", textAlign: "left" }}>名称</th>
-                          <th style={{ padding: "4px 6px", textAlign: "left" }}>别名</th>
-                          <th style={{ padding: "4px 6px", textAlign: "left" }}>类型</th>
-                          <th style={{ padding: "4px 6px", textAlign: "left", width: 80 }}>默认值</th>
-                          <th style={{ padding: "4px 6px", textAlign: "left", width: 50 }}></th>
+              {properties.length === 0 ? (
+                <p className="status-detail" style={{ padding: "4px 0" }}>暂无属性定义</p>
+              ) : (
+                <div style={{ background: "#1f1f1f", border: "1px solid #3c3c3c", overflow: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #333", color: "#8b8b8b" }}>
+                        <th style={{ padding: "4px 6px", textAlign: "left" }}>名称</th>
+                        <th style={{ padding: "4px 6px", textAlign: "left" }}>别名</th>
+                        <th style={{ padding: "4px 6px", textAlign: "left" }}>类型</th>
+                        <th style={{ padding: "4px 6px", textAlign: "left", width: 60 }}>默认值</th>
+                        <th style={{ padding: "4px 6px", textAlign: "left", width: 40 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {properties.map((prop) => (
+                        <tr
+                          key={prop.propertyId}
+                          onClick={() => setDetailTarget({ kind: "property", propertyId: prop.propertyId })}
+                          style={{
+                            cursor: "pointer",
+                            borderBottom: "1px solid #2a2a2a",
+                            background: detailTarget?.kind === "property" && detailTarget.propertyId === prop.propertyId ? "#0f2434" : undefined,
+                          }}
+                        >
+                          <td style={{ padding: "4px 6px" }}>{prop.name}</td>
+                          <td style={{ padding: "4px 6px", color: "#8b8b8b" }}>{prop.alias ?? ""}</td>
+                          <td style={{ padding: "4px 6px", color: "#4fc1ff" }}>{getTypeLabel(prop.type)}</td>
+                          <td style={{ padding: "4px 6px" }}>{String(prop.defaultValue ?? "")}</td>
+                          <td style={{ padding: "4px 6px" }}>
+                            <button
+                              className="tree-context-menu-item is-danger"
+                              onClick={(e) => { e.stopPropagation(); removeProperty(prop.propertyId); }}
+                              style={{ padding: "0 4px", fontSize: 11, border: "none", background: "transparent", color: "#f2b8b5" }}
+                              type="button"
+                            >
+                              删除
+                            </button>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {properties.map((prop) => (
-                          <tr
-                            key={prop.propertyId}
-                            onClick={() => setDetailTarget({ kind: "property", propertyId: prop.propertyId })}
-                            style={{
-                              cursor: "pointer",
-                              borderBottom: "1px solid #2a2a2a",
-                              background: detailTarget?.kind === "property" && detailTarget.propertyId === prop.propertyId ? "#0f2434" : undefined,
-                            }}
-                          >
-                            <td style={{ padding: "4px 6px" }}>{prop.name}</td>
-                            <td style={{ padding: "4px 6px", color: "#8b8b8b" }}>{prop.alias ?? ""}</td>
-                            <td style={{ padding: "4px 6px", color: "#4fc1ff" }}>
-                              {getTypeLabel(prop.type)}
-                            </td>
-                            <td style={{ padding: "4px 6px" }}>{String(prop.defaultValue ?? "")}</td>
-                            <td style={{ padding: "4px 6px" }}>
-                              <button
-                                className="tree-context-menu-item is-danger"
-                                onClick={(e) => { e.stopPropagation(); removeProperty(prop.propertyId); }}
-                                style={{ padding: "0 4px", fontSize: 11, border: "none", background: "transparent", color: "#f2b8b5" }}
-                                type="button"
-                              >
-                                删除
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* 计算端口 + 流程端口并排 */}
-              <div style={{ display: "flex", gap: 8 }}>
-                {/* 计算端口 */}
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span className="flowchart-node-section-header" style={{ padding: 0 }}>计算端口</span>
-                    <button className="secondary-button flowchart-library-add-button" onClick={addComputePort} type="button">+ 添加</button>
-                  </div>
-                  {computePorts.length === 0 ? (
-                    <p className="status-detail" style={{ padding: "4px 0" }}>暂无</p>
-                  ) : (
-                    <div style={{ background: "#1f1f1f", border: "1px solid #3c3c3c", maxHeight: 120, overflow: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                        <thead>
-                          <tr style={{ borderBottom: "1px solid #333", color: "#8b8b8b" }}>
-                            <th style={{ padding: "4px 6px", textAlign: "left" }}>名称</th>
-                            <th style={{ padding: "4px 6px", textAlign: "left" }}>方向</th>
-                            <th style={{ padding: "4px 6px", textAlign: "left", width: 50 }}></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {computePorts.map((port) => (
-                            <tr
-                              key={port.portId}
-                              onClick={() => setDetailTarget({ kind: "computePort", portId: port.portId })}
-                              style={{
-                                cursor: "pointer",
-                                borderBottom: "1px solid #2a2a2a",
-                                background: detailTarget?.kind === "computePort" && detailTarget.portId === port.portId ? "#0f2434" : undefined,
-                              }}
-                            >
-                              <td style={{ padding: "4px 6px" }}>{port.name}</td>
-                              <td style={{ padding: "4px 6px", color: "#8b8b8b" }}>{port.direction}</td>
-                              <td style={{ padding: "4px 6px" }}>
-                                <button
-                                  className="tree-context-menu-item is-danger"
-                                  onClick={(e) => { e.stopPropagation(); removeComputePort(port.portId); }}
-                                  style={{ padding: "0 4px", fontSize: 11, border: "none", background: "transparent", color: "#f2b8b5" }}
-                                  type="button"
-                                >
-                                  删除
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-
-                {/* 流程端口 */}
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span className="flowchart-node-section-header" style={{ padding: 0 }}>流程端口</span>
-                    <button className="secondary-button flowchart-library-add-button" onClick={addFlowPort} type="button">+ 添加</button>
-                  </div>
-                  {flowPorts.length === 0 ? (
-                    <p className="status-detail" style={{ padding: "4px 0" }}>暂无</p>
-                  ) : (
-                    <div style={{ background: "#1f1f1f", border: "1px solid #3c3c3c", maxHeight: 120, overflow: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                        <thead>
-                          <tr style={{ borderBottom: "1px solid #333", color: "#8b8b8b" }}>
-                            <th style={{ padding: "4px 6px", textAlign: "left" }}>名称</th>
-                            <th style={{ padding: "4px 6px", textAlign: "left" }}>方向</th>
-                            <th style={{ padding: "4px 6px", textAlign: "left", width: 50 }}></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {flowPorts.map((port) => (
-                            <tr
-                              key={port.portId}
-                              onClick={() => setDetailTarget({ kind: "flowPort", portId: port.portId })}
-                              style={{
-                                cursor: "pointer",
-                                borderBottom: "1px solid #2a2a2a",
-                                background: detailTarget?.kind === "flowPort" && detailTarget.portId === port.portId ? "#0f2434" : undefined,
-                              }}
-                            >
-                              <td style={{ padding: "4px 6px" }}>{port.name}</td>
-                              <td style={{ padding: "4px 6px", color: "#8b8b8b" }}>{port.direction}</td>
-                              <td style={{ padding: "4px 6px" }}>
-                                <button
-                                  className="tree-context-menu-item is-danger"
-                                  onClick={(e) => { e.stopPropagation(); removeFlowPort(port.portId); }}
-                                  style={{ padding: "0 4px", fontSize: 11, border: "none", background: "transparent", color: "#f2b8b5" }}
-                                  type="button"
-                                >
-                                  删除
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 校验错误 */}
-              {errors.length > 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: 8, border: "1px solid #5a1d1d", background: "rgba(90,29,29,0.18)" }}>
-                  {errors.map((err, i) => (
-                    <p key={i} style={{ margin: 0, fontSize: 11, color: "#f2b8b5" }}>{err.field}: {err.message}</p>
-                  ))}
-                </div>
-              ) : null}
+              )}
             </div>
 
-            {/* ── 右侧：详情编辑面板 ── */}
-            <div className="tree-card" style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
-              <strong style={{ fontSize: 12 }}>详情编辑</strong>
+            {/* 列2：计算端口 */}
+            <div className="flowchart-node-dialog-column">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flex: "0 0 auto" }}>
+                <span className="flowchart-node-section-header" style={{ padding: 0 }}>计算端口</span>
+                <button className="secondary-button flowchart-library-add-button" onClick={addComputePort} type="button">+ 添加</button>
+              </div>
+              {computePorts.length === 0 ? (
+                <p className="status-detail" style={{ padding: "4px 0" }}>暂无</p>
+              ) : (
+                <div style={{ background: "#1f1f1f", border: "1px solid #3c3c3c", overflow: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #333", color: "#8b8b8b" }}>
+                        <th style={{ padding: "4px 6px", textAlign: "left" }}>名称</th>
+                        <th style={{ padding: "4px 6px", textAlign: "left" }}>方向</th>
+                        <th style={{ padding: "4px 6px", textAlign: "left", width: 40 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {computePorts.map((port) => (
+                        <tr
+                          key={port.portId}
+                          onClick={() => setDetailTarget({ kind: "computePort", portId: port.portId })}
+                          style={{
+                            cursor: "pointer",
+                            borderBottom: "1px solid #2a2a2a",
+                            background: detailTarget?.kind === "computePort" && detailTarget.portId === port.portId ? "#0f2434" : undefined,
+                          }}
+                        >
+                          <td style={{ padding: "4px 6px" }}>{port.name}</td>
+                          <td style={{ padding: "4px 6px", color: "#8b8b8b" }}>{port.direction}</td>
+                          <td style={{ padding: "4px 6px" }}>
+                            <button
+                              className="tree-context-menu-item is-danger"
+                              onClick={(e) => { e.stopPropagation(); removeComputePort(port.portId); }}
+                              style={{ padding: "0 4px", fontSize: 11, border: "none", background: "transparent", color: "#f2b8b5" }}
+                              type="button"
+                            >
+                              删除
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* 列3：流程端口 */}
+            <div className="flowchart-node-dialog-column">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flex: "0 0 auto" }}>
+                <span className="flowchart-node-section-header" style={{ padding: 0 }}>流程端口</span>
+                <button className="secondary-button flowchart-library-add-button" onClick={addFlowPort} type="button">+ 添加</button>
+              </div>
+              {flowPorts.length === 0 ? (
+                <p className="status-detail" style={{ padding: "4px 0" }}>暂无</p>
+              ) : (
+                <div style={{ background: "#1f1f1f", border: "1px solid #3c3c3c", overflow: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #333", color: "#8b8b8b" }}>
+                        <th style={{ padding: "4px 6px", textAlign: "left" }}>名称</th>
+                        <th style={{ padding: "4px 6px", textAlign: "left" }}>方向</th>
+                        <th style={{ padding: "4px 6px", textAlign: "left", width: 40 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {flowPorts.map((port) => (
+                        <tr
+                          key={port.portId}
+                          onClick={() => setDetailTarget({ kind: "flowPort", portId: port.portId })}
+                          style={{
+                            cursor: "pointer",
+                            borderBottom: "1px solid #2a2a2a",
+                            background: detailTarget?.kind === "flowPort" && detailTarget.portId === port.portId ? "#0f2434" : undefined,
+                          }}
+                        >
+                          <td style={{ padding: "4px 6px" }}>{port.name}</td>
+                          <td style={{ padding: "4px 6px", color: "#8b8b8b" }}>{port.direction}</td>
+                          <td style={{ padding: "4px 6px" }}>
+                            <button
+                              className="tree-context-menu-item is-danger"
+                              onClick={(e) => { e.stopPropagation(); removeFlowPort(port.portId); }}
+                              style={{ padding: "0 4px", fontSize: 11, border: "none", background: "transparent", color: "#f2b8b5" }}
+                              type="button"
+                            >
+                              删除
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* 列4：详情编辑 */}
+            <div className="flowchart-node-dialog-column">
+              <strong style={{ fontSize: 12, flex: "0 0 auto" }}>详情编辑</strong>
               {!detailTarget || !detailData ? (
                 <p className="status-detail">点击左侧列表中的行展开编辑详情。</p>
               ) : detailTarget.kind === "property" ? (
@@ -530,6 +512,15 @@ export function FlowChartNodeDefinitionDialog({
               )}
             </div>
           </div>
+
+          {/* ── 校验错误（在 grid 下方） ── */}
+          {errors.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: 8, border: "1px solid #5a1d1d", background: "rgba(90,29,29,0.18)", marginTop: 10 }}>
+              {errors.map((err, i) => (
+                <p key={i} style={{ margin: 0, fontSize: 11, color: "#f2b8b5" }}>{err.field}: {err.message}</p>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {/* ── 底部操作栏 ── */}

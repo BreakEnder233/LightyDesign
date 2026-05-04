@@ -73,6 +73,20 @@ public sealed class FlowChartService
         return ReloadFlowChartCatalog(workspacePath);
     }
 
+    public object MoveFile(string workspacePath, string scope, string relativePath, string newRelativePath)
+    {
+        var parsedScope = ParseScope(scope);
+        LightyFlowChartAssetManager.MoveFile(workspacePath, parsedScope, relativePath, newRelativePath);
+        return ReloadFlowChartCatalog(workspacePath);
+    }
+
+    public object MoveDirectory(string workspacePath, string scope, string relativePath, string newRelativePath)
+    {
+        var parsedScope = ParseScope(scope);
+        LightyFlowChartAssetManager.MoveDirectory(workspacePath, parsedScope, relativePath, newRelativePath);
+        return ReloadFlowChartCatalog(workspacePath);
+    }
+
     // ── 内部辅助方法 ──
 
     private static object ReadWorkbookAsset(string workspacePath, string workbookName)

@@ -73,13 +73,13 @@
   width: 100%;
 }
 
-.flowchart-node-dialog {
+.workspace-create-dialog.flowchart-node-dialog {
   width: min(1280px, 100%);
 }
 .flowchart-node-dialog-grid {
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr 1.2fr;
-  gap: 10px;
+  gap: 0;
   min-height: 320px;
 }
 .flowchart-node-dialog-column {
@@ -88,6 +88,10 @@
   gap: 4px;
   min-height: 0;
   overflow: hidden;
+}
+.flowchart-node-dialog-column:not(:first-child) {
+  border-left: 1px solid #3c3c3c;
+  padding-left: 10px;
 }
 .flowchart-node-dialog-list {
   display: flex;
@@ -844,11 +848,19 @@
   .flowchart-node-dialog-grid {
     grid-template-columns: 1fr 1fr;
   }
+  .flowchart-node-dialog-column:nth-child(3) {
+    border-left: none;
+    padding-left: 0;
+  }
 }
 
 @media (max-width: 640px) {
   .flowchart-node-dialog-grid {
     grid-template-columns: 1fr;
+  }
+  .flowchart-node-dialog-column:not(:first-child) {
+    border-left: none;
+    padding-left: 0;
   }
 }
 

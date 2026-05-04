@@ -289,6 +289,8 @@ export function FlowChartSidebar({
   onSidebarWidthCommit,
   onRequestDeleteDirectory,
   onRequestDeleteFlowChart,
+  onOpenCreateNodeDefinition,
+  onOpenEditNodeDefinition,
 }: FlowChartSidebarProps) {
   const [activeTab, setActiveTab] = useState<FlowChartSidebarTab>("files");
   const [filesSearchText, setFilesSearchText] = useState("");

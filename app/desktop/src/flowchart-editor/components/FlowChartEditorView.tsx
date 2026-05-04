@@ -10,6 +10,10 @@ import { FlowChartFloatingInspector } from "./FlowChartFloatingInspector";
 import { FlowChartMetadataDialog } from "./FlowChartMetadataDialog";
 import { FlowChartNodeDialog } from "./FlowChartNodeDialog";
 import { FlowChartSidebar } from "./FlowChartSidebar";
+import { FlowChartNodeDefinitionDialog, type NodeDefinitionDialogMode } from "./FlowChartNodeDefinitionDialog";
+import { fetchJson } from "../../utils/desktopHost";
+import type { TypeMetadataResponse } from "../../workbook-editor/types/desktopApp";
+import type { FlowChartNodeDefinitionDocument } from "../types/flowchartEditor";
 
 type FlowChartEditorViewProps = {
   editor: ReturnType<typeof useFlowChartEditor>;
@@ -57,6 +61,13 @@ export function FlowChartEditorView({
     | null
   >(null);
 
+  const [isNodeDefinitionDialogOpen, setIsNodeDefinitionDialogOpen] = useState(false);
+  const [nodeDefinitionDialogMode, setNodeDefinitionDialogMode] = useState<NodeDefinitionDialogMode>("create");
+  const [nodeDefinitionDialogRelativePath, setNodeDefinitionDialogRelativePath] = useState("");
+  const [nodeDefinitionDialogExisting, setNodeDefinitionDialogExisting] = useState<FlowChartNodeDefinitionDocument | null>(null);
+  const [nodeDefinitionDialogExistingPath, setNodeDefinitionDialogExistingPath] = useState<string | null>(null);
+  const [typeMetadata, setTypeMetadata] = useState<TypeMetadataResponse | null>(null);
+
   const canvasRef = useRef<FlowChartCanvasHandle | null>(null);
   const canvasPanelRef = useRef<HTMLDivElement | null>(null);
   const [canvasRect, setCanvasRect] = useState<DOMRectReadOnly | null>(null);
@@ -79,6 +90,27 @@ export function FlowChartEditorView({
     observer.observe(panel);
     return () => observer.disconnect();
   }, []);
+
+  // Load type metadata for node definition dialog
+  useEffect(() => {
+    if (!editor.hostInfo || !workspacePath) {
+      setTypeMetadata(null);
+      return;
+    }
+
+    let cancelled = false;
+    void fetchJson<TypeMetadataResponse>(
+      `${editor.hostInfo.desktopHostUrl}/api/workspace/type-metadata?workspacePath=${encodeURIComponent(workspacePath)}`,
+    )
+      .then((response) => {
+        if (!cancelled) setTypeMetadata(response);
+      })
+      .catch(() => {
+        if (!cancelled) setTypeMetadata(null);
+      });
+
+    return () => { cancelled = true; };
+  }, [editor.hostInfo, workspacePath]);
 
   const suggestedCreateRelativePath = useMemo(() => {
     const baseDirectory = editor.activeFlowChartPath?.includes("/") ? editor.activeFlowChartPath.split("/").slice(0, -1).join("/") : "";
@@ -349,6 +381,51 @@ export function FlowChartEditorView({
     void editor.deleteFlowChartFile("files", relativePath);
   }
 
+  function handleOpenCreateNodeDefinition(baseDirectory: string) {
+    const suggestedName = baseDirectory ? `${baseDirectory}/NewNode` : "NewNode";
+    setNodeDefinitionDialogMode("create");
+    setNodeDefinitionDialogRelativePath(suggestedName);
+    setNodeDefinitionDialogExisting(null);
+    setNodeDefinitionDialogExistingPath(null);
+    setIsNodeDefinitionDialogOpen(true);
+  }
+
+  function handleOpenEditNodeDefinition(relativePath: string) {
+    // 从 catalog 和现有加载的 definitions 中找到文档
+    const definitionResponse = editor.nodeDefinitionsByPath[relativePath];
+    if (definitionResponse?.document) {
+      setNodeDefinitionDialogMode("edit");
+      setNodeDefinitionDialogRelativePath(relativePath);
+      setNodeDefinitionDialogExisting(definitionResponse.document);
+      setNodeDefinitionDialogExistingPath(relativePath);
+      setIsNodeDefinitionDialogOpen(true);
+      return;
+    }
+
+    // 使用 loadNodeDefinition
+    void editor.loadNodeDefinition(relativePath).then((response) => {
+      if (response?.document) {
+        setNodeDefinitionDialogMode("edit");
+        setNodeDefinitionDialogRelativePath(relativePath);
+        setNodeDefinitionDialogExisting(response.document);
+        setNodeDefinitionDialogExistingPath(relativePath);
+        setIsNodeDefinitionDialogOpen(true);
+      }
+    });
+  }
+
+  async function handleNodeDefinitionSubmit(
+    relativePath: string,
+    document: FlowChartNodeDefinitionDocument,
+  ): Promise<boolean> {
+    const saved = await editor.saveNodeDefinition(relativePath, document);
+    if (saved) {
+      setIsNodeDefinitionDialogOpen(false);
+      editor.reloadNodeDefinitions();
+    }
+    return saved;
+  }
+
   return (
     <>
       <FlowChartSidebar
@@ -361,6 +438,8 @@ export function FlowChartEditorView({
         onOpenCreateDirectoryDialog={handleOpenCreateDirectoryDialog}
         onOpenCreateFlowChartDialog={handleOpenCreateFlowChartDialog}
         onOpenEditFlowChartDialog={handleOpenEditFlowChartDialog}
+        onOpenCreateNodeDefinition={handleOpenCreateNodeDefinition}
+        onOpenEditNodeDefinition={handleOpenEditNodeDefinition}
         onOpenExportAllFlowChartsDialog={handleOpenExportAllFlowChartsDialog}
         onOpenExportFlowChartDialog={handleOpenExportFlowChartDialog}
         onOpenExportFlowChartDirectoryDialog={handleOpenExportFlowChartDirectoryDialog}
@@ -570,6 +649,29 @@ export function FlowChartEditorView({
         isOpen={isNodeDialogOpen}
         onClose={handleCloseNodeDialog}
         onSubmit={handleSubmitNode}
+      />
+
+      <FlowChartNodeDefinitionDialog
+        existingDefinition={nodeDefinitionDialogExisting}
+        existingRelativePath={nodeDefinitionDialogExistingPath}
+        initialRelativePath={nodeDefinitionDialogRelativePath}
+        isOpen={isNodeDefinitionDialogOpen}
+        mode={nodeDefinitionDialogMode}
+        onClose={() => setIsNodeDefinitionDialogOpen(false)}
+        onSubmit={handleNodeDefinitionSubmit}
+        onResolveType={async (type) => {
+          if (!editor.hostInfo || !workspacePath) {
+            return { ok: false, message: "工作区未就绪" };
+          }
+          try {
+            return await fetchJson<{ ok: boolean; normalizedType?: string; message?: string }>(
+              `${editor.hostInfo.desktopHostUrl}/api/workspace/type-validation?type=${encodeURIComponent(type)}&workspacePath=${encodeURIComponent(workspacePath)}`,
+            );
+          } catch {
+            return { ok: false, message: "类型校验失败" };
+          }
+        }}
+        typeMetadata={typeMetadata}
       />
     </>
   );

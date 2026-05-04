@@ -789,6 +789,21 @@ export function useFlowChartEditor({
     setActiveFlowChartReloadKey((current) => current + 1);
   }, [activeFlowChartPath]);
 
+  /** Open a specific flowchart file by relative path. Returns true if successful. */
+  const openFlowChartByPath = useCallback(async (relativePath: string): Promise<boolean> => {
+    if (catalogStatus !== "ready" || !catalog?.files) {
+      return false;
+    }
+
+    const summary = catalog.files.find((f) => f.relativePath === relativePath);
+    if (!summary) {
+      return false;
+    }
+
+    selectFlowChart(summary.relativePath);
+    return true;
+  }, [catalog, catalogStatus, selectFlowChart]);
+
   const createFlowChartDirectory = useCallback(
     async (scope: FlowChartAssetScope, relativePath: string) => {
       const normalizedRelativePath = normalizeFlowChartRelativePath(relativePath);
@@ -2409,6 +2424,7 @@ export function useFlowChartEditor({
     reloadNodeDefinitions,
     reloadCatalog,
     reloadActiveFlowChart,
+    openFlowChartByPath,
     saveActiveFlowChart,
     saveWorkspaceCodegenOptions,
     chooseCodegenOutputDirectory,

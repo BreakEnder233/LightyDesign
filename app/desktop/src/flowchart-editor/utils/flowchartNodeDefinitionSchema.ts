@@ -87,10 +87,18 @@ export function buildEmptyNodeDefinition(
   alias: string,
   nodeKind: FlowChartNodeKind,
 ): FlowChartNodeDefinitionDocument {
+  // Event: one output flow port (events must not have input flow ports)
+  // Flow: one input + one output flow port (flow needs exactly one input)
+  // Compute: no flow ports
   const initialFlowPorts =
-    nodeKind === "compute"
-      ? []
-      : [{ portId: 1, name: "Enter", direction: "input" as const }];
+    nodeKind === "event"
+      ? [{ portId: 1, name: "Then", direction: "output" as const }]
+      : nodeKind === "flow"
+        ? [
+            { portId: 1, name: "Enter", direction: "input" as const },
+            { portId: 2, name: "Then", direction: "output" as const },
+          ]
+        : [];
 
   const initialComputePorts =
     nodeKind === "compute"

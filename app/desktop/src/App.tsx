@@ -96,6 +96,7 @@ function App() {
   const hostStatusClassName = bridgeStatus === "unavailable" ? "status-chip is-error" : hostHealth?.ok ? "status-chip is-ok" : "status-chip is-warn";
   const canChooseWorkspaceDirectory = bridgeStatus === "ready";
   const [flowChartSidebarWidth, setFlowChartSidebarWidth] = useState(defaultFlowChartSidebarWidth);
+  const [manualMode, setManualMode] = useState<"workbook" | "flowchart" | null>(null);
 
   // ── Unified Tab System ──
   const editorTabs = useEditorTabs({
@@ -110,8 +111,14 @@ function App() {
     () => editorTabs.tabs.find((t) => t.id === editorTabs.activeTabId) ?? null,
     [editorTabs.tabs, editorTabs.activeTabId],
   );
-  const isWorkbookMode = activeTabInfo ? isSheetTabInfo(activeTabInfo) : false;
-  const isFlowChartMode = activeTabInfo ? isFlowChartTabInfo(activeTabInfo) : false;
+  const effectiveMode = useMemo<"workbook" | "flowchart">(() => {
+    if (manualMode) return manualMode;
+    if (activeTabInfo) return isSheetTabInfo(activeTabInfo) ? "workbook" : "flowchart";
+    return "workbook";
+  }, [manualMode, activeTabInfo]);
+
+  const isWorkbookMode = effectiveMode === "workbook";
+  const isFlowChartMode = effectiveMode === "flowchart";
   const isUpdateInstallInProgress =
     updateDownloadState?.status === "preparing" ||
     updateDownloadState?.status === "downloading" ||
@@ -1777,6 +1784,7 @@ function App() {
             aria-selected={isWorkbookMode}
             className={`toolbar-mode-button${isWorkbookMode ? " is-active" : ""}`}
             onClick={() => {
+              setManualMode("workbook");
               const sheetTab = editorTabs.tabs.find(isSheetTabInfo);
               if (sheetTab) {
                 editorTabs.activateTab(sheetTab.id);
@@ -1791,6 +1799,7 @@ function App() {
             aria-selected={isFlowChartMode}
             className={`toolbar-mode-button${isFlowChartMode ? " is-active" : ""}`}
             onClick={() => {
+              setManualMode("flowchart");
               const fcTab = editorTabs.tabs.find(isFlowChartTabInfo);
               if (fcTab) {
                 editorTabs.activateTab(fcTab.id);
@@ -1816,7 +1825,9 @@ function App() {
               title="最小化"
               type="button"
             >
-              -
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <line x1="2" y1="10" x2="10" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
             </button>
             <button
               aria-label="最大化或还原窗口"
@@ -1825,7 +1836,9 @@ function App() {
               title="最大化或还原"
               type="button"
             >
-              []
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <rect x="2" y="2" width="8" height="8" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+              </svg>
             </button>
             <button
               aria-label="关闭窗口"
@@ -1834,7 +1847,10 @@ function App() {
               title="关闭"
               type="button"
             >
-              x
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <line x1="3" y1="3" x2="9" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <line x1="9" y1="3" x2="3" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
             </button>
           </div>
         ) : null}
@@ -1843,7 +1859,10 @@ function App() {
       <EditorTabBar
         tabs={editorTabs.tabs}
         activeTabId={editorTabs.activeTabId}
-        onActivateTab={editorTabs.activateTab}
+        onActivateTab={(tabId) => {
+          setManualMode(null);
+          editorTabs.activateTab(tabId);
+        }}
         onCloseTab={editorTabs.closeTab}
       />
 

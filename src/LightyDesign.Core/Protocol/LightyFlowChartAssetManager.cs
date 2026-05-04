@@ -36,6 +36,43 @@ public static class LightyFlowChartAssetManager
         CleanupEmptyDirectories(GetRootPath(workspaceRootPath, scope), Path.GetDirectoryName(filePath));
     }
 
+    public static void MoveFile(string workspaceRootPath, LightyFlowChartAssetScope scope, string relativePath, string newRelativePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);
+
+        var normalizedRelativePath = LightyWorkspacePathLayout.NormalizeRelativeAssetPath(relativePath);
+        var normalizedNewRelativePath = LightyWorkspacePathLayout.NormalizeRelativeAssetPath(newRelativePath);
+        var rootPath = GetRootPath(workspaceRootPath, scope);
+        var sourceFilePath = GetFilePath(workspaceRootPath, scope, normalizedRelativePath);
+        var targetFilePath = GetFilePath(workspaceRootPath, scope, normalizedNewRelativePath);
+
+        if (!File.Exists(sourceFilePath))
+        {
+            throw new FileNotFoundException("FlowChart asset file was not found.", sourceFilePath);
+        }
+
+        var normalizedSourcePath = NormalizeFullPath(sourceFilePath);
+        var normalizedTargetPath = NormalizeFullPath(targetFilePath);
+        if (string.Equals(normalizedSourcePath, normalizedTargetPath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new LightyCoreException("The new file path must be different from the current path.");
+        }
+
+        if (File.Exists(targetFilePath))
+        {
+            throw new LightyCoreException($"FlowChart asset file '{normalizedNewRelativePath}' already exists.");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(targetFilePath)!);
+        File.Move(sourceFilePath, targetFilePath);
+        CleanupEmptyDirectories(rootPath, Path.GetDirectoryName(sourceFilePath));
+    }
+
+    public static void MoveDirectory(string workspaceRootPath, LightyFlowChartAssetScope scope, string relativePath, string newRelativePath)
+    {
+        RenameDirectory(workspaceRootPath, scope, relativePath, newRelativePath);
+    }
+
     public static void RenameDirectory(string workspaceRootPath, LightyFlowChartAssetScope scope, string relativePath, string newRelativePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);

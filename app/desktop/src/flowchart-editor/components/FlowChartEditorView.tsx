@@ -372,6 +372,14 @@ export function FlowChartEditorView({
     void editor.deleteFlowChartDirectory(scope, relativePath);
   }
 
+  function handleMoveFile(scope: "files" | "nodes", relativePath: string, newRelativePath: string) {
+    void editor.moveFlowChartFile(scope, relativePath, newRelativePath);
+  }
+
+  function handleMoveDirectory(scope: "files" | "nodes", relativePath: string, newRelativePath: string) {
+    void editor.moveFlowChartDirectory(scope, relativePath, newRelativePath);
+  }
+
   function handleRequestDeleteFlowChart(relativePath: string, label: string) {
     const shouldDelete = window.confirm(`确认删除流程图 ${label} 吗？该操作不会进入撤销/重做。`);
     if (!shouldDelete) {
@@ -448,6 +456,8 @@ export function FlowChartEditorView({
           const name = relativePath.split("/").pop()?.replace(/\.json$/i, "") ?? relativePath;
           onOpenFlowChartTab?.(relativePath, name);
         }}
+        onMoveFile={handleMoveFile}
+        onMoveDirectory={handleMoveDirectory}
         onOpenRenameDirectoryDialog={handleOpenRenameDirectoryDialog}
         onSidebarWidthChange={onSidebarWidthChange}
         onSidebarWidthCommit={onSidebarWidthCommit}

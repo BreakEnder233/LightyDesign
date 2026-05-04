@@ -415,6 +415,24 @@ app.MapPost("/api/workspace/flowcharts/assets/files/delete", (FlowChartAssetPath
     return Results.Ok(service.DeleteFile(request.WorkspacePath, request.Scope, request.RelativePath));
 });
 
+app.MapPost("/api/workspace/flowcharts/assets/files/move", (MoveFlowChartAssetPathRequestDto request, FlowChartService service) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath)) throw new ValidationException("workspacePath is required.");
+    if (string.IsNullOrWhiteSpace(request.Scope)) throw new ValidationException("scope is required.");
+    if (string.IsNullOrWhiteSpace(request.RelativePath)) throw new ValidationException("relativePath is required.");
+    if (string.IsNullOrWhiteSpace(request.NewRelativePath)) throw new ValidationException("newRelativePath is required.");
+    return Results.Ok(service.MoveFile(request.WorkspacePath, request.Scope, request.RelativePath, request.NewRelativePath));
+});
+
+app.MapPost("/api/workspace/flowcharts/assets/directories/move", (MoveFlowChartAssetPathRequestDto request, FlowChartService service) =>
+{
+    if (string.IsNullOrWhiteSpace(request.WorkspacePath)) throw new ValidationException("workspacePath is required.");
+    if (string.IsNullOrWhiteSpace(request.Scope)) throw new ValidationException("scope is required.");
+    if (string.IsNullOrWhiteSpace(request.RelativePath)) throw new ValidationException("relativePath is required.");
+    if (string.IsNullOrWhiteSpace(request.NewRelativePath)) throw new ValidationException("newRelativePath is required.");
+    return Results.Ok(service.MoveDirectory(request.WorkspacePath, request.Scope, request.RelativePath, request.NewRelativePath));
+});
+
 // ─── Import Excel ───
 app.MapPost("/api/file-process/workbooks/import-excel", async (HttpRequest request) =>
 {

@@ -2527,5 +2527,7 @@ export function useFlowChartEditor({
     selectAll,
     loadNodeDefinition,
     saveNodeDefinition,
+    nodeDefinitionsByPath,
+    hostInfo,
   };
 }

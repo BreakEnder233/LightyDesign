@@ -1006,6 +1006,115 @@ export function useFlowChartEditor({
     [activeFlowChartPath, closeActiveFlowChart, mutateFlowChartCatalog, onToast],
   );
 
+  const moveFlowChartFile = useCallback(
+    async (scope: "files" | "nodes", relativePath: string, newRelativePath: string) => {
+      const normalizedRelativePath = normalizeFlowChartRelativePath(relativePath);
+      const normalizedNewRelativePath = normalizeFlowChartRelativePath(newRelativePath);
+      if (!normalizedRelativePath || !normalizedNewRelativePath) {
+        onToast({
+          title: "文件路径无效",
+          detail: "请输入有效的文件相对路径。",
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: false,
+        });
+        return false;
+      }
+
+      try {
+        await mutateFlowChartCatalog("/api/workspace/flowcharts/assets/files/move", {
+          scope,
+          relativePath: normalizedRelativePath,
+          newRelativePath: normalizedNewRelativePath,
+        });
+
+        // 如果当前打开的流程图被移动，更新 activeFlowChartPath
+        if (scope === "files" && activeFlowChartPath === normalizedRelativePath) {
+          setActiveFlowChartPath(normalizedNewRelativePath);
+        }
+
+        onToast({
+          title: scope === "files" ? "流程图已移动" : "节点定义已移动",
+          summary: `${normalizedRelativePath} → ${normalizedNewRelativePath}`,
+          source: "workspace",
+          variant: "success",
+          canOpenDetail: false,
+          durationMs: 2200,
+        });
+        return true;
+      } catch (error) {
+        onToast({
+          title: scope === "files" ? "流程图移动失败" : "节点定义移动失败",
+          summary: normalizedRelativePath,
+          detail: error instanceof Error ? error.message : "未能移动流程图资产文件。",
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: true,
+        });
+        return false;
+      }
+    },
+    [activeFlowChartPath, mutateFlowChartCatalog, onToast],
+  );
+
+  const moveFlowChartDirectory = useCallback(
+    async (scope: "files" | "nodes", relativePath: string, newRelativePath: string) => {
+      const normalizedRelativePath = normalizeFlowChartRelativePath(relativePath);
+      const normalizedNewRelativePath = normalizeFlowChartRelativePath(newRelativePath);
+      if (!normalizedRelativePath || !normalizedNewRelativePath) {
+        onToast({
+          title: "目录路径无效",
+          detail: "请输入有效的目录相对路径。",
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: false,
+        });
+        return false;
+      }
+
+      try {
+        await mutateFlowChartCatalog("/api/workspace/flowcharts/assets/directories/move", {
+          scope,
+          relativePath: normalizedRelativePath,
+          newRelativePath: normalizedNewRelativePath,
+        });
+
+        // 如果当前打开的流程图在被移动的目录下，更新路径
+        if (
+          scope === "files"
+          && activeFlowChartPath
+          && (activeFlowChartPath === normalizedRelativePath || activeFlowChartPath.startsWith(`${normalizedRelativePath}/`))
+        ) {
+          const suffix = activeFlowChartPath === normalizedRelativePath
+            ? ""
+            : activeFlowChartPath.slice(normalizedRelativePath.length);
+          setActiveFlowChartPath(`${normalizedNewRelativePath}${suffix}`);
+        }
+
+        onToast({
+          title: "目录已移动",
+          summary: `${normalizedRelativePath} → ${normalizedNewRelativePath}`,
+          source: "workspace",
+          variant: "success",
+          canOpenDetail: false,
+          durationMs: 2200,
+        });
+        return true;
+      } catch (error) {
+        onToast({
+          title: "目录移动失败",
+          summary: normalizedRelativePath,
+          detail: error instanceof Error ? error.message : "未能移动流程图目录。",
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: true,
+        });
+        return false;
+      }
+    },
+    [activeFlowChartPath, mutateFlowChartCatalog, onToast],
+  );
+
   const clearSelection = useCallback(() => {
     setSelection(buildEmptySelection());
   }, []);
@@ -2400,6 +2509,8 @@ export function useFlowChartEditor({
     renameFlowChartDirectory,
     deleteFlowChartDirectory,
     deleteFlowChartFile,
+    moveFlowChartFile,
+    moveFlowChartDirectory,
     saveFlowChartMetadata,
     selectFlowChart,
     clearSelection,

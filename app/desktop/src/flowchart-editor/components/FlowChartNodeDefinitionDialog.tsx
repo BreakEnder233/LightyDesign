@@ -4,16 +4,18 @@ import { DialogBackdrop } from "../../components/DialogBackdrop";
 import type { TypeMetadataResponse } from "../../workbook-editor/types/desktopApp";
 import { TypeComposerDialog } from "../../workbook-editor/components/TypeComposerDialog";
 
+import type { BuilderNode } from "../../workbook-editor/components/TypeComposerDialog";
+
 import type {
   FlowChartNodeDefinitionDocument,
   FlowChartNodeKind,
   FlowChartPropertyDefinition,
   FlowChartComputePortDefinition,
   FlowChartFlowPortDefinition,
+  FlowChartTypeRef,
 } from "../types/flowchartEditor";
 import {
   builderNodeToTypeRef,
-  typeRefToBuilderNode,
   getNextPropertyId,
   getNextPortId,
   validateNodeDefinitionStructure,
@@ -43,6 +45,27 @@ type DetailEditTarget =
   | null;
 
 type PortDirection = "input" | "output";
+
+/**
+ * 类型守卫：判断 FlowChartTypeRef 是否为 builtin 类型。
+ * FlowChartTypeRef 包含 Record<string, unknown> 分支，需显式检查。
+ */
+function isBuiltinRef(typeRef: FlowChartTypeRef): typeRef is { kind: "builtin"; name: string } {
+  return typeof typeRef === "object" && typeRef !== null && "kind" in typeRef && typeRef.kind === "builtin";
+}
+
+/** 从 FlowChartTypeRef 提取可读的类型标签字符串 */
+function getTypeLabel(typeRef: FlowChartTypeRef): string {
+  if (isBuiltinRef(typeRef)) return typeRef.name;
+  if (typeof typeRef === "object" && typeRef !== null && "kind" in typeRef) {
+    const r = typeRef as Record<string, unknown>;
+    if (r.kind === "custom") return (r.fullName as string) ?? (r.name as string) ?? "custom";
+    if (r.kind === "list") return "list";
+    if (r.kind === "dictionary") return "dictionary";
+    return String(r.kind);
+  }
+  return "unknown";
+}
 
 export function FlowChartNodeDefinitionDialog({
   isOpen,
@@ -212,7 +235,7 @@ export function FlowChartNodeDefinitionDialog({
     setTypePickerPortId(null);
   }
 
-  function handleTypePickerApply(node: import("../../workbook-editor/components/TypeComposerDialog").BuilderNode) {
+  function handleTypePickerApply(node: BuilderNode) {
     const typeRef = builderNodeToTypeRef(node);
     if (typePickerTarget === "property" && typePickerPropertyId !== null) {
       updateProperty(typePickerPropertyId, { type: typeRef });
@@ -350,7 +373,7 @@ export function FlowChartNodeDefinitionDialog({
                             <td style={{ padding: "4px 6px" }}>{prop.name}</td>
                             <td style={{ padding: "4px 6px", color: "#8b8b8b" }}>{prop.alias ?? ""}</td>
                             <td style={{ padding: "4px 6px", color: "#4fc1ff" }}>
-                              {(prop.type as any).kind === "builtin" ? (prop.type as any).name : (prop.type as any).kind === "custom" ? (prop.type as any).name : (prop.type as any).kind}
+                              {getTypeLabel(prop.type)}
                             </td>
                             <td style={{ padding: "4px 6px" }}>{String(prop.defaultValue ?? "")}</td>
                             <td style={{ padding: "4px 6px" }}>
@@ -549,13 +572,7 @@ function PropertyDetailEditor({
   onChange: (patch: Partial<FlowChartPropertyDefinition>) => void;
   onOpenTypePicker: () => void;
 }) {
-  const t = data.type as any;
-  const isCustomType = t.kind === "custom";
-  const typeLabel = isCustomType
-    ? t.fullName ?? t.name
-    : t.kind === "builtin"
-      ? t.name
-      : t.kind;
+  const typeLabel = getTypeLabel(data.type);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -597,13 +614,7 @@ function ComputePortDetailEditor({
   onChange: (patch: Partial<FlowChartComputePortDefinition>) => void;
   onOpenTypePicker: () => void;
 }) {
-  const t = data.type as any;
-  const isCustomType = t.kind === "custom";
-  const typeLabel = isCustomType
-    ? t.fullName ?? t.name
-    : t.kind === "builtin"
-      ? t.name
-      : t.kind;
+  const typeLabel = getTypeLabel(data.type);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

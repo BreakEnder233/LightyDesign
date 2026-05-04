@@ -236,7 +236,17 @@ function App() {
     if (flowChartEditor.activeFlowChartPath === activeTabInfo.relativePath) {
       return;
     }
-    flowChartEditor.openFlowChartByPath(activeTabInfo.relativePath);
+    const opened = flowChartEditor.openFlowChartByPath(activeTabInfo.relativePath);
+    if (!opened) {
+      pushToastNotification({
+        title: "无法打开流程图",
+        detail: `未找到路径 "${activeTabInfo.relativePath}" 对应的流程图文件。`,
+        source: "workspace",
+        variant: "error",
+        canOpenDetail: true,
+        durationMs: 6000,
+      });
+    }
   }, [isFlowChartMode, activeTabInfo?.id, flowChartEditor.activeFlowChartPath]);
 
   const {

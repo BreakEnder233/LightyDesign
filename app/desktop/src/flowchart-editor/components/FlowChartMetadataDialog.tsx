@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { DialogBackdrop } from "../../components/DialogBackdrop";
 
@@ -12,6 +12,16 @@ type FlowChartMetadataDialogProps = {
   onSubmit: (value: { relativePath: string; name: string; alias?: string | null }) => void | Promise<void>;
 };
 
+function getDirectoryPrefix(relativePath: string) {
+  const lastSlash = relativePath.lastIndexOf("/");
+  return lastSlash >= 0 ? relativePath.substring(0, lastSlash) : "";
+}
+
+function getFileName(relativePath: string) {
+  const segments = relativePath.split("/").filter((segment) => segment.length > 0);
+  return segments[segments.length - 1] ?? "";
+}
+
 export function FlowChartMetadataDialog({
   isOpen,
   mode,
@@ -21,23 +31,25 @@ export function FlowChartMetadataDialog({
   onClose,
   onSubmit,
 }: FlowChartMetadataDialogProps) {
-  const [relativePath, setRelativePath] = useState(initialRelativePath);
   const [name, setName] = useState(initialName);
   const [alias, setAlias] = useState(initialAlias);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const directoryPrefix = useMemo(() => getDirectoryPrefix(initialRelativePath), [initialRelativePath]);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    setRelativePath(initialRelativePath);
-    setName(initialName);
+    // 以文件名（relativePath 最后一段）为准，保证 name === filename
+    const fileName = getFileName(initialRelativePath) || initialName;
+    setName(fileName);
     setAlias(initialAlias);
     setErrorMessage(null);
     setIsSubmitting(false);
-  }, [initialAlias, initialName, initialRelativePath, isOpen]);
+  }, [initialAlias, initialRelativePath, isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) {
     return null;
@@ -47,24 +59,27 @@ export function FlowChartMetadataDialog({
   const submitLabel = mode === "create" ? "创建流程图" : "保存修改";
 
   async function handleSubmit() {
-    const trimmedRelativePath = relativePath.trim();
     const trimmedName = name.trim();
 
-    if (trimmedRelativePath.length === 0) {
-      setErrorMessage("请输入流程图相对路径。\n路径会自动保存到 FlowCharts/Files 下，并自动补 .json 扩展名。");
-      return;
-    }
-
-    if (mode === "edit" && trimmedName.length === 0) {
+    if (trimmedName.length === 0) {
       setErrorMessage("流程图名称不能为空。");
       return;
     }
+
+    if (trimmedName.includes("/") || trimmedName.includes("\\")) {
+      setErrorMessage("名称不能包含路径分隔符（/ 或 \\）。");
+      return;
+    }
+
+    const relativePath = directoryPrefix
+      ? `${directoryPrefix}/${trimmedName}`
+      : trimmedName;
 
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
       await onSubmit({
-        relativePath: trimmedRelativePath,
+        relativePath,
         name: trimmedName,
         alias: alias.trim() ? alias.trim() : null,
       });
@@ -85,25 +100,9 @@ export function FlowChartMetadataDialog({
 
         <div className="workspace-create-body">
           <label className="flowchart-inspector-field compact-field">
-            <span>相对路径</span>
+            <span>名称（文件名）</span>
             <input
-              className="dialog-field-input"
-              onChange={(event) => setRelativePath(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void handleSubmit();
-                }
-              }}
-              placeholder="例如 Gameplay/MainLoop 或 Quests/QuestStart"
-              type="text"
-              value={relativePath}
-            />
-          </label>
-
-          <label className="flowchart-inspector-field compact-field">
-            <span>名称</span>
-            <input
+              autoFocus
               className="dialog-field-input"
               onChange={(event) => setName(event.target.value)}
               onKeyDown={(event) => {
@@ -112,7 +111,7 @@ export function FlowChartMetadataDialog({
                   void handleSubmit();
                 }
               }}
-              placeholder="用于流程图文档内部的名称"
+              placeholder="例如 MainLoop"
               type="text"
               value={name}
             />
@@ -137,8 +136,8 @@ export function FlowChartMetadataDialog({
 
           <p className="workspace-create-path-label">
             {mode === "create"
-              ? "路径相对于 FlowCharts/Files；保存时会自动创建子目录并补 .json 扩展名。"
-              : "保存后会直接更新流程图文件路径和元信息，无需再额外手动保存。"}
+              ? `路径基于名称自动生成（保存在 ${directoryPrefix ? `${directoryPrefix}/` : ""}{名称}.json）。如需修改存放目录，请在侧栏中通过拖拽移动。`
+              : `保存后文件名将等于名称，原路径 ${directoryPrefix ? `${directoryPrefix}/` : ""}{之前名称}.json 会自动更新。`}
           </p>
 
           {errorMessage ? <p className="status-detail flowchart-save-error">{errorMessage}</p> : null}

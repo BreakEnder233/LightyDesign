@@ -67,6 +67,11 @@ function getTypeLabel(typeRef: FlowChartTypeRef): string {
   return "unknown";
 }
 
+function getDirectoryPrefix(relativePath: string) {
+  const lastSlash = relativePath.lastIndexOf("/");
+  return lastSlash >= 0 ? relativePath.substring(0, lastSlash) : "";
+}
+
 export function FlowChartNodeDefinitionDialog({
   isOpen,
   mode,
@@ -79,7 +84,6 @@ export function FlowChartNodeDefinitionDialog({
   onResolveType,
 }: FlowChartNodeDefinitionDialogProps) {
   // ── 编辑状态 ──
-  const [relativePath, setRelativePath] = useState(initialRelativePath);
   const [name, setName] = useState("");
   const [alias, setAlias] = useState("");
   const [nodeKind, setNodeKind] = useState<FlowChartNodeKind>("event");
@@ -94,20 +98,28 @@ export function FlowChartNodeDefinitionDialog({
   const [errors, setErrors] = useState<ReturnType<typeof validateNodeDefinitionStructure>>([]);
   const [isSaving, setIsSaving] = useState(false);
 
+  const directoryPrefix = useMemo(() => {
+    if (!isOpen) return "";
+    const currentPath = mode === "edit"
+      ? (existingRelativePath ?? initialRelativePath)
+      : initialRelativePath;
+    const lastSlash = currentPath.lastIndexOf("/");
+    return lastSlash >= 0 ? currentPath.substring(0, lastSlash) : "";
+  }, [isOpen, mode, existingRelativePath, initialRelativePath]);
+
   // ── 初始化 / 重置 ──
   useEffect(() => {
     if (!isOpen) return;
 
     if (mode === "edit" && existingDefinition) {
-      setRelativePath(existingRelativePath ?? initialRelativePath);
-      setName(existingDefinition.name);
+      const currentPath = existingRelativePath ?? initialRelativePath;
+      setName(currentPath.split("/").pop() ?? existingDefinition.name);
       setAlias(existingDefinition.alias ?? "");
       setNodeKind(existingDefinition.nodeKind);
       setProperties([...existingDefinition.properties]);
       setComputePorts([...existingDefinition.computePorts]);
       setFlowPorts([...existingDefinition.flowPorts]);
     } else {
-      setRelativePath(initialRelativePath);
       setName(initialRelativePath.split("/").pop() ?? "NewNode");
       setAlias("");
       setNodeKind("event");
@@ -247,7 +259,28 @@ export function FlowChartNodeDefinitionDialog({
 
   // ── 提交 ──
   async function handleSubmit() {
-    const validationErrors = validateNodeDefinitionStructure(currentDocument);
+    const trimmedName = name.trim();
+
+    if (trimmedName.length === 0) {
+      setErrors([{ field: "name", message: "名称不能为空。" }]);
+      return;
+    }
+
+    if (trimmedName.includes("/") || trimmedName.includes("\\")) {
+      setErrors([{ field: "name", message: "名称不能包含路径分隔符（/ 或 \\）。" }]);
+      return;
+    }
+
+    const relativePath = directoryPrefix
+      ? `${directoryPrefix}/${trimmedName}`
+      : trimmedName;
+
+    const finalDocument: FlowChartNodeDefinitionDocument = {
+      ...currentDocument,
+      name: trimmedName,
+    };
+
+    const validationErrors = validateNodeDefinitionStructure(finalDocument);
     if (validationErrors.length > 0) {
       setErrors(validationErrors);
       return;
@@ -255,7 +288,7 @@ export function FlowChartNodeDefinitionDialog({
 
     setIsSaving(true);
     try {
-      await onSubmit(relativePath, currentDocument);
+      await onSubmit(relativePath, finalDocument);
     } finally {
       setIsSaving(false);
     }
@@ -285,7 +318,7 @@ export function FlowChartNodeDefinitionDialog({
         <div className="workspace-create-header">
           <div>
             <p className="eyebrow">{mode === "create" ? "新建节点定义" : "编辑节点定义"}</p>
-            <strong>{relativePath}</strong>
+            <strong>{directoryPrefix ? `${directoryPrefix}/${name}` : name || "未设置名称"}</strong>
           </div>
           {hasBlockingErrors ? <span className="badge flowchart-badge-error">{errors.length} 个问题</span> : null}
         </div>
@@ -294,15 +327,6 @@ export function FlowChartNodeDefinitionDialog({
           {/* ── 基础信息行（flex-wrap，在 grid 外部，可自动换行） ── */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
             <label className="search-field compact-field" style={{ flex: "1 1 200px" }}>
-              <span>相对路径</span>
-              <input
-                onChange={(e) => setRelativePath(e.target.value)}
-                placeholder="Event/Player/OnEnterScene"
-                type="text"
-                value={relativePath}
-              />
-            </label>
-            <label className="search-field compact-field" style={{ flex: "1 1 160px" }}>
               <span>名称 (name) *</span>
               <input
                 onChange={(e) => setName(e.target.value)}

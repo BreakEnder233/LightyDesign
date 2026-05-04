@@ -30,6 +30,8 @@ type FlowChartSidebarProps = {
   onSidebarWidthCommit: (width: number) => void;
   onRequestDeleteDirectory: (scope: FlowChartTreeScope, relativePath: string, label: string) => void;
   onRequestDeleteFlowChart: (relativePath: string, label: string) => void;
+  onOpenCreateNodeDefinition?: (baseDirectory: string) => void;
+  onOpenEditNodeDefinition?: (relativePath: string) => void;
 };
 
 type FlowChartSidebarTab = "files" | "nodes";
@@ -746,6 +748,16 @@ export function FlowChartSidebar({
                           )
                       : null}
 
+{target.scope === "nodes" && onOpenCreateNodeDefinition ? (
+                      <button
+                        className="tree-context-menu-item"
+                        onClick={() => runMenuAction(() => onOpenCreateNodeDefinition(target.relativePath ?? ""))}
+                        type="button"
+                      >
+                        新建节点定义
+                      </button>
+                    ) : null}
+
                     <button
                       className="tree-context-menu-item"
                       onClick={() => runMenuAction(() => onOpenCreateDirectoryDialog(target.scope, target.relativePath ?? ""))}
@@ -824,18 +836,29 @@ export function FlowChartSidebar({
                 }
 
                 return (
-                  <button
-                    className="tree-context-menu-item"
-                    disabled={!canAddNode}
-                    onClick={() => runMenuAction(() => {
-                      if (canAddNode) {
-                        void onAddNode(target.relativePath);
-                      }
-                    })}
-                    type="button"
-                  >
-                    添加到当前流程图
-                  </button>
+                  <>
+                    {onOpenEditNodeDefinition ? (
+                      <button
+                        className="tree-context-menu-item"
+                        onClick={() => runMenuAction(() => onOpenEditNodeDefinition(target.relativePath))}
+                        type="button"
+                      >
+                        编辑定义
+                      </button>
+                    ) : null}
+                    <button
+                      className="tree-context-menu-item"
+                      disabled={!canAddNode}
+                      onClick={() => runMenuAction(() => {
+                        if (canAddNode) {
+                          void onAddNode(target.relativePath);
+                        }
+                      })}
+                      type="button"
+                    >
+                      添加到当前流程图
+                    </button>
+                  </>
                 );
               })()
             : null}

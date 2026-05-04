@@ -1,10 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import type {
   FlowChartCatalogResponse,
   FlowChartFileSummary,
   FlowChartNodeDefinitionSummary,
 } from "../types/flowchartEditor";
+
+import { TreeView } from "./tree-view/TreeView";
+import { TreeViewIcon } from "./tree-view/TreeViewIcon";
+import { TreeViewSearchHighlighter } from "./tree-view/TreeViewSearchHighlighter";
+import type { TreeViewItem, DropTarget, DragPayload } from "./tree-view/treeViewUtils";
+import { computeSearchRanges } from "./tree-view/treeViewUtils";
 
 type FlowChartTreeScope = "files" | "nodes";
 
@@ -30,6 +36,8 @@ type FlowChartSidebarProps = {
   onSidebarWidthCommit: (width: number) => void;
   onRequestDeleteDirectory: (scope: FlowChartTreeScope, relativePath: string, label: string) => void;
   onRequestDeleteFlowChart: (relativePath: string, label: string) => void;
+  onMoveFile?: (scope: "files" | "nodes", relativePath: string, newRelativePath: string) => void;
+  onMoveDirectory?: (scope: "files" | "nodes", relativePath: string, newRelativePath: string) => void;
 };
 
 type FlowChartSidebarTab = "files" | "nodes";
@@ -202,6 +210,71 @@ function filterTree(entry: TreeEntry, keyword: string): TreeEntry | null {
   return entry.searchText.includes(keyword) ? entry : null;
 }
 
+function buildFlatItems(
+  root: TreeDirectoryNode,
+  expandedKeys: Set<string>,
+  keyword: string,
+): TreeViewItem[] {
+  const result: TreeViewItem[] = [];
+  const isSearchActive = keyword.length > 0;
+
+  function walk(entry: TreeEntry, depth: number) {
+    if (entry.kind === "directory") {
+      const searchRanges = computeSearchRanges(entry.name, keyword);
+      result.push({
+        id: entry.key,
+        depth,
+        kind: "directory",
+        label: entry.name,
+        searchRanges,
+        metadata: {
+          scope: entry.scope,
+          relativePath: entry.relativePath,
+          isRoot: entry.isRoot,
+          count: entry.count,
+        },
+      });
+
+      const isExpanded = isSearchActive || expandedKeys.has(entry.key);
+      if (isExpanded) {
+        entry.children.forEach((child) => walk(child, depth + 1));
+      }
+    } else {
+      const label = entry.label;
+      const searchRanges = computeSearchRanges(label, keyword);
+      result.push({
+        id: entry.key,
+        depth,
+        kind: "leaf",
+        label,
+        searchRanges,
+        metadata: {
+          kind: entry.kind,
+          scope: entry.scope,
+          relativePath: entry.relativePath,
+          nodeKind: entry.kind === "node-definition" ? entry.nodeKind : undefined,
+        },
+      });
+    }
+  }
+
+  walk(root, 0);
+  return result;
+}
+
+function findEntryByKey(root: TreeDirectoryNode, key: string): TreeEntry | null {
+  if (root.key === key) return root;
+  for (const child of root.children) {
+    if (child.kind === "directory") {
+      const found = findEntryByKey(child, key);
+      if (found) return found;
+    } else if (child.key === key) {
+      return child;
+    }
+  }
+  return null;
+}
+
 function buildFilesTree(catalog: FlowChartCatalogResponse | null) {
   const root = createDirectoryNode("files", null, "流程图", true, catalog?.files.length ?? 0);
   if (!catalog) {
@@ -287,6 +360,8 @@ export function FlowChartSidebar({
   onSidebarWidthCommit,
   onRequestDeleteDirectory,
   onRequestDeleteFlowChart,
+  onMoveFile,
+  onMoveDirectory,
 }: FlowChartSidebarProps) {
   const [activeTab, setActiveTab] = useState<FlowChartSidebarTab>("files");
   const [filesSearchText, setFilesSearchText] = useState("");
@@ -415,9 +490,20 @@ export function FlowChartSidebar({
   const activeKeyword = activeTab === "files" ? filesKeyword : nodesKeyword;
   const activeSearchText = activeTab === "files" ? filesSearchText : nodesSearchText;
   const activeTree = activeTab === "files" ? filesTree : nodesTree;
-  const activeTreeDir = activeTree?.kind === "directory" ? activeTree : null;
+  const activeTreeDir = useMemo(() => {
+    const tree = activeTab === "files" ? filesTree : nodesTree;
+    return tree?.kind === "directory" ? tree : null;
+  }, [activeTab, filesTree, nodesTree]);
   const hasVisibleEntries = Boolean(activeTreeDir && activeTreeDir.children.length > 0);
   const isSearchActive = activeKeyword.length > 0;
+  const selectedKey = useMemo<string | null>(() => {
+    if (!activeFlowChartPath) return null;
+    return buildTreeKey("files", activeFlowChartPath);
+  }, [activeFlowChartPath]);
+  const flatItems = useMemo(() => {
+    if (!activeTreeDir) return [];
+    return buildFlatItems(activeTreeDir, expandedKeys, activeKeyword);
+  }, [activeTreeDir, expandedKeys, activeKeyword]);
 
   function setActiveSearchText(value: string) {
     if (activeTab === "files") {
@@ -476,120 +562,37 @@ export function FlowChartSidebar({
     });
   }
 
-  function renderTreeEntry(entry: TreeEntry, depth: number) {
-    if (entry.kind === "directory") {
-      const isExpanded = isSearchActive || expandedKeys.has(entry.key);
-      return (
-        <div className="flowchart-tree-branch" key={entry.key}>
-          <button
-            className={`flowchart-tree-row flowchart-tree-row-directory${entry.isRoot ? " is-root" : ""}`}
-            onClick={() => toggleDirectory(entry.key)}
-            onContextMenu={(event) => {
-              openContextMenu(event, {
-                kind: "directory",
-                scope: entry.scope,
-                relativePath: entry.relativePath,
-                label: entry.relativePath ?? entry.name,
-                key: entry.key,
-                isRoot: entry.isRoot,
-                expanded: expandedKeys.has(entry.key),
-              });
-            }}
-            style={{ paddingLeft: 10 + depth * 18 }}
-            type="button"
-          >
-            <span className="flowchart-tree-expander">
-              {isExpanded ? (
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                  <path d="M1 3l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              ) : (
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                  <path d="M3 1l3 3-3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </span>
-            <span className="flowchart-tree-label">{entry.name}</span>
-            {entry.count !== null ? <span className="badge">{entry.count}</span> : null}
-          </button>
+  const handleTreeDrop = useCallback(
+    (source: DragPayload, target: DropTarget) => {
+      if (source.keys.length !== 1 || !activeTreeDir) return;
+      const sourceKey = source.keys[0];
+      const sourceEntry = findEntryByKey(activeTreeDir, sourceKey);
+      if (!sourceEntry) return;
 
-          {isExpanded ? (
-            entry.children.length > 0 ? (
-              <div className="flowchart-tree-children">
-                {entry.children.map((child) => renderTreeEntry(child, depth + 1))}
-              </div>
-            ) : (
-              <div className="flowchart-tree-empty-row" style={{ paddingLeft: 28 + depth * 18 }}>
-                空目录
-              </div>
-            )
-          ) : null}
-        </div>
-      );
-    }
+      if (target.kind === "directory") {
+        const targetEntry = findEntryByKey(activeTreeDir, target.targetKey);
+        if (!targetEntry || targetEntry.kind !== "directory") return;
 
-    if (entry.kind === "flowchart-file") {
-      return (
-        <button
-          className={`flowchart-tree-row flowchart-tree-row-leaf${activeFlowChartPath === entry.relativePath ? " is-selected" : ""}`}
-          key={entry.key}
-          onClick={() => onOpenFlowChart(entry.relativePath)}
-          onContextMenu={(event) => {
-            openContextMenu(event, {
-              kind: "flowchart-file",
-              relativePath: entry.relativePath,
-              label: entry.label,
-            });
-          }}
-          style={{ paddingLeft: 10 + depth * 18 }}
-          title={entry.relativePath}
-          type="button"
-        >
-          <span className="flowchart-tree-expander is-leaf">
-            <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
-              <circle cx="3" cy="3" r="2" fill="currentColor" opacity="0.5"/>
-            </svg>
-          </span>
-          <span className="flowchart-tree-copy">
-            <strong>{entry.label}</strong>
-          </span>
-          {activeFlowChartPath === entry.relativePath ? <span className="badge flowchart-tree-row-badge">打开中</span> : null}
-        </button>
-      );
-    }
+        const sourcePath = "relativePath" in sourceEntry ? sourceEntry.relativePath : null;
+        const targetDirPath = targetEntry.relativePath ?? "";
+        const sourceName = sourceEntry.kind === "directory"
+          ? sourceEntry.name
+          : sourceEntry.label;
+        const newRelativePath = targetDirPath ? `${targetDirPath}/${sourceName}` : sourceName;
 
-    return (
-      <button
-        className={`flowchart-tree-row flowchart-tree-row-leaf${canAddNode ? "" : " is-disabled"}`}
-        key={entry.key}
-        onClick={() => {
-          if (canAddNode) {
-            void onAddNode(entry.relativePath);
-          }
-        }}
-        onContextMenu={(event) => {
-          openContextMenu(event, {
-            kind: "node-definition",
-            relativePath: entry.relativePath,
-            label: entry.label,
-          });
-        }}
-        style={{ paddingLeft: 10 + depth * 18 }}
-        title={entry.relativePath}
-        type="button"
-      >
-        <span className="flowchart-tree-expander is-leaf">
-          <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
-            <circle cx="3" cy="3" r="2" fill="currentColor" opacity="0.5"/>
-          </svg>
-        </span>
-        <span className="flowchart-tree-copy">
-          <strong>{entry.label}</strong>
-        </span>
-        <span className={`flowchart-kind-badge is-${entry.nodeKind}`}>{entry.nodeKind}</span>
-      </button>
-    );
-  }
+        if (!sourcePath || sourcePath === newRelativePath) return;
+
+        if (sourceEntry.kind === "directory") {
+          onMoveDirectory?.(sourceEntry.scope, sourcePath, newRelativePath);
+        } else if (sourceEntry.kind === "flowchart-file") {
+          onMoveFile?.("files", sourcePath, newRelativePath);
+        } else if (sourceEntry.kind === "node-definition") {
+          onMoveFile?.("nodes", sourcePath, newRelativePath);
+        }
+      }
+    },
+    [activeTreeDir, onMoveFile, onMoveDirectory],
+  );
 
   return (
     <aside className="workspace-sidebar flowchart-workspace-sidebar">
@@ -665,7 +668,76 @@ export function FlowChartSidebar({
               <>
                 <div className="flowchart-sidebar-tree">
                   <div className="flowchart-sidebar-tree-content">
-                    {activeTree ? renderTreeEntry(activeTree, 0) : null}
+                    {activeTreeDir ? (
+                      <TreeView
+                        items={flatItems}
+                        expandedKeys={expandedKeys}
+                        selectedKey={selectedKey}
+                        searchKeyword={activeKeyword}
+                        dragEnabled={!isSearchActive}
+                        onToggle={toggleDirectory}
+                        onSelect={(key) => {
+                          const entry = findEntryByKey(activeTreeDir, key);
+                          if (!entry) return;
+                          if (entry.kind === "flowchart-file") {
+                            onOpenFlowChart(entry.relativePath);
+                          } else if (entry.kind === "node-definition" && canAddNode) {
+                            void onAddNode(entry.relativePath);
+                          }
+                        }}
+                        onContextMenu={(event, item) => {
+                          const entry = findEntryByKey(activeTreeDir, item.id);
+                          if (!entry) return;
+                          if (entry.kind === "directory") {
+                            openContextMenu(event as ReactMouseEvent<HTMLElement>, {
+                              kind: "directory",
+                              scope: entry.scope,
+                              relativePath: entry.relativePath,
+                              label: entry.relativePath ?? entry.name,
+                              key: entry.key,
+                              isRoot: entry.isRoot,
+                              expanded: expandedKeys.has(entry.key),
+                            });
+                          } else if (entry.kind === "flowchart-file") {
+                            openContextMenu(event as ReactMouseEvent<HTMLElement>, {
+                              kind: "flowchart-file",
+                              relativePath: entry.relativePath,
+                              label: entry.label,
+                            });
+                          } else if (entry.kind === "node-definition") {
+                            openContextMenu(event as ReactMouseEvent<HTMLElement>, {
+                              kind: "node-definition",
+                              relativePath: entry.relativePath,
+                              label: entry.label,
+                            });
+                          }
+                        }}
+                        onDrop={handleTreeDrop}
+                        renderIcon={(item) => {
+                          if (item.kind === "directory") {
+                            const isExpanded = expandedKeys.has(item.id);
+                            return <TreeViewIcon kind={isExpanded ? "directory-expanded" : "directory-collapsed"} />;
+                          }
+                          const entryKind = item.metadata.kind as string;
+                          return <TreeViewIcon kind={entryKind === "node-definition" ? "node-definition" : "flowchart-file"} />;
+                        }}
+                        renderLabel={(item) => (
+                          <TreeViewSearchHighlighter text={item.label} ranges={item.searchRanges} />
+                        )}
+                        renderBadge={(item) => {
+                          if (item.kind === "directory" && item.metadata.count != null) {
+                            return <span className="badge">{item.metadata.count as number}</span>;
+                          }
+                          if (item.kind === "leaf" && item.metadata.nodeKind) {
+                            return <span className={`flowchart-kind-badge is-${item.metadata.nodeKind as string}`}>{(item.metadata.nodeKind as string)}</span>;
+                          }
+                          if (item.kind === "leaf" && activeFlowChartPath && item.metadata.relativePath === activeFlowChartPath) {
+                            return <span className="badge flowchart-tree-row-badge">打开中</span>;
+                          }
+                          return null;
+                        }}
+                      />
+                    ) : null}
                   </div>
                 </div>
 

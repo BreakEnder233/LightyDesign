@@ -1956,6 +1956,7 @@ function App() {
       ) : isFlowChartMode ? (
         <FlowChartEditorView
           editor={flowChartEditor}
+          onOpenFlowChartTab={editorTabs.openFlowChartTab}
           onSidebarWidthChange={handleFlowChartSidebarWidthChange}
           onSidebarWidthCommit={handleFlowChartSidebarWidthCommit}
           sidebarWidth={flowChartSidebarWidth}

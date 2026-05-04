@@ -17,6 +17,8 @@ type FlowChartEditorViewProps = {
   onSidebarWidthChange: (width: number) => void;
   onSidebarWidthCommit: (width: number) => void;
   workspacePath: string;
+  /** Called when the user opens or creates a flowchart, to create a tab in the unified tab bar. */
+  onOpenFlowChartTab?: (relativePath: string, name: string) => void;
 };
 
 export function FlowChartEditorView({
@@ -25,6 +27,7 @@ export function FlowChartEditorView({
   onSidebarWidthCommit,
   sidebarWidth,
   workspacePath,
+  onOpenFlowChartTab,
 }: FlowChartEditorViewProps) {
   const selectedNodeDefinition = editor.selectedNode ? editor.resolvedDefinitionsByType[editor.selectedNode.nodeType] ?? null : null;
   const [metadataDialogMode, setMetadataDialogMode] = useState<"create" | "edit">("create");
@@ -223,6 +226,7 @@ export function FlowChartEditorView({
     if (metadataDialogMode === "create") {
       const created = await editor.createFlowChart(value);
       if (created) {
+        onOpenFlowChartTab?.(value.relativePath, value.name);
         setMetadataDialogTarget(null);
         setIsMetadataDialogOpen(false);
       }
@@ -360,7 +364,11 @@ export function FlowChartEditorView({
         onOpenExportAllFlowChartsDialog={handleOpenExportAllFlowChartsDialog}
         onOpenExportFlowChartDialog={handleOpenExportFlowChartDialog}
         onOpenExportFlowChartDirectoryDialog={handleOpenExportFlowChartDirectoryDialog}
-        onOpenFlowChart={editor.selectFlowChart}
+        onOpenFlowChart={(relativePath) => {
+          editor.selectFlowChart(relativePath);
+          const name = relativePath.split("/").pop()?.replace(/\.json$/i, "") ?? relativePath;
+          onOpenFlowChartTab?.(relativePath, name);
+        }}
         onOpenRenameDirectoryDialog={handleOpenRenameDirectoryDialog}
         onSidebarWidthChange={onSidebarWidthChange}
         onSidebarWidthCommit={onSidebarWidthCommit}

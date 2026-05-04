@@ -22,10 +22,13 @@ import {
   normalizeMcpConfigPath,
 } from "./utils/appHelpers";
 import { fetchJson } from "./utils/desktopHost";
+import { EditorTabBar } from "./components/EditorTabBar";
+import { useEditorTabs } from "./hooks/useEditorTabs";
+import { isFlowChartTabInfo, isSheetTabInfo } from "./types/editorTabs";
+import type { EditorTabInfo } from "./types/editorTabs";
 
 type ToolbarMenuId = "file" | "edit" | "table" | "ai" | "help";
 type McpConfigTargetClient = "vscode";
-type EditorMode = "workbook" | "flowchart";
 
 const defaultFlowChartSidebarWidth = 320;
 
@@ -92,10 +95,23 @@ function App() {
   const hostStatusLabel = bridgeStatus === "unavailable" ? "桥接不可用" : hostHealth?.ok ? "已连接" : "连接中";
   const hostStatusClassName = bridgeStatus === "unavailable" ? "status-chip is-error" : hostHealth?.ok ? "status-chip is-ok" : "status-chip is-warn";
   const canChooseWorkspaceDirectory = bridgeStatus === "ready";
-  const [editorMode, setEditorMode] = useState<EditorMode>("workbook");
   const [flowChartSidebarWidth, setFlowChartSidebarWidth] = useState(defaultFlowChartSidebarWidth);
-  const isWorkbookMode = editorMode === "workbook";
-  const isFlowChartMode = editorMode === "flowchart";
+
+  // ── Unified Tab System ──
+  const editorTabs = useEditorTabs({
+    workspacePath,
+    sheetTabs: workspaceEditor.openTabs,
+    activeSheetTabId: workspaceEditor.activeTabId,
+    onActivateSheetTab: (tabId) => workspaceEditor.setActiveTabId(tabId),
+    onCloseSheetTab: (tabId) => workspaceEditor.closeTab(tabId),
+  });
+
+  const activeTabInfo = useMemo<EditorTabInfo | null>(
+    () => editorTabs.tabs.find((t) => t.id === editorTabs.activeTabId) ?? null,
+    [editorTabs.tabs, editorTabs.activeTabId],
+  );
+  const isWorkbookMode = activeTabInfo ? isSheetTabInfo(activeTabInfo) : false;
+  const isFlowChartMode = activeTabInfo ? isFlowChartTabInfo(activeTabInfo) : false;
   const isUpdateInstallInProgress =
     updateDownloadState?.status === "preparing" ||
     updateDownloadState?.status === "downloading" ||
@@ -211,6 +227,18 @@ function App() {
     onSaveWorkspaceCodegenOptions: saveWorkspaceCodegenOptions,
     onToast: pushToastNotification,
   });
+
+  // When a flowchart tab is activated, open the corresponding file in the editor.
+  useEffect(() => {
+    if (!isFlowChartMode || !activeTabInfo || !isFlowChartTabInfo(activeTabInfo)) {
+      return;
+    }
+    if (flowChartEditor.activeFlowChartPath === activeTabInfo.relativePath) {
+      return;
+    }
+    flowChartEditor.openFlowChartByPath(activeTabInfo.relativePath);
+  }, [isFlowChartMode, activeTabInfo?.id, flowChartEditor.activeFlowChartPath]);
+
   const {
     activeColumnWidths,
     activeEditorContext,
@@ -350,12 +378,12 @@ function App() {
     bridgeError,
     hostInfo,
     onToast: pushToastNotification,
-    shortcutScopeActive: editorMode === "workbook",
+    shortcutScopeActive: isWorkbookMode,
     workspaceEditor,
   });
 
   const flowChartShortcutBindings = useMemo<ShortcutBinding[]>(() => {
-    if (editorMode !== "flowchart") {
+    if (!isFlowChartMode) {
       return [];
     }
 
@@ -445,7 +473,7 @@ function App() {
         },
       },
     ];
-  }, [editorMode, flowChartEditor]);
+  }, [isFlowChartMode, flowChartEditor]);
 
   useEditorShortcuts(flowChartShortcutBindings);
   const flowChartSelectionText = flowChartEditor.selectedNodeCount > 1
@@ -510,7 +538,7 @@ function App() {
 
     return {
       ...activeEditorContext,
-      editorMode,
+      editorMode: isWorkbookMode ? "workbook" : isFlowChartMode ? "flowchart" : "workbook",
       currentSheet: isWorkbookMode ? activeEditorContext.currentSheet : null,
       selection: isWorkbookMode ? activeEditorContext.selection : null,
       currentFlowChart,
@@ -518,7 +546,8 @@ function App() {
     };
   }, [
     activeEditorContext,
-    editorMode,
+    isFlowChartMode,
+    isWorkbookMode,
     flowChartEditor.activeDocument,
     flowChartEditor.activeFlowChartPath,
     flowChartEditor.activeFlowChartState,
@@ -1737,7 +1766,12 @@ function App() {
           <button
             aria-selected={isWorkbookMode}
             className={`toolbar-mode-button${isWorkbookMode ? " is-active" : ""}`}
-            onClick={() => setEditorMode("workbook")}
+            onClick={() => {
+              const sheetTab = editorTabs.tabs.find(isSheetTabInfo);
+              if (sheetTab) {
+                editorTabs.activateTab(sheetTab.id);
+              }
+            }}
             role="tab"
             type="button"
           >
@@ -1746,7 +1780,12 @@ function App() {
           <button
             aria-selected={isFlowChartMode}
             className={`toolbar-mode-button${isFlowChartMode ? " is-active" : ""}`}
-            onClick={() => setEditorMode("flowchart")}
+            onClick={() => {
+              const fcTab = editorTabs.tabs.find(isFlowChartTabInfo);
+              if (fcTab) {
+                editorTabs.activateTab(fcTab.id);
+              }
+            }}
             role="tab"
             type="button"
           >
@@ -1790,6 +1829,13 @@ function App() {
           </div>
         ) : null}
       </header>
+
+      <EditorTabBar
+        tabs={editorTabs.tabs}
+        activeTabId={editorTabs.activeTabId}
+        onActivateTab={editorTabs.activateTab}
+        onCloseTab={editorTabs.closeTab}
+      />
 
       {isWorkbookMode ? (
         <WorkbookEditorView
@@ -1907,7 +1953,7 @@ function App() {
           workspaceStatus={workspaceStatus}
           onWorkspaceSearchChange={setWorkspaceSearch}
         />
-      ) : (
+      ) : isFlowChartMode ? (
         <FlowChartEditorView
           editor={flowChartEditor}
           onSidebarWidthChange={handleFlowChartSidebarWidthChange}
@@ -1915,6 +1961,10 @@ function App() {
           sidebarWidth={flowChartSidebarWidth}
           workspacePath={workspacePath}
         />
+      ) : (
+        <div className="editor-empty-state">
+          <p>打开一个表格或流程图开始编辑</p>
+        </div>
       )}
 
       <footer className="status-bar">

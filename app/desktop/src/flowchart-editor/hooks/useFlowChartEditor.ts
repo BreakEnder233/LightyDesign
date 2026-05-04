@@ -2365,6 +2365,94 @@ export function useFlowChartEditor({
     }
   }, [catalog?.files, ensureActiveFlowChartSavedForExport, hostInfo, onToast, workspacePath]);
 
+  const loadNodeDefinition = useCallback(
+    async (relativePath: string): Promise<FlowChartNodeDefinitionResponse | null> => {
+      if (!hostInfo || !workspacePath) {
+        onToast({
+          title: "无法加载节点定义",
+          detail: "请先打开一个工作区。",
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: false,
+        });
+        return null;
+      }
+
+      try {
+        return await fetchJson<FlowChartNodeDefinitionResponse>(
+          buildApiUrl(hostInfo, `/api/workspace/flowcharts/nodes/${encodeFlowChartRelativePath(relativePath)}`, workspacePath),
+        );
+      } catch (error) {
+        onToast({
+          title: "节点定义加载失败",
+          summary: relativePath,
+          detail: error instanceof Error ? error.message : "未能读取节点定义。",
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: true,
+        });
+        return null;
+      }
+    },
+    [hostInfo, onToast, workspacePath],
+  );
+
+  const saveNodeDefinition = useCallback(
+    async (
+      relativePath: string,
+      document: FlowChartNodeDefinitionDocument,
+    ): Promise<boolean> => {
+      if (!hostInfo || !workspacePath) {
+        onToast({
+          title: "无法保存节点定义",
+          detail: "请先打开一个工作区。",
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: false,
+        });
+        return false;
+      }
+
+      try {
+        await fetchJson<FlowChartNodeDefinitionResponse>(
+          `${hostInfo.desktopHostUrl}/api/workspace/flowcharts/nodes/save`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              workspacePath,
+              relativePath,
+              document,
+            }),
+          },
+        );
+
+        reloadCatalog();
+        reloadNodeDefinitions();
+        onToast({
+          title: "节点定义已保存",
+          summary: relativePath,
+          source: "workspace",
+          variant: "success",
+          canOpenDetail: false,
+          durationMs: 2400,
+        });
+        return true;
+      } catch (error) {
+        onToast({
+          title: "节点定义保存失败",
+          summary: relativePath,
+          detail: error instanceof Error ? error.message : "未能保存节点定义。",
+          source: "workspace",
+          variant: "error",
+          canOpenDetail: true,
+        });
+        return false;
+      }
+    },
+    [hostInfo, onToast, reloadCatalog, reloadNodeDefinitions, workspacePath],
+  );
+
   return {
     catalog,
     catalogError,
@@ -2437,5 +2525,7 @@ export function useFlowChartEditor({
     cutSelection,
     pasteClipboard,
     selectAll,
+    loadNodeDefinition,
+    saveNodeDefinition,
   };
 }

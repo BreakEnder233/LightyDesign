@@ -88,10 +88,22 @@
   gap: 4px;
   min-height: 0;
   overflow: hidden;
-}
-.flowchart-node-dialog-column:not(:first-child) {
+  /* ── 列分割线：border-left 居中于 padding 之间 ── */
+  padding: 0 10px;
   border-left: 1px solid #3c3c3c;
-  padding-left: 10px;
+}
+.flowchart-node-dialog-column:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+.flowchart-node-dialog-column:last-child {
+  padding-right: 0;
+}
+/* ── 行分割线：每列表头下方的水平线 ── */
+.flowchart-node-dialog-column > :first-child {
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #3c3c3c;
 }
 .flowchart-node-dialog-list {
   display: flex;
@@ -848,6 +860,7 @@
   .flowchart-node-dialog-grid {
     grid-template-columns: 1fr 1fr;
   }
+  /* 第 3 列是第二行第一项，不需要左边框 */
   .flowchart-node-dialog-column:nth-child(3) {
     border-left: none;
     padding-left: 0;
@@ -858,9 +871,10 @@
   .flowchart-node-dialog-grid {
     grid-template-columns: 1fr;
   }
-  .flowchart-node-dialog-column:not(:first-child) {
+  /* 单列下所有列分割线隐藏 */
+  .flowchart-node-dialog-column {
     border-left: none;
-    padding-left: 0;
+    padding: 0;
   }
 }
 

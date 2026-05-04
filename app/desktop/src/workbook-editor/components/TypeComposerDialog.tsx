@@ -12,7 +12,7 @@ import type {
 
 type TypeKind = "scalar" | "reference" | "container";
 
-type BuilderNode =
+export type BuilderNode =
   | {
       kind: "scalar";
       scalarType: string;

@@ -7,7 +7,6 @@ type TreeViewProps = {
   items: TreeViewItem[];
   expandedKeys: Set<string>;
   selectedKey: string | null;
-  searchKeyword: string;
   dragEnabled: boolean;
   onToggle: (key: string) => void;
   onSelect: (key: string) => void;

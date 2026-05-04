@@ -673,7 +673,6 @@ export function FlowChartSidebar({
                         items={flatItems}
                         expandedKeys={expandedKeys}
                         selectedKey={selectedKey}
-                        searchKeyword={activeKeyword}
                         dragEnabled={!isSearchActive}
                         onToggle={toggleDirectory}
                         onSelect={(key) => {

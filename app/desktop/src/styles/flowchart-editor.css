@@ -326,87 +326,7 @@
   padding-right: 2px;
 }
 
-.flowchart-tree-row {
-  width: max-content;
-  min-width: 100%;
-  min-height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 0;
-  padding-right: 10px;
-  padding-bottom: 0;
-  border: 1px solid #333333;
-  background: #1f1f1f;
-  color: inherit;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.flowchart-tree-row:hover {
-  border-color: #4f4f4f;
-  background: #252526;
-}
-
-.flowchart-tree-row.is-selected {
-  border-color: #007acc;
-  background: #0f2434;
-}
-
-.flowchart-tree-row.is-disabled {
-  opacity: 0.7;
-}
-
-.flowchart-tree-row-directory.is-root {
-  background: #202325;
-}
-
-.flowchart-tree-expander {
-  width: 12px;
-  flex: 0 0 12px;
-  color: #8b8b8b;
-  text-align: center;
-}
-
-.flowchart-tree-expander.is-leaf {
-  color: #4f4f4f;
-}
-
-.flowchart-tree-label,
-.flowchart-tree-copy {
-  min-width: 0;
-  flex: 1 1 auto;
-  white-space: nowrap;
-}
-
-.flowchart-tree-copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.flowchart-tree-copy strong {
-  color: #dcdcdc;
-  white-space: nowrap;
-}
-
-.flowchart-tree-copy span,
-.flowchart-tree-empty-row {
-  font-size: 11px;
-  color: #8b8b8b;
-}
-
-.flowchart-tree-empty-row {
-  width: max-content;
-  min-width: 100%;
-  min-height: 28px;
-  display: flex;
-  align-items: center;
-  white-space: nowrap;
-}
-
-.flowchart-tree-row-badge,
-.flowchart-tree-row .flowchart-kind-badge {
+.flowchart-tree-row-badge {
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -973,37 +893,158 @@
   padding-right: 2px;
 }
 
-/* ── Leaf vs Directory tree distinction ── */
-.flowchart-tree-row-directory {
-  border: 1px solid #333333;
+/* ── TreeView Component Styles ── */
+.tree-view {
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  min-width: 100%;
+  width: max-content;
 }
 
-.flowchart-tree-row-leaf {
-  border: none;
+.tree-view-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 2px;
+}
+
+/* ── TreeView Row ── */
+.tree-view-row {
+  width: max-content;
+  min-width: 100%;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border: 1px solid transparent;
   background: transparent;
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 2px;
+  user-select: none;
+  transition: background 100ms ease, border-color 100ms ease;
 }
 
-.flowchart-tree-row-leaf:hover {
-  background: #252526;
+.tree-view-row:hover {
+  background: #2a2a2d;
 }
 
-.flowchart-tree-row-leaf.is-selected {
+.tree-view-row:focus-visible {
+  outline: 1px solid #007acc;
+  outline-offset: -1px;
+}
+
+.tree-view-row.is-selected {
   background: #0f2434;
-  border: none;
-  box-shadow: inset 2px 0 0 #007acc;
+  border-color: #007acc;
 }
 
-/* ── Inline SVG icon helper ── */
-.flowchart-svg-icon {
+.tree-view-row.is-drag-over {
+  background: #1a3a4a;
+}
+
+.tree-view-row.is-drag-before {
+  box-shadow: 0 -1px 0 0 #4fc1ff;
+}
+
+.tree-view-row.is-drag-after {
+  box-shadow: 0 1px 0 0 #4fc1ff;
+}
+
+.tree-view-row.is-drag-inside {
+  background: #1a3a4a;
+  border-color: #4fc1ff;
+  border-style: dashed;
+}
+
+/* ── TreeView Row Parts ── */
+.tree-view-row-expander {
+  width: 14px;
+  flex: 0 0 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
+  color: #8b8b8b;
 }
 
-.flowchart-tree-expander svg,
-.flowchart-tree-expander.is-leaf svg {
+.tree-view-expander-icon {
   display: block;
+  transition: transform 120ms ease;
+}
+
+.tree-view-expander-icon.is-expanded {
+  transform: rotate(0deg);
+}
+
+.tree-view-expander-icon:not(.is-expanded) {
+  transform: rotate(-90deg);
+}
+
+.tree-view-row-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.tree-view-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #dcdcdc;
+}
+
+.tree-view-row-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* ── TreeView Directory row ── */
+.tree-view-row-directory .tree-view-row-label {
+  font-weight: 500;
+}
+
+/* ── TreeView Drag Layer ── */
+.tree-view-drag-layer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(37, 37, 38, 0.92);
+  border: 1px solid #4fc1ff;
+  border-radius: 3px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(8px);
+  font-size: 13px;
+  color: #dcdcdc;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.tree-view-drag-layer-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* ── TreeView Search Highlight ── */
+.tree-view-search-match {
+  background: rgba(255, 200, 0, 0.28);
+  color: #dcdcdc;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 /* ── Checkbox-like select for boolean ── */

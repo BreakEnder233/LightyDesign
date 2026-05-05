@@ -58,6 +58,15 @@ export function TreeViewRow({
     [item, onContextMenu],
   );
 
+  const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (item.kind === "directory") return;
+    const entryKind = item.metadata.kind as string;
+    if (entryKind === "node-definition") {
+      event.dataTransfer.setData("text/plain", item.metadata.relativePath as string);
+      event.dataTransfer.effectAllowed = "copy";
+    }
+  }, [item]);
+
   const rowClass = [
     "tree-view-row",
     `tree-view-row-${item.kind}`,
@@ -75,6 +84,8 @@ export function TreeViewRow({
       style={{ paddingLeft: 8 + item.depth * 18 }}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
+      draggable={item.kind === "leaf" && (item.metadata.kind as string) === "node-definition"}
+      onDragStart={handleDragStart}
       role="treeitem"
       aria-expanded={item.kind === "directory" ? isExpanded : undefined}
       aria-selected={isSelected}
@@ -82,8 +93,8 @@ export function TreeViewRow({
     >
       <span className="tree-view-row-expander">
         {item.kind === "directory" ? (
-          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" className={`tree-view-expander-icon${isExpanded ? " is-expanded" : ""}`}>
-            <path d={isExpanded ? "M1 3l3 3 3-3" : "M3 1l3 3-3 3"} stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={`tree-view-expander-icon${isExpanded ? " is-expanded" : ""}`}>
+            <path d={isExpanded ? "M2 4l4 4 4-4" : "M4 2l4 4-4 4"} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         ) : null}
       </span>

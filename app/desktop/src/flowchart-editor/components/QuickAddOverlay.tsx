@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { fuzzySearchNodes, getGroupKey, type SearchMatch } from "../utils/fuzzySearch";
+import { fuzzySearchNodes, type SearchMatch } from "../utils/fuzzySearch";
 import type { FlowChartCatalogResponse } from "../types/flowchartEditor";
 
 type QuickAddOverlayProps = {
@@ -118,7 +118,7 @@ export function QuickAddOverlay({ catalog, isOpen, onClose, onSubmit, onBrowseAl
   let itemCounter = 0;
 
   return (
-    <div className="quick-add-backdrop" onClick={onClose} onKeyDown={handleKeyDown} role="presentation">
+    <div className="quick-add-backdrop" onClick={onClose} role="presentation">
       <div
         className="quick-add-overlay"
         onClick={(e) => e.stopPropagation()}

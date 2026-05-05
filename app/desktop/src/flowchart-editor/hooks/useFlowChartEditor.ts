@@ -1732,6 +1732,20 @@ export function useFlowChartEditor({
     [updateActiveDocument],
   );
 
+  const batchUpdateNodePropertyValue = useCallback(
+    (nodeIds: number[], propertyId: number, value: unknown) => {
+      if (!activeDocument) return;
+      pushUndoEntry();
+      updateActiveDocument((document) => {
+        document.nodes.forEach((node) => {
+          if (!nodeIds.includes(node.nodeId)) return;
+          upsertNodePropertyValue(node, propertyId, value);
+        });
+      });
+    },
+    [activeDocument, updateActiveDocument],
+  );
+
   const resetNodePropertyValue = useCallback(
     (nodeId: number, propertyId: number) => {
       pushUndoEntry();
@@ -2613,6 +2627,7 @@ export function useFlowChartEditor({
     autoLayoutNodes,
     updateActiveFlowChartMeta,
     updateNodePropertyValue,
+    batchUpdateNodePropertyValue,
     resetNodePropertyValue,
     deleteSelection,
     deleteSelectedNode,

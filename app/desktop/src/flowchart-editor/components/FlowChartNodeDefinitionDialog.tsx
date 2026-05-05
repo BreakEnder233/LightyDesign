@@ -86,6 +86,7 @@ export function FlowChartNodeDefinitionDialog({
   // ── 编辑状态 ──
   const [name, setName] = useState("");
   const [alias, setAlias] = useState("");
+  const [description, setDescription] = useState("");
   const [nodeKind, setNodeKind] = useState<FlowChartNodeKind>("event");
   const [properties, setProperties] = useState<FlowChartPropertyDefinition[]>([]);
   const [computePorts, setComputePorts] = useState<FlowChartComputePortDefinition[]>([]);
@@ -115,6 +116,7 @@ export function FlowChartNodeDefinitionDialog({
       const currentPath = existingRelativePath ?? initialRelativePath;
       setName(currentPath.split("/").pop() ?? existingDefinition.name);
       setAlias(existingDefinition.alias ?? "");
+      setDescription(existingDefinition.description ?? "");
       setNodeKind(existingDefinition.nodeKind);
       setProperties([...existingDefinition.properties]);
       setComputePorts([...existingDefinition.computePorts]);
@@ -122,6 +124,7 @@ export function FlowChartNodeDefinitionDialog({
     } else {
       setName(initialRelativePath.split("/").pop() ?? "NewNode");
       setAlias("");
+      setDescription("");
       setNodeKind("event");
       setProperties([]);
       setComputePorts([]);
@@ -142,24 +145,26 @@ export function FlowChartNodeDefinitionDialog({
       formatVersion: "1.0",
       name,
       alias: alias || null,
+      description: description || null,
       nodeKind,
       properties,
       computePorts,
       flowPorts,
     };
     setErrors(validateNodeDefinitionStructure(document));
-  }, [name, alias, nodeKind, properties, computePorts, flowPorts]);
+  }, [name, alias, description, nodeKind, properties, computePorts, flowPorts]);
 
   // ── 构建当前文档，用于提交 ──
   const currentDocument = useMemo<FlowChartNodeDefinitionDocument>(() => ({
     formatVersion: "1.0",
     name,
     alias: alias || null,
+    description: description || null,
     nodeKind,
     properties,
     computePorts,
     flowPorts,
-  }), [name, alias, nodeKind, properties, computePorts, flowPorts]);
+  }), [name, alias, description, nodeKind, properties, computePorts, flowPorts]);
 
   // ── 属性操作 ──
   function addProperty() {
@@ -355,6 +360,17 @@ export function FlowChartNodeDefinitionDialog({
                 <option value="flow">flow</option>
                 <option value="compute">compute</option>
               </select>
+            </label>
+            <label className="search-field compact-field" style={{ flex: "1 1 100%" }}>
+              <span>概述 (description)</span>
+              <textarea
+                className="dialog-field-input"
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="描述该节点的用途和行为，用于搜索和预览"
+                rows={3}
+                style={{ resize: "vertical", minHeight: "60px", maxHeight: "160px", fontFamily: "inherit" }}
+                value={description}
+              />
             </label>
           </div>
 

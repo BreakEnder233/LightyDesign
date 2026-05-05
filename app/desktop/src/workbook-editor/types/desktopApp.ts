@@ -200,6 +200,7 @@ export type WorkspaceTreeSheet = {
 
 export type WorkspaceTreeWorkbook = {
   name: string;
+  directoryPath: string;
   outputRelativePath?: string | null;
   sheets: WorkspaceTreeSheet[];
   alias?: string | null;

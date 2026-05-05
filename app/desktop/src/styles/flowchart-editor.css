@@ -243,11 +243,7 @@
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  background:
-    linear-gradient(90deg, rgba(79, 193, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(rgba(79, 193, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(180deg, #1d1d1f 0%, #18181a 100%);
-  background-size: 32px 32px, 32px 32px, 100% 100%;
+  background: linear-gradient(180deg, #1d1d1f 0%, #18181a 100%);
 }
 
 .flowchart-canvas-viewport.is-panning {
@@ -260,6 +256,10 @@
   left: 0;
   transform-origin: top left;
   will-change: transform;
+  background:
+    linear-gradient(90deg, rgba(79, 193, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(79, 193, 255, 0.06) 1px, transparent 1px);
+  background-size: 32px 32px, 32px 32px;
 }
 
 .flowchart-canvas-stage-sizer {

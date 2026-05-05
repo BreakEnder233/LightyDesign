@@ -669,6 +669,7 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
         if (!search || workbook.name.toLocaleLowerCase().includes(search) || sheets.length > 0) {
           return {
             name: workbook.name,
+            directoryPath: workbook.directoryPath,
             outputRelativePath: workspace.codegen.outputRelativePath,
             sheets,
             alias: getWorkbookAlias(workbook.name),

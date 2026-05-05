@@ -845,6 +845,24 @@ export function FlowChartSidebar({
                       新建目录
                     </button>
 
+                    <div className="tree-context-menu-separator" />
+
+                    <button
+                      className="tree-context-menu-item"
+                      onClick={() => runMenuAction(() => {
+                        const rootPath = target.scope === "files" ? catalog?.flowChartFilesRootPath : catalog?.flowChartNodesRootPath;
+                        const directoryPath = target.relativePath
+                          ? `${rootPath ?? ""}/${target.relativePath}`
+                          : rootPath ?? "";
+                        if (directoryPath) {
+                          void window.lightyDesign?.openDirectory(directoryPath);
+                        }
+                      })}
+                      type="button"
+                    >
+                      在资源管理器中打开
+                    </button>
+
                     {!target.isRoot ? (
                       <button
                         className="tree-context-menu-item"
@@ -878,6 +896,19 @@ export function FlowChartSidebar({
 
                 return (
                   <>
+                    <button
+                      className="tree-context-menu-item"
+                      onClick={() => runMenuAction(() => {
+                        const file = catalog?.files.find((f) => f.relativePath === target.relativePath);
+                        if (file?.filePath) {
+                          const directoryPath = file.filePath.replace(/\\/g, "/").replace(/\/[^/]+$/, "");
+                          void window.lightyDesign?.openDirectory(directoryPath);
+                        }
+                      })}
+                      type="button"
+                    >
+                      在资源管理器中打开
+                    </button>
                     <button className="tree-context-menu-item" onClick={() => runMenuAction(() => onOpenFlowChart(target.relativePath))} type="button">
                       打开流程图
                     </button>
@@ -916,6 +947,19 @@ export function FlowChartSidebar({
 
                 return (
                   <>
+                    <button
+                      className="tree-context-menu-item"
+                      onClick={() => runMenuAction(() => {
+                        const node = catalog?.nodeDefinitions.find((n) => n.relativePath === target.relativePath);
+                        if (node?.filePath) {
+                          const directoryPath = node.filePath.replace(/\\/g, "/").replace(/\/[^/]+$/, "");
+                          void window.lightyDesign?.openDirectory(directoryPath);
+                        }
+                      })}
+                      type="button"
+                    >
+                      在资源管理器中打开
+                    </button>
                     {onOpenEditNodeDefinition ? (
                       <button
                         className="tree-context-menu-item"

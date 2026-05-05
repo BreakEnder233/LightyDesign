@@ -558,6 +558,12 @@ button {
   color: #f2b8b5;
 }
 
+.tree-context-menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: #3c3c3c;
+}
+
 .codegen-dialog-caption {
   margin-top: 10px;
   text-transform: none;

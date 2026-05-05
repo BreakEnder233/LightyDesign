@@ -169,6 +169,7 @@ export function useWorkbookEditorUi({
   const [focusedWorkbookName, setFocusedWorkbookName] = useState<string | null>(null);
   const [workbookContextMenu, setWorkbookContextMenu] = useState<{
     workbookName: string;
+    directoryPath: string;
     x: number;
     y: number;
   } | null>(null);
@@ -748,8 +749,10 @@ export function useWorkbookEditorUi({
 
   function handleOpenWorkbookContextMenu(event: MouseEvent<HTMLButtonElement>, workbookName: string) {
     event.preventDefault();
+    const workbook = workbookTree.find((w) => w.name === workbookName);
     setWorkbookContextMenu({
       workbookName,
+      directoryPath: workbook?.directoryPath ?? "",
       x: event.clientX,
       y: event.clientY,
     });

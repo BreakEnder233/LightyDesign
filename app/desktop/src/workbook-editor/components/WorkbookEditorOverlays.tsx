@@ -7,6 +7,7 @@ import { FreezeDialog } from "./FreezeDialog";
 
 type WorkbookContextMenuState = {
   workbookName: string;
+  directoryPath: string;
   x: number;
   y: number;
 };
@@ -274,6 +275,19 @@ export function WorkbookEditorOverlays({
           role="menu"
           style={{ left: workbookContextMenu.x, top: workbookContextMenu.y }}
         >
+          <button
+            className="tree-context-menu-item"
+            onClick={() => {
+              if (workbookContextMenu.directoryPath) {
+                void window.lightyDesign?.openDirectory(workbookContextMenu.directoryPath);
+              }
+              onCloseWorkbookContextMenu();
+            }}
+            type="button"
+          >
+            在资源管理器中打开
+          </button>
+          <div className="tree-context-menu-separator" />
           <button
             className="tree-context-menu-item"
             onClick={() => onOpenCreateSheetDialog(workbookContextMenu.workbookName)}

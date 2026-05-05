@@ -1415,6 +1415,16 @@ function App() {
                       void handleRefreshBuiltinFlowChartNodes();
                     },
                   })}
+                  {renderToolbarMenuItem({
+                    label: "打开工作区目录",
+                    disabled: !canCloseWorkspace,
+                    onClick: () => {
+                      closeToolbarMenu();
+                      if (workspacePath) {
+                        void window.lightyDesign?.openDirectory(workspacePath);
+                      }
+                    },
+                  })}
                 </>)}
                 <div className="toolbar-menu-separator" />
                 {renderToolbarMenuSection("内容", <>

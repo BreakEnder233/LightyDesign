@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import { NameInputDialog } from "../../components/NameInputDialog";
 import { CodegenDialog } from "../../workbook-editor/components/CodegenDialog";
@@ -8,12 +8,18 @@ import type { useFlowChartEditor } from "../hooks/useFlowChartEditor";
 import { FlowChartCanvas, type FlowChartCanvasHandle } from "./FlowChartCanvas";
 import { FlowChartMetadataDialog } from "./FlowChartMetadataDialog";
 import { FlowChartNodeDialog } from "./FlowChartNodeDialog";
+import { QuickAddOverlay } from "./QuickAddOverlay";
+import { NodeTreeDialog } from "./NodeTreeDialog";
 import { FlowChartSidebar } from "./FlowChartSidebar";
 import { FlowChartInspectorPanel } from "./FlowChartInspectorPanel";
 import { FlowChartNodeDefinitionDialog, type NodeDefinitionDialogMode } from "./FlowChartNodeDefinitionDialog";
 import { fetchJson } from "../../utils/desktopHost";
 import type { TypeMetadataResponse } from "../../workbook-editor/types/desktopApp";
 import type { FlowChartNodeDefinitionDocument } from "../types/flowchartEditor";
+
+export type FlowChartEditorViewHandle = {
+  openQuickAdd: () => void;
+};
 
 type FlowChartEditorViewProps = {
   editor: ReturnType<typeof useFlowChartEditor>;
@@ -25,17 +31,19 @@ type FlowChartEditorViewProps = {
   onOpenFlowChartTab?: (relativePath: string, name: string) => void;
 };
 
-export function FlowChartEditorView({
+export const FlowChartEditorView = forwardRef<FlowChartEditorViewHandle, FlowChartEditorViewProps>(function FlowChartEditorView({
   editor,
   onSidebarWidthChange,
   onSidebarWidthCommit,
   sidebarWidth,
   workspacePath,
   onOpenFlowChartTab,
-}: FlowChartEditorViewProps) {
+}: FlowChartEditorViewProps, ref) {
   const [metadataDialogMode, setMetadataDialogMode] = useState<"create" | "edit">("create");
   const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
   const [isNodeDialogOpen, setIsNodeDialogOpen] = useState(false);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [isNodeTreeDialogOpen, setIsNodeTreeDialogOpen] = useState(false);
   const [isCodegenDialogOpen, setIsCodegenDialogOpen] = useState(false);
   const [codegenDialogMode, setCodegenDialogMode] = useState<"single" | "batch" | "all">("single");
   const [codegenOutputRelativePath, setCodegenOutputRelativePath] = useState(editor.workspaceCodegenOutputRelativePath ?? "");
@@ -70,6 +78,13 @@ export function FlowChartEditorView({
   const canvasRef = useRef<FlowChartCanvasHandle | null>(null);
   const canvasPanelRef = useRef<HTMLDivElement | null>(null);
   const [toolbarZoom, setToolbarZoom] = useState(1);
+
+  useImperativeHandle(ref, () => ({
+    openQuickAdd: () => {
+      setPreferredNodePosition(null);
+      setIsQuickAddOpen(true);
+    },
+  }));
 
   // Load type metadata for node definition dialog
   useEffect(() => {
@@ -257,15 +272,18 @@ export function FlowChartEditorView({
     }
   }
 
-  async function handleSubmitNode(nodeType: string) {
+  async function handleQuickAddSubmit(nodeType: string) {
     await editor.addNode(nodeType, preferredNodePosition ?? undefined);
-    handleCloseNodeDialog();
-  }
-
-  function handleCloseNodeDialog() {
+    setIsQuickAddOpen(false);
     setPreferredNodeType(null);
     setPreferredNodePosition(null);
-    setIsNodeDialogOpen(false);
+  }
+
+  function handleNodeTreeSubmit(nodeType: string) {
+    void editor.addNode(nodeType, preferredNodePosition ?? undefined);
+    setIsNodeTreeDialogOpen(false);
+    setPreferredNodeType(null);
+    setPreferredNodePosition(null);
   }
 
   async function handleSubmitDirectoryDialog() {
@@ -317,9 +335,14 @@ export function FlowChartEditorView({
   }
 
   function handleOpenNodeDialog(nodeType?: string, position?: { x: number; y: number }) {
-    setPreferredNodeType(nodeType ?? null);
     setPreferredNodePosition(position ?? null);
-    setIsNodeDialogOpen(true);
+    if (nodeType) {
+      // Direct node type specified (from sidebar) — add immediately
+      void editor.addNode(nodeType, position ?? undefined);
+    } else {
+      // Open Quick Add overlay
+      setIsQuickAddOpen(true);
+    }
   }
 
   function handleOpenCreateDirectoryDialog(scope: "files" | "nodes", baseDirectory: string) {
@@ -632,12 +655,32 @@ export function FlowChartEditorView({
         value={directoryDialogState?.value ?? ""}
       />
 
-      <FlowChartNodeDialog
+      <QuickAddOverlay
         catalog={editor.catalog}
-        initialNodeType={preferredNodeType}
-        isOpen={isNodeDialogOpen}
-        onClose={handleCloseNodeDialog}
-        onSubmit={handleSubmitNode}
+        isOpen={isQuickAddOpen}
+        onBrowseAll={() => {
+          setIsQuickAddOpen(false);
+          setIsNodeTreeDialogOpen(true);
+        }}
+        onClose={() => {
+          setIsQuickAddOpen(false);
+          setPreferredNodeType(null);
+          setPreferredNodePosition(null);
+        }}
+        onSubmit={handleQuickAddSubmit}
+      />
+
+      <NodeTreeDialog
+        catalog={editor.catalog}
+        hostInfo={editor.hostInfo}
+        isOpen={isNodeTreeDialogOpen}
+        onClose={() => {
+          setIsNodeTreeDialogOpen(false);
+          setPreferredNodeType(null);
+          setPreferredNodePosition(null);
+        }}
+        onSubmit={handleNodeTreeSubmit}
+        workspacePath={workspacePath}
       />
 
       <FlowChartNodeDefinitionDialog
@@ -664,4 +707,4 @@ export function FlowChartEditorView({
       />
     </>
   );
-}
+});

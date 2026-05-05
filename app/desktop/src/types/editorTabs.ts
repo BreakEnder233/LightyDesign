@@ -52,3 +52,12 @@ export function convertSheetTabToInfo(sheetTab: SheetTab): SheetTabInfo {
 export function buildTabPersistenceKey(workspacePath: string): string {
   return `${TAB_PERSISTENCE_PREFIX}${workspacePath}`;
 }
+
+/** State for the tab context menu positioning. */
+export type TabContextMenuState = {
+  /** Mouse position for the menu. */
+  x: number;
+  y: number;
+  /** The tab that was right-clicked. */
+  targetTabId: string;
+};

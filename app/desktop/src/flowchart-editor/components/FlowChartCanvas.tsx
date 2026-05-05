@@ -69,6 +69,8 @@ type FlowChartCanvasProps = {
   selectedNodeCount: number;
   /** Called whenever zoom or viewOrigin changes, so parent can sync toolbar display */
   onViewTransformChange?: (transform: { zoom: number; viewOrigin: CanvasPoint }) => void;
+  /** Called when a node definition is dragged from the sidebar tree and dropped onto the canvas */
+  onDropNodeDefinition?: (nodeType: string, position: { x: number; y: number }) => void;
 };
 
 export type FlowChartCanvasHandle = {
@@ -274,6 +276,7 @@ export const FlowChartCanvas = forwardRef<FlowChartCanvasHandle, FlowChartCanvas
   onAutoLayoutNodes,
   selectedNodeCount,
   onViewTransformChange,
+  onDropNodeDefinition,
 }: FlowChartCanvasProps, ref: React.ForwardedRef<FlowChartCanvasHandle>) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const minimapRef = useRef<HTMLDivElement | null>(null);
@@ -900,6 +903,24 @@ export const FlowChartCanvas = forwardRef<FlowChartCanvasHandle, FlowChartCanvas
         onMouseMove={handleCanvasMouseMove}
         onContextMenu={openCanvasContextMenu}
         onWheel={handleWheel}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("text/plain")) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          const nodeType = event.dataTransfer.getData("text/plain");
+          if (!nodeType || !onDropNodeDefinition) return;
+
+          const viewport = event.currentTarget as HTMLElement;
+          const rect = viewport.getBoundingClientRect();
+          const screenX = event.clientX - rect.left;
+          const screenY = event.clientY - rect.top;
+
+          onDropNodeDefinition(nodeType, { x: screenX, y: screenY });
+        }}
         ref={viewportRef}
       >
         <div className="flowchart-canvas-stage-sizer">

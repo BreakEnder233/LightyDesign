@@ -559,6 +559,13 @@ export function FlowChartEditorView({
                 selectedNodeCount={editor.selectedNodeCount}
                 selection={editor.selection}
                 status={editor.activeFlowChartState.status}
+                onDropNodeDefinition={(nodeType, position) => {
+                  const zoom = canvasRef.current?.getZoom() ?? 1;
+                  const viewOrigin = canvasRef.current?.getViewOrigin() ?? { x: 0, y: 0 };
+                  const canvasX = Math.max(0, Math.round(position.x / zoom + viewOrigin.x));
+                  const canvasY = Math.max(0, Math.round(position.y / zoom + viewOrigin.y));
+                  void editor.addNode(nodeType, { x: canvasX, y: canvasY });
+                }}
               />
             </div>
           </div>

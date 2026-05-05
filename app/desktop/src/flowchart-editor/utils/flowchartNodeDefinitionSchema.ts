@@ -110,6 +110,7 @@ export function buildEmptyNodeDefinition(
     name,
     alias: alias || null,
     nodeKind,
+    description: null,
     properties: [],
     computePorts: initialComputePorts,
     flowPorts: initialFlowPorts,

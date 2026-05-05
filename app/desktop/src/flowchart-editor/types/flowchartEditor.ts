@@ -50,6 +50,7 @@ export type FlowChartNodeDefinitionDocument = {
   name: string;
   alias?: string | null;
   nodeKind: FlowChartNodeKind;
+  description?: string | null;
   properties: FlowChartPropertyDefinition[];
   computePorts: FlowChartComputePortDefinition[];
   flowPorts: FlowChartFlowPortDefinition[];
@@ -62,6 +63,7 @@ export type FlowChartNodeDefinitionSummary = {
   name: string;
   alias?: string | null;
   nodeKind: FlowChartNodeKind;
+  description?: string | null;
 };
 
 export type FlowChartNodeDefinitionResponse = FlowChartNodeDefinitionSummary & {

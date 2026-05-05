@@ -287,13 +287,20 @@ export function useEditorTabs(options: UseEditorTabsOptions): UseEditorTabsResul
           const sheetTab = sheetTabs.find((t) => t.id === closeId);
           if (sheetTab) {
             onCloseSheetTab(closeId);
-          } else {
-            setFlowChartTabs((flowPrev) => flowPrev.filter((t) => t.id !== closeId));
           }
           if (activeFlowChartTabId === closeId) {
             setActiveFlowChartTabId(null);
           }
         }
+
+        // Persist flowchart tabs: keep only those in the keep set that aren't sheet tabs
+        const sheetTabIds = new Set(sheetTabs.map((t) => t.id));
+        const keepFlowChartTabIds = new Set(keep.filter((id) => !sheetTabIds.has(id)));
+        setFlowChartTabs((flowPrev) => {
+          const next = flowPrev.filter((t) => keepFlowChartTabIds.has(t.id));
+          if (workspacePath) persistFlowChartTabs(workspacePath, next);
+          return next;
+        });
 
         if (workspacePath) persistTabOrder(workspacePath, keep);
         return keep;
@@ -313,13 +320,19 @@ export function useEditorTabs(options: UseEditorTabsOptions): UseEditorTabsResul
           const sheetTab = sheetTabs.find((t) => t.id === closeId);
           if (sheetTab) {
             onCloseSheetTab(closeId);
-          } else {
-            setFlowChartTabs((flowPrev) => flowPrev.filter((t) => t.id !== closeId));
           }
           if (activeFlowChartTabId === closeId) {
             setActiveFlowChartTabId(null);
           }
         }
+
+        // Persist flowchart tabs: keep only the surviving tab
+        const sheetTabIds = new Set(sheetTabs.map((t) => t.id));
+        setFlowChartTabs((flowPrev) => {
+          const next = flowPrev.filter((t) => t.id === tabId && !sheetTabIds.has(t.id));
+          if (workspacePath) persistFlowChartTabs(workspacePath, next);
+          return next;
+        });
 
         if (workspacePath) persistTabOrder(workspacePath, keep);
         return keep;

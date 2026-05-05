@@ -6,10 +6,10 @@ import { CodegenDialog } from "../../workbook-editor/components/CodegenDialog";
 import type { useFlowChartEditor } from "../hooks/useFlowChartEditor";
 
 import { FlowChartCanvas, type FlowChartCanvasHandle } from "./FlowChartCanvas";
-import { FlowChartFloatingInspector } from "./FlowChartFloatingInspector";
 import { FlowChartMetadataDialog } from "./FlowChartMetadataDialog";
 import { FlowChartNodeDialog } from "./FlowChartNodeDialog";
 import { FlowChartSidebar } from "./FlowChartSidebar";
+import { FlowChartInspectorPanel } from "./FlowChartInspectorPanel";
 import { FlowChartNodeDefinitionDialog, type NodeDefinitionDialogMode } from "./FlowChartNodeDefinitionDialog";
 import { fetchJson } from "../../utils/desktopHost";
 import type { TypeMetadataResponse } from "../../workbook-editor/types/desktopApp";
@@ -33,7 +33,6 @@ export function FlowChartEditorView({
   workspacePath,
   onOpenFlowChartTab,
 }: FlowChartEditorViewProps) {
-  const selectedNodeDefinition = editor.selectedNode ? editor.resolvedDefinitionsByType[editor.selectedNode.nodeType] ?? null : null;
   const [metadataDialogMode, setMetadataDialogMode] = useState<"create" | "edit">("create");
   const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
   const [isNodeDialogOpen, setIsNodeDialogOpen] = useState(false);
@@ -70,26 +69,7 @@ export function FlowChartEditorView({
 
   const canvasRef = useRef<FlowChartCanvasHandle | null>(null);
   const canvasPanelRef = useRef<HTMLDivElement | null>(null);
-  const [canvasRect, setCanvasRect] = useState<DOMRectReadOnly | null>(null);
-  const [canvasTransform, setCanvasTransform] = useState<{ zoom: number; viewOrigin: { x: number; y: number } } | null>(null);
   const [toolbarZoom, setToolbarZoom] = useState(1);
-
-  // Observe canvas panel position for floating inspector positioning
-  useEffect(() => {
-    const panel = canvasPanelRef.current;
-    if (!panel) {
-      return;
-    }
-
-    const updateRect = () => {
-      setCanvasRect(panel.getBoundingClientRect());
-    };
-
-    updateRect();
-    const observer = new ResizeObserver(updateRect);
-    observer.observe(panel);
-    return () => observer.disconnect();
-  }, []);
 
   // Load type metadata for node definition dialog
   useEffect(() => {
@@ -469,7 +449,8 @@ export function FlowChartEditorView({
       />
 
       <main className="workspace-main">
-        <section className="editor-panel flowchart-editor-panel">
+        <div className="flowchart-editor-layout">
+          <section className="editor-panel flowchart-editor-panel">
           <div className="flowchart-header-bar">
             <div className="flowchart-header-copy">
               <p className="eyebrow">流程图编辑</p>
@@ -573,7 +554,6 @@ export function FlowChartEditorView({
                 onSelectNodes={editor.selectNodes}
                 onViewTransformChange={(transform) => {
                   setToolbarZoom(transform.zoom);
-                  setCanvasTransform(transform);
                 }}
                 pendingConnection={editor.pendingConnection}
                 selectedNodeCount={editor.selectedNodeCount}
@@ -583,27 +563,19 @@ export function FlowChartEditorView({
             </div>
           </div>
         </section>
+          <FlowChartInspectorPanel
+            activeDocument={editor.activeDocument}
+            selectedNodes={editor.selectedNodes}
+            selectedNodeCount={editor.selectedNodeCount}
+            selectedNodeDefinitions={editor.resolvedDefinitionsByType}
+            onDeleteSelection={editor.deleteSelection}
+            onDeleteSelectedNode={editor.deleteSelectedNode}
+            onUpdateNodePropertyValue={editor.updateNodePropertyValue}
+            onBatchUpdateNodePropertyValue={editor.batchUpdateNodePropertyValue}
+          />
+        </div>
       </main>
 
-      <FlowChartFloatingInspector
-        key={editor.selectedNode?.nodeId ?? "none"}
-        activeDocument={editor.activeDocument}
-        canvasRect={canvasRect}
-        canvasTransform={canvasTransform}
-        onClose={() => {
-          editor.clearSelection();
-        }}
-        onDeleteSelection={editor.deleteSelection}
-        onDeleteSelectedConnection={editor.deleteSelectedConnection}
-        onDeleteSelectedNode={editor.deleteSelectedNode}
-        onResetNodePropertyValue={editor.resetNodePropertyValue}
-        onUpdateNodePropertyValue={editor.updateNodePropertyValue}
-        selectedConnection={editor.selectedConnectionItem}
-        selectedConnectionCount={editor.selectedConnectionCount}
-        selectedNode={editor.selectedNode}
-        selectedNodeCount={editor.selectedNodeCount}
-        selectedNodeDefinition={selectedNodeDefinition}
-      />
 
       <FlowChartMetadataDialog
         initialAlias={metadataDialogTarget?.alias ?? ""}

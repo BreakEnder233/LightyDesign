@@ -33,6 +33,7 @@ public static class FlowChartResponseBuilder
             document.Name,
             alias = ReadJsonStringProperty(document.Document, "alias"),
             nodeKind = ReadJsonStringProperty(document.Document, "nodeKind"),
+            description = ReadJsonStringProperty(document.Document, "description"),
             document = includeDocument ? document.Document : (JsonElement?)null,
         };
     }

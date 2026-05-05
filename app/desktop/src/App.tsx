@@ -1886,6 +1886,10 @@ function App() {
           editorTabs.activateTab(tabId);
         }}
         onCloseTab={editorTabs.closeTab}
+        onReorderTabs={editorTabs.reorderTabs}
+        onCloseAllTabs={editorTabs.closeAllTabs}
+        onCloseTabsToRight={editorTabs.closeTabsToRight}
+        onCloseOtherTabs={editorTabs.closeOtherTabs}
       />
 
       {isWorkbookMode ? (

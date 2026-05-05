@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { EditorTabInfo, TabContextMenuState } from "../types/editorTabs";
 import { isFlowChartTabInfo } from "../types/editorTabs";
 import { TabContextMenu } from "./TabContextMenu";
@@ -39,8 +39,8 @@ export function EditorTabBar({
   onCloseOtherTabs,
 }: EditorTabBarProps) {
   const [contextMenuState, setContextMenuState] = useState<TabContextMenuState | null>(null);
-  const dragSourceIdRef = useRef<string | null>(null);
-  const dragOverTargetIdRef = useRef<string | null>(null);
+  const [dragSourceId, setDragSourceId] = useState<string | null>(null);
+  const [dragOverTargetId, setDragOverTargetId] = useState<string | null>(null);
 
   const handleClose = useCallback(
     (event: React.MouseEvent | React.KeyboardEvent, tabId: string) => {
@@ -54,7 +54,7 @@ export function EditorTabBar({
 
   const handleDragStart = useCallback(
     (event: React.DragEvent, tabId: string) => {
-      dragSourceIdRef.current = tabId;
+      setDragSourceId(tabId);
       event.dataTransfer.effectAllowed = "move";
       // Required for Firefox
       event.dataTransfer.setData("text/plain", tabId);
@@ -66,14 +66,14 @@ export function EditorTabBar({
     (event: React.DragEvent, tabId: string) => {
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
-      dragOverTargetIdRef.current = tabId;
+      setDragOverTargetId(tabId);
     },
     [],
   );
 
   const handleDragLeave = useCallback(
-    (_event: React.DragEvent, _tabId: string) => {
-      // No-op for now; visual cleanup happens in dragEnd
+    (_event: React.DragEvent, tabId: string) => {
+      setDragOverTargetId((prev) => (prev === tabId ? null : prev));
     },
     [],
   );
@@ -81,8 +81,7 @@ export function EditorTabBar({
   const handleDrop = useCallback(
     (event: React.DragEvent, targetId: string) => {
       event.preventDefault();
-      const sourceId = dragSourceIdRef.current;
-      if (!sourceId || sourceId === targetId) return;
+      if (!dragSourceId || dragSourceId === targetId) return;
 
       // Determine drop position: before or after based on mouse X within the tab
       const targetElement = event.currentTarget as HTMLElement;
@@ -90,16 +89,16 @@ export function EditorTabBar({
       const relativeX = event.clientX - rect.left;
       const position = relativeX < rect.width / 2 ? "before" : "after";
 
-      onReorderTabs(sourceId, targetId, position);
-      dragSourceIdRef.current = null;
-      dragOverTargetIdRef.current = null;
+      onReorderTabs(dragSourceId, targetId, position);
+      setDragSourceId(null);
+      setDragOverTargetId(null);
     },
-    [onReorderTabs],
+    [onReorderTabs, dragSourceId],
   );
 
   const handleDragEnd = useCallback(() => {
-    dragSourceIdRef.current = null;
-    dragOverTargetIdRef.current = null;
+    setDragSourceId(null);
+    setDragOverTargetId(null);
   }, []);
 
   // ── Context Menu handlers ──
@@ -131,7 +130,7 @@ export function EditorTabBar({
         {tabs.map((tab) => (
           <div
             key={tab.id}
-            className={`editor-tab${tab.id === activeTabId ? " is-active" : ""}`}
+            className={`editor-tab${tab.id === activeTabId ? " is-active" : ""}${tab.id === dragSourceId ? " is-drag-source" : ""}${tab.id === dragOverTargetId ? " is-drag-over" : ""}`}
             onClick={() => onActivateTab(tab.id)}
             onKeyDown={(event) => handleTabKeyDown(event, () => onActivateTab(tab.id))}
             onContextMenu={(event) => handleContextMenu(event, tab.id)}

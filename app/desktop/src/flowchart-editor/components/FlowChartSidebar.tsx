@@ -684,8 +684,8 @@ export function FlowChartSidebar({
                           if (!entry) return;
                           if (entry.kind === "flowchart-file") {
                             onOpenFlowChart(entry.relativePath);
-                          } else if (entry.kind === "node-definition" && canAddNode) {
-                            void onAddNode(entry.relativePath);
+                          } else if (entry.kind === "node-definition") {
+                            onOpenEditNodeDefinition?.(entry.relativePath);
                           }
                         }}
                         onContextMenu={(event, item) => {

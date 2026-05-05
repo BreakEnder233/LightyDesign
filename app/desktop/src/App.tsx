@@ -4,7 +4,7 @@ import { DialogBackdrop } from "./components/DialogBackdrop";
 import { McpConfigDialog } from "./components/McpConfigDialog";
 import { NameInputDialog } from "./components/NameInputDialog";
 import { ToastCenter } from "./components/ToastCenter";
-import { FlowChartEditorView } from "./flowchart-editor/components/FlowChartEditorView";
+import { FlowChartEditorView, type FlowChartEditorViewHandle } from "./flowchart-editor/components/FlowChartEditorView";
 import { useFlowChartEditor } from "./flowchart-editor/hooks/useFlowChartEditor";
 import { useAppUpdates } from "./hooks/useAppUpdates";
 import { useDesktopHostConnection } from "./hooks/useDesktopHostConnection";
@@ -399,6 +399,8 @@ function App() {
     workspaceEditor,
   });
 
+  const flowChartEditorViewRef = useRef<FlowChartEditorViewHandle>(null);
+
   const flowChartShortcutBindings = useMemo<ShortcutBinding[]>(() => {
     if (!isFlowChartMode) {
       return [];
@@ -487,6 +489,16 @@ function App() {
           }
 
           flowChartEditor.clearSelection();
+        },
+      },
+      {
+        id: "quick-add-node",
+        label: "快速添加节点",
+        hint: "Ctrl+P",
+        enabled: true,
+        matches: (event) => isShortcutModifierPressed(event) && !event.shiftKey && event.key.toLowerCase() === "p",
+        run: () => {
+          flowChartEditorViewRef.current?.openQuickAdd();
         },
       },
     ];
@@ -1994,6 +2006,7 @@ function App() {
         />
       ) : isFlowChartMode ? (
         <FlowChartEditorView
+          ref={flowChartEditorViewRef}
           editor={flowChartEditor}
           onOpenFlowChartTab={editorTabs.openFlowChartTab}
           onSidebarWidthChange={handleFlowChartSidebarWidthChange}

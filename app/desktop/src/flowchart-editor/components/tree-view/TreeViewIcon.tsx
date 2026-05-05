@@ -1,5 +1,5 @@
 type TreeViewIconProps = {
-  kind: "directory-collapsed" | "directory-expanded" | "flowchart-file" | "node-definition" | "empty";
+  kind: "directory-collapsed" | "directory-expanded" | "flowchart-file" | "node-definition-event" | "node-definition-flow" | "node-definition-compute" | "empty";
   className?: string;
 };
 
@@ -9,35 +9,53 @@ export function TreeViewIcon({ kind, className }: TreeViewIconProps) {
     case "directory-collapsed":
       return (
         <span className={cls}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M2 4.5a1 1 0 011-1h3.5l1.5 1.5H13a1 1 0 011 1V11a1 1 0 01-1 1H3a1 1 0 01-1-1V4.5z" fill="#7cb342" stroke="#558b2f" strokeWidth="0.8"/>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M2 5.5a1 1 0 011-1h4l1.5 1.5h6.5a1 1 0 011 1V13a1 1 0 01-1 1H3a1 1 0 01-1-1V5.5z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
           </svg>
         </span>
       );
     case "directory-expanded":
       return (
         <span className={cls}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M2 5a1 1 0 011-1h3.5l1.5 1.5H13a1 1 0 011 1V11a1 1 0 01-1 1H3a1 1 0 01-1-1V5z" fill="#8bc34a" stroke="#7cb342" strokeWidth="0.8"/>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M2 6a1 1 0 011-1h4l1.5 1.5h6.5a1 1 0 011 1V13a1 1 0 01-1 1H3a1 1 0 01-1-1V6z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+            <path d="M2 10h14" stroke="currentColor" strokeWidth="1.2" fill="none"/>
           </svg>
         </span>
       );
     case "flowchart-file":
       return (
         <span className={cls}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M3 2h6l4 4v8a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" fill="#2b5797" stroke="#1a3a6b" strokeWidth="0.8"/>
-            <path d="M9 2v4h4" fill="none" stroke="#1a3a6b" strokeWidth="0.8"/>
-            <circle cx="8" cy="10" r="1.5" fill="#7ec9ff"/>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M4 2h7l3 3v11a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+            <path d="M11 2v4h4" stroke="currentColor" strokeWidth="1.2" fill="none"/>
           </svg>
         </span>
       );
-    case "node-definition":
+    case "node-definition-event":
       return (
         <span className={cls}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <rect x="2" y="2" width="12" height="12" rx="2" fill="#3e2723" stroke="#6d4c41" strokeWidth="0.8"/>
-            <circle cx="8" cy="8" r="2.5" fill="#f0b35b"/>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect x="1" y="1" width="16" height="16" rx="3" stroke="#4fc1ff" strokeWidth="1.2" fill="none"/>
+            <text x="9" y="13" textAnchor="middle" fill="#4fc1ff" fontSize="11" fontWeight="600" fontFamily="inherit">E</text>
+          </svg>
+        </span>
+      );
+    case "node-definition-flow":
+      return (
+        <span className={cls}>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect x="1" y="1" width="16" height="16" rx="3" stroke="#72d08d" strokeWidth="1.2" fill="none"/>
+            <text x="9" y="13" textAnchor="middle" fill="#72d08d" fontSize="11" fontWeight="600" fontFamily="inherit">F</text>
+          </svg>
+        </span>
+      );
+    case "node-definition-compute":
+      return (
+        <span className={cls}>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect x="1" y="1" width="16" height="16" rx="3" stroke="#f0b35b" strokeWidth="1.2" fill="none"/>
+            <text x="9" y="13" textAnchor="middle" fill="#f0b35b" fontSize="11" fontWeight="600" fontFamily="inherit">C</text>
           </svg>
         </span>
       );

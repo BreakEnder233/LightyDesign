@@ -722,7 +722,13 @@ export function FlowChartSidebar({
                             return <TreeViewIcon kind={isExpanded ? "directory-expanded" : "directory-collapsed"} />;
                           }
                           const entryKind = item.metadata.kind as string;
-                          return <TreeViewIcon kind={entryKind === "node-definition" ? "node-definition" : "flowchart-file"} />;
+                          if (entryKind === "node-definition") {
+                            const nodeKind = item.metadata.nodeKind as string;
+                            if (nodeKind === "event") return <TreeViewIcon kind="node-definition-event" />;
+                            if (nodeKind === "flow") return <TreeViewIcon kind="node-definition-flow" />;
+                            if (nodeKind === "compute") return <TreeViewIcon kind="node-definition-compute" />;
+                          }
+                          return <TreeViewIcon kind="flowchart-file" />;
                         }}
                         renderLabel={(item) => (
                           <TreeViewSearchHighlighter text={item.label} ranges={item.searchRanges} />

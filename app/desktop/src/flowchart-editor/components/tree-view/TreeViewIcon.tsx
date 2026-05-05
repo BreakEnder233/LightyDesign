@@ -4,7 +4,7 @@ type TreeViewIconProps = {
 };
 
 export function TreeViewIcon({ kind, className }: TreeViewIconProps) {
-  const cls = `tree-view-icon ${className ?? ""}`;
+  const cls = ["tree-view-icon", className].filter(Boolean).join(" ");
   switch (kind) {
     case "directory-collapsed":
       return (
@@ -61,5 +61,7 @@ export function TreeViewIcon({ kind, className }: TreeViewIconProps) {
       );
     case "empty":
       return <span className={cls} />;
+    default:
+      return null;
   }
 }

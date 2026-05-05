@@ -36,6 +36,7 @@ Event/Player/OnEnterScene
   "name": "OnEnterScene",
   "alias": "进入场景",
   "nodeKind": "event",
+  "description": "触发玩家进入场景时触发。可用于场景加载、初始状态设置等。",
    "typeParameters": [],
   "properties": [],
   "computePorts": [],
@@ -54,15 +55,17 @@ Event/Player/OnEnterScene
    节点别名，用于展示和检索。可为空或省略。
 4. `nodeKind`
    节点种类。当前固定为 `event`、`flow`、`compute` 三种。
-5. `typeParameters`
+5. `description`
+   可选。节点概述，纯文本。用于编辑器内的搜索检索和节点预览。不参与代码生成。
+6. `typeParameters`
    可选。节点类型参数列表。对非参数化节点可省略或为空数组。
-6. `properties`
+7. `properties`
    节点属性定义列表。字段必须存在，可为空数组。
-7. `computePorts`
+8. `computePorts`
    计算端口定义列表。字段必须存在，可为空数组。
-8. `flowPorts`
+9. `flowPorts`
    流程端口定义列表。字段必须存在，可为空数组。
-9. `codegenBinding`
+10. `codegenBinding`
    可选。标准节点的稳定生成绑定信息，用于把节点定义映射到生成器中的实现族。
 
 ## 类型引用 TypeRef
@@ -278,6 +281,7 @@ Dictionary 类型示例：
   "name": "OnEnterScene",
   "alias": "进入场景",
   "nodeKind": "event",
+  "description": "触发玩家进入场景时触发。可用于场景加载、初始状态设置等。",
    "typeParameters": [],
   "properties": [
     {

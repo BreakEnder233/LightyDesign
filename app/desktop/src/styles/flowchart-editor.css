@@ -1334,3 +1334,236 @@
   font-size: 11px;
   color: #8b8b8b;
 }
+
+/* ── Node Tree Dialog ── */
+.workspace-create-dialog.node-tree-dialog {
+  width: min(960px, 100%);
+}
+
+.node-tree-dialog-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  min-height: 400px;
+  max-height: 70vh;
+  overflow: hidden;
+}
+
+.node-tree-dialog-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: hidden;
+  padding-right: 12px;
+  border-right: 1px solid #3c3c3c;
+}
+
+.node-tree-dialog-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-left: 12px;
+}
+
+.node-tree-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Tree rows ── */
+.node-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  color: #cccccc;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.node-tree-row:hover {
+  background: #2a2a2a;
+}
+
+.node-tree-row.is-selected {
+  background: #0f2434;
+  box-shadow: inset 2px 0 0 #007acc;
+  color: #dcdcdc;
+}
+
+.node-tree-expander {
+  flex: 0 0 auto;
+  width: 14px;
+  font-size: 10px;
+  color: #8b8b8b;
+  text-align: center;
+}
+
+.node-tree-expander.is-leaf {
+  visibility: hidden;
+}
+
+.node-tree-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.node-tree-icon.is-event { color: #4fc1ff; }
+.node-tree-icon.is-flow { color: #72d08d; }
+.node-tree-icon.is-compute { color: #f0b35b; }
+.node-tree-icon.is-directory { font-size: 13px; }
+
+.node-tree-label {
+  flex: 0 1 auto;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-tree-alias {
+  flex: 0 1 auto;
+  font-size: 11px;
+  color: #8b8b8b;
+  margin-left: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-tree-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: #8b8b8b;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-tree-row .flowchart-kind-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.node-tree-children {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Node Preview Panel ── */
+.node-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.node-preview-panel.is-empty {
+  padding: 24px 0;
+  text-align: center;
+}
+
+.node-preview-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.node-preview-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.node-preview-title-row strong {
+  font-size: 15px;
+  color: #dcdcdc;
+}
+
+.node-preview-alias {
+  font-size: 12px;
+  color: #8b8b8b;
+}
+
+.node-preview-path {
+  font-size: 11px;
+  color: #8b8b8b;
+  word-break: break-all;
+}
+
+.node-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.node-preview-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b8b8b;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.node-preview-description {
+  margin: 0;
+  font-size: 12px;
+  color: #b0b0b0;
+  line-height: 1.5;
+  max-height: 6em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-preview-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+}
+
+.node-preview-subsection-label {
+  font-size: 10px;
+  color: #6b6b6b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.node-preview-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+  padding: 0 4px;
+}
+
+.node-preview-field-name {
+  font-size: 12px;
+  color: #cccccc;
+}
+
+.node-preview-field-type {
+  font-size: 11px;
+  color: #4fc1ff;
+  font-family: Consolas, monospace;
+}

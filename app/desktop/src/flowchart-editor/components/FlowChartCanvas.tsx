@@ -925,6 +925,7 @@ export const FlowChartCanvas = forwardRef<FlowChartCanvasHandle, FlowChartCanvas
       >
         <div className="flowchart-canvas-stage-sizer">
           <div className="flowchart-canvas-stage" style={{ width: stageRect.width, height: stageRect.height, transform: stageTransform }}>
+            <div className="flowchart-canvas-grid-bg" />
             <svg className="flowchart-canvas-svg" viewBox={`0 0 ${stageRect.width} ${stageRect.height}`}>
               {activeDocument.flowConnections.map((connection) => {
                 const sourceNode = nodesById.get(connection.sourceNodeId);

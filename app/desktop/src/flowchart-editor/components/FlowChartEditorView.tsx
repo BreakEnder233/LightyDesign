@@ -7,7 +7,6 @@ import type { useFlowChartEditor } from "../hooks/useFlowChartEditor";
 
 import { FlowChartCanvas, type FlowChartCanvasHandle } from "./FlowChartCanvas";
 import { FlowChartMetadataDialog } from "./FlowChartMetadataDialog";
-import { FlowChartNodeDialog } from "./FlowChartNodeDialog";
 import { QuickAddOverlay } from "./QuickAddOverlay";
 import { NodeTreeDialog } from "./NodeTreeDialog";
 import { FlowChartSidebar } from "./FlowChartSidebar";
@@ -41,7 +40,6 @@ export const FlowChartEditorView = forwardRef<FlowChartEditorViewHandle, FlowCha
 }: FlowChartEditorViewProps, ref) {
   const [metadataDialogMode, setMetadataDialogMode] = useState<"create" | "edit">("create");
   const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
-  const [isNodeDialogOpen, setIsNodeDialogOpen] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isNodeTreeDialogOpen, setIsNodeTreeDialogOpen] = useState(false);
   const [isCodegenDialogOpen, setIsCodegenDialogOpen] = useState(false);

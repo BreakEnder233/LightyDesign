@@ -243,7 +243,11 @@ app.MapPost("/api/workspace/workbooks/{workbookName}/sheets/{sheetName}/config",
 app.MapPost("/api/workspace/workbooks/codegen/config", (SaveWorkbookCodegenConfigRequestDto request, WorkspaceMutationService service) =>
 {
     if (string.IsNullOrWhiteSpace(request.WorkspacePath)) throw new ValidationException("workspacePath is required.");
-    return Results.Ok(service.SaveCodegenConfig(request.WorkspacePath.Trim(), request.OutputRelativePath));
+    return Results.Ok(service.SaveCodegenConfig(
+        request.WorkspacePath.Trim(),
+        request.OutputRelativePath,
+        request.I18nOutputRelativePath,
+        request.I18nSourceLanguage));
 });
 
 // ─── Workbook Codegen Export ───

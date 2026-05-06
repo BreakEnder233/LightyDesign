@@ -207,10 +207,16 @@ public sealed class WorkspaceMutationService
         return WorkspaceResponseBuilder.ToWorkspaceNavigationResponse(reloadedWorkspace);
     }
 
-    public object SaveCodegenConfig(string workspacePath, string? outputRelativePath)
+    public object SaveCodegenConfig(string workspacePath, string? outputRelativePath,
+        string? i18nOutputRelativePath, string? i18nSourceLanguage)
     {
         var workspace = LightyWorkspaceLoader.Load(workspacePath);
-        var codegenOptions = new LightyWorkbookCodegenOptions(outputRelativePath);
+        var i18n = new I18nCodegenOptions
+        {
+            OutputRelativePath = i18nOutputRelativePath ?? "../I18nMap",
+            SourceLanguage = i18nSourceLanguage ?? "zh-cn",
+        };
+        var codegenOptions = new LightyWorkbookCodegenOptions(outputRelativePath, i18n);
         GeneratedCodeOutputWriter.ValidateWorkbookCodegenOutputRelativePath(workspace.RootPath, codegenOptions.OutputRelativePath, allowEmpty: true);
         LightyWorkbookCodegenOptionsSerializer.SaveToFile(workspace.CodegenConfigFilePath, codegenOptions);
 

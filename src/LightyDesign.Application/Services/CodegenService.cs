@@ -20,6 +20,12 @@ public sealed class CodegenService
         var outputDirectoryPath = GeneratedCodeOutputWriter.WriteGeneratedWorkbookPackage(workspace.RootPath, workbook.Name, package);
         var materializedFiles = GeneratedCodeOutputWriter.GetMaterializedRelativePaths(package.Files);
 
+        if (package.I18nMap is not null)
+        {
+            var options = workbook.CodegenOptions.I18n;
+            GeneratedCodeOutputWriter.WriteWorkbookI18nMap(workspace.RootPath, options.OutputRelativePath, options.SourceLanguage, package.I18nMap);
+        }
+
         return new CodegenResultDto
         {
             WorkbookName = workbookName,
@@ -46,6 +52,22 @@ public sealed class CodegenService
             .ToList();
         var outputDirectoryPath = GeneratedCodeOutputWriter.WriteGeneratedWorkspacePackages(workspace.RootPath, workbookPackages);
         var materializedFiles = GeneratedCodeOutputWriter.GetMaterializedRelativePaths(workbookPackages.SelectMany(entry => entry.Package.Files));
+
+        // Write i18n maps for all workbooks
+        foreach (var (name, pkg) in workbookPackages)
+        {
+            if (pkg.I18nMap is not null)
+            {
+                var workbook = workspace.Workbooks.First(w => string.Equals(w.Name, name, StringComparison.Ordinal));
+                var options = workbook.CodegenOptions.I18n;
+                GeneratedCodeOutputWriter.WriteWorkbookI18nMap(workspace.RootPath, options.OutputRelativePath, options.SourceLanguage, pkg.I18nMap);
+            }
+        }
+
+        // Cleanup orphaned i18n YAML files
+        var activeWorkbookNames = new HashSet<string>(workbookPackages.Select(entry => entry.Name), StringComparer.OrdinalIgnoreCase);
+        var i18nConfig = workspace.Workbooks[0].CodegenOptions.I18n;
+        GeneratedCodeOutputWriter.CleanupOrphanedI18nMaps(workspace.RootPath, i18nConfig.OutputRelativePath, i18nConfig.SourceLanguage, activeWorkbookNames);
 
         return new CodegenResultDto
         {

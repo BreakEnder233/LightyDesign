@@ -89,6 +89,11 @@ public static class WorkspaceResponseBuilder
         return new
         {
             outputRelativePath = workspace.CodegenOptions.OutputRelativePath,
+            i18n = new
+            {
+                outputRelativePath = workspace.CodegenOptions.I18n.OutputRelativePath,
+                sourceLanguage = workspace.CodegenOptions.I18n.SourceLanguage,
+            },
         };
     }
 
@@ -97,6 +102,11 @@ public static class WorkspaceResponseBuilder
         return new
         {
             outputRelativePath = workbook.CodegenOptions.OutputRelativePath,
+            i18n = new
+            {
+                outputRelativePath = workbook.CodegenOptions.I18n.OutputRelativePath,
+                sourceLanguage = workbook.CodegenOptions.I18n.SourceLanguage,
+            },
         };
     }
 

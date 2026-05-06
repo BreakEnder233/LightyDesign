@@ -88,6 +88,8 @@ public sealed class SaveWorkbookCodegenConfigRequestDto
 {
     public string WorkspacePath { get; set; } = string.Empty;
     public string? OutputRelativePath { get; set; }
+    public string? I18nOutputRelativePath { get; set; }
+    public string? I18nSourceLanguage { get; set; }
 }
 
 public sealed class SaveWorkbookConfigRequestDto

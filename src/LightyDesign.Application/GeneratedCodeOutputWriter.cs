@@ -150,6 +150,61 @@ public static class GeneratedCodeOutputWriter
         return materializedPaths;
     }
 
+    public static void WriteWorkbookI18nMap(
+        string workspaceRootPath,
+        string i18nOutputRelativePath,
+        string sourceLanguage,
+        LightyGeneratedI18nMap i18nMap)
+    {
+        var i18nRootPath = ValidateWorkbookCodegenOutputRelativePath(
+            workspaceRootPath, i18nOutputRelativePath, allowEmpty: false);
+        var langDir = Path.Combine(i18nRootPath, sourceLanguage);
+        Directory.CreateDirectory(langDir);
+
+        // Write YAML file (source language full overwrite)
+        var yamlContent = Lightyi18nOutputWriter.RenderYamlContent(i18nMap.WorkbookName, i18nMap.Entries);
+        File.WriteAllText(Path.Combine(langDir, $"{i18nMap.WorkbookName}.yaml"), yamlContent);
+
+        // Update manifest
+        var manifestPath = Path.Combine(langDir, "i18n_manifest.yaml");
+        var existingWorkbookNames = File.Exists(manifestPath)
+            ? Lightyi18nOutputWriter.ParseWorkbookNamesFromManifest(File.ReadAllText(manifestPath))
+            : new HashSet<string>();
+        existingWorkbookNames.Add(i18nMap.WorkbookName);
+        var manifestContent = Lightyi18nOutputWriter.RenderManifest(existingWorkbookNames.OrderBy(n => n).ToList());
+        File.WriteAllText(manifestPath, manifestContent);
+    }
+
+    public static void CleanupOrphanedI18nMaps(
+        string workspaceRootPath,
+        string i18nOutputRelativePath,
+        string sourceLanguage,
+        HashSet<string> activeWorkbookNames)
+    {
+        var i18nRootPath = ValidateWorkbookCodegenOutputRelativePath(
+            workspaceRootPath, i18nOutputRelativePath, allowEmpty: false);
+        var langDir = Path.Combine(i18nRootPath, sourceLanguage);
+        if (!Directory.Exists(langDir)) return;
+
+        var manifestPath = Path.Combine(langDir, "i18n_manifest.yaml");
+        if (!File.Exists(manifestPath)) return;
+
+        var manifestWorkbookNames = Lightyi18nOutputWriter.ParseWorkbookNamesFromManifest(
+            File.ReadAllText(manifestPath));
+
+        var toRemove = manifestWorkbookNames.Where(n => !activeWorkbookNames.Contains(n)).ToList();
+        foreach (var name in toRemove)
+        {
+            var yamlPath = Path.Combine(langDir, $"{name}.yaml");
+            if (File.Exists(yamlPath)) File.Delete(yamlPath);
+        }
+
+        // Rewrite manifest (keep only active workbooks)
+        var remainingNames = manifestWorkbookNames.Intersect(activeWorkbookNames).OrderBy(n => n).ToList();
+        var manifestContent = Lightyi18nOutputWriter.RenderManifest(remainingNames);
+        File.WriteAllText(manifestPath, manifestContent);
+    }
+
     public static int CountMaterializedFiles(IEnumerable<LightyGeneratedCodeFile> files)
     {
         return GetMaterializedRelativePaths(files).Count;

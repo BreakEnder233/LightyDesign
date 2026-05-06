@@ -11,7 +11,8 @@ public sealed class LightyColumnTypeDescriptor
         string valueType,
         bool isList,
         bool isDictionary,
-        LightyReferenceTarget? referenceTarget)
+        LightyReferenceTarget? referenceTarget,
+        bool isLocalString)
     {
         RawType = rawType;
         TypeName = typeName;
@@ -20,6 +21,7 @@ public sealed class LightyColumnTypeDescriptor
         IsList = isList;
         IsDictionary = isDictionary;
         ReferenceTarget = referenceTarget;
+        IsLocalString = isLocalString;
     }
 
     public string RawType { get; }
@@ -36,13 +38,17 @@ public sealed class LightyColumnTypeDescriptor
 
     public bool IsReference => ReferenceTarget is not null;
 
+    public bool IsLocalString { get; }
+
     public string MainTypeKey => IsList
         ? "List"
         : IsDictionary
             ? "Dictionary"
             : IsReference
                 ? "Reference"
-                : RawType;
+                : IsLocalString
+                    ? "LocalString"
+                    : RawType;
 
     public string? DictionaryKeyType => IsDictionary ? GenericArguments[0] : null;
 
@@ -65,8 +71,10 @@ public sealed class LightyColumnTypeDescriptor
         var referenceTarget = TryParseReferenceTarget(valueType, out var target)
             ? target
             : null;
+        var isLocalString = !isList && !isDictionary && referenceTarget is null &&
+            string.Equals(typeName, "LocalString", StringComparison.Ordinal);
 
-        return new LightyColumnTypeDescriptor(trimmedType, typeName, genericArguments, valueType, isList, isDictionary, referenceTarget);
+        return new LightyColumnTypeDescriptor(trimmedType, typeName, genericArguments, valueType, isList, isDictionary, referenceTarget, isLocalString);
     }
 
     private static (string TypeName, IReadOnlyList<string> GenericArguments) ParseTypeShape(string type)

@@ -23,6 +23,8 @@ public static class LightyWorkbookCodegenOptionsSerializer
 
     public static string Serialize(LightyWorkbookCodegenOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         return JsonSerializer.Serialize(
             new SerializableWorkbookCodegenOptions(
                 options.OutputRelativePath,

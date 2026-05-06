@@ -47,7 +47,8 @@ public sealed class LightyWorkbookCodeGenerator
 
         var files = new List<LightyGeneratedCodeFile>();
         files.Add(new LightyGeneratedCodeFile("DesignDataReference.cs", RenderReferenceSupportFile()));
-        var generatedSheets = workbook.Sheets.Select(sheet => AnalyzeSheet(workspace, sheet)).ToList();
+        var i18nEntries = new List<LightyGeneratedI18nEntry>();
+        var generatedSheets = workbook.Sheets.Select(sheet => AnalyzeSheet(workspace, sheet, i18nEntries)).ToList();
 
         foreach (var sheet in generatedSheets)
         {
@@ -66,8 +67,13 @@ public sealed class LightyWorkbookCodeGenerator
         }
 
         files.Add(new LightyGeneratedCodeFile($"{workbook.Name}/{ToTypeIdentifier(workbook.Name)}Workbook.cs", RenderWorkbookFile(workbook, generatedSheets)));
+        files.Add(new LightyGeneratedCodeFile("LocalString.cs", RenderLocalStringFile()));
 
-        return new LightyGeneratedWorkbookPackage(workspace.CodegenOptions.OutputRelativePath!, files);
+        LightyGeneratedI18nMap? i18nMap = i18nEntries.Count > 0
+            ? new LightyGeneratedI18nMap(workbook.Name, i18nEntries.AsReadOnly())
+            : null;
+
+        return new LightyGeneratedWorkbookPackage(workspace.CodegenOptions.OutputRelativePath!, files, i18nMap);
     }
 
     public string GenerateEntryPointFile(IEnumerable<string> workbookNames)
@@ -101,7 +107,7 @@ public sealed class LightyWorkbookCodeGenerator
         return RenderEntryPointFile(normalizedWorkbookNames, normalizedFlowChartRelativePaths);
     }
 
-    private static GeneratedSheetModel AnalyzeSheet(LightyWorkspace workspace, LightySheet sheet)
+    private static GeneratedSheetModel AnalyzeSheet(LightyWorkspace workspace, LightySheet sheet, List<LightyGeneratedI18nEntry> i18nEntries)
     {
         var typeName = ToTypeIdentifier(sheet.Name);
         var exportedColumns = sheet.Header.Columns
@@ -112,7 +118,7 @@ public sealed class LightyWorkbookCodeGenerator
 
         var primaryKeyFields = ResolvePrimaryKeyFields(exportedColumns);
         var rows = sheet.Rows
-            .Select((row, rowIndex) => AnalyzeRow(workspace, sheet, row, rowIndex, exportedColumns))
+            .Select((row, rowIndex) => AnalyzeRow(workspace, sheet, row, rowIndex, exportedColumns, primaryKeyFields, i18nEntries))
             .ToList();
         var dataChunks = BuildDataChunks($"{typeName}Table", rows);
 
@@ -145,9 +151,11 @@ public sealed class LightyWorkbookCodeGenerator
             exportScope);
     }
 
-    private static GeneratedRowModel AnalyzeRow(LightyWorkspace workspace, LightySheet sheet, LightySheetRow row, int rowIndex, IReadOnlyList<GeneratedFieldModel> fields)
+    private static GeneratedRowModel AnalyzeRow(LightyWorkspace workspace, LightySheet sheet, LightySheetRow row, int rowIndex, IReadOnlyList<GeneratedFieldModel> fields, IReadOnlyList<GeneratedFieldModel> primaryKeyFields, List<LightyGeneratedI18nEntry> i18nEntries)
     {
         var assignments = new List<GeneratedFieldAssignment>(fields.Count);
+        var idString = string.Join("_",
+            primaryKeyFields.Select(pkField => row[pkField.SourceIndex]));
 
         foreach (var field in fields)
         {
@@ -158,7 +166,35 @@ public sealed class LightyWorkbookCodeGenerator
                 throw new LightyCoreException(parseResult.ErrorMessage ?? $"Failed to parse cell in sheet '{sheet.Name}' row {rowIndex} column '{field.FieldName}'.");
             }
 
-            assignments.Add(new GeneratedFieldAssignment(field, BuildValueLiteral(workspace, field.TypeDescriptor, parseResult.Value)));
+            string valueLiteral;
+            if (field.TypeDescriptor.IsLocalString)
+            {
+                var sourceText = parseResult.Value as string ?? string.Empty;
+                var key = BuildLocalStringKey(idString, field.FieldName, sourceText);
+                valueLiteral = $"new LocalString(\"{key}\")";
+                i18nEntries?.Add(new LightyGeneratedI18nEntry(key, sourceText, $"{sheet.Name}.{field.FieldName}"));
+            }
+            else if (field.TypeDescriptor.IsList &&
+                     LightyColumnTypeDescriptor.Parse(field.TypeDescriptor.ValueType).IsLocalString)
+            {
+                var elementDescriptor = LightyColumnTypeDescriptor.Parse(field.TypeDescriptor.ValueType);
+                var values = (IReadOnlyList<object?>)(parseResult.Value ?? Array.Empty<object?>());
+                var items = new List<string>();
+                for (var i = 0; i < values.Count; i++)
+                {
+                    var elementText = values[i] as string ?? string.Empty;
+                    var elementKey = BuildLocalStringKey(idString, $"{field.FieldName}[{i}]", elementText);
+                    items.Add($"new LocalString(\"{elementKey}\")");
+                    i18nEntries?.Add(new LightyGeneratedI18nEntry(elementKey, elementText, $"{sheet.Name}.{field.FieldName}[{i}]"));
+                }
+                valueLiteral = $"new List<LocalString> {{ {string.Join(", ", items)} }}";
+            }
+            else
+            {
+                valueLiteral = BuildValueLiteral(workspace, field.TypeDescriptor, parseResult.Value);
+            }
+
+            assignments.Add(new GeneratedFieldAssignment(field, valueLiteral));
         }
 
         return new GeneratedRowModel($"{ToTypeIdentifier(sheet.Name)}Row", assignments);
@@ -195,6 +231,8 @@ public sealed class LightyWorkbookCodeGenerator
 
     private static void EnsureSupportedType(LightyColumnTypeDescriptor descriptor)
     {
+        if (descriptor.IsLocalString) return;
+
         if (descriptor.IsList)
         {
             EnsureSupportedType(LightyColumnTypeDescriptor.Parse(descriptor.ValueType));
@@ -232,6 +270,8 @@ public sealed class LightyWorkbookCodeGenerator
             return $"DesignDataReference<{ToTypeIdentifier(target.SheetName)}Row>";
         }
 
+        if (descriptor.IsLocalString) return "LocalString";
+
         return descriptor.RawType switch
         {
             "string" => "string",
@@ -242,6 +282,11 @@ public sealed class LightyWorkbookCodeGenerator
             "bool" => "bool",
             _ => throw new LightyCoreException($"Unsupported generated C# type for '{descriptor.RawType}'."),
         };
+    }
+
+    private static string BuildLocalStringKey(string idString, string fieldName, string sourceText)
+    {
+        return $"{LightyCrc32.Compute(idString)}_{LightyCrc32.Compute(fieldName)}_{LightyCrc32.Compute(sourceText ?? string.Empty)}";
     }
 
     private static string BuildValueLiteral(LightyWorkspace workspace, LightyColumnTypeDescriptor descriptor, object? value)
@@ -586,6 +631,91 @@ public sealed class LightyWorkbookCodeGenerator
         writer.Outdent();
         writer.AppendLine("}");
         AppendNamespaceEnd(writer);
+        return writer.ToString();
+    }
+
+    private static string RenderLocalStringFile()
+    {
+        var writer = new CodeWriter();
+        writer.AppendAutoGeneratedHeader();
+        writer.AppendLine("using System.Collections.Generic;");
+        writer.AppendLine();
+        writer.AppendLine("namespace LightyDesignData;");
+        writer.AppendLine();
+        writer.AppendLine("/// <summary>本地化字符串，由 LightyDesign 生成。</summary>");
+        writer.AppendLine("/// <remarks>游戏项目需引入 YamlDotNet NuGet 包。</remarks>");
+        writer.AppendLine("public class LocalString");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("private static Dictionary<string, string> _map = new();");
+        writer.AppendLine("private static string _sourceLanguage = \"zh-cn\";");
+        writer.AppendLine("private static string _basePath = \"\";");
+        writer.AppendLine();
+        writer.AppendLine("public static event System.Action? OnLanguageChanged;");
+        writer.AppendLine();
+        writer.AppendLine("private readonly string _key;");
+        writer.AppendLine();
+        writer.AppendLine("public LocalString(string key) => _key = key;");
+        writer.AppendLine();
+        writer.AppendLine("public override string ToString()");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("if (string.IsNullOrEmpty(_key)) return \"\";");
+        writer.AppendLine("return _map.TryGetValue(_key, out var value) ? value : _key;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public static void Initialize(string basePath, string sourceLanguage, string language)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("_basePath = basePath;");
+        writer.AppendLine("_sourceLanguage = sourceLanguage;");
+        writer.AppendLine("LoadLanguage(language);");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("public static void LoadLanguage(string language)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("_map.Clear();");
+        writer.AppendLine("var manifestPath = System.IO.Path.Combine(_basePath, _sourceLanguage, \"i18n_manifest.yaml\");");
+        writer.AppendLine("var manifest = System.IO.File.ReadAllText(manifestPath);");
+        writer.AppendLine("var deserializer = new YamlDotNet.Serialization.DeserializerBuilder()");
+        writer.AppendLine("    .Build();");
+        writer.AppendLine("var manifestData = deserializer.Deserialize<ManifestData>(manifest);");
+        writer.AppendLine("if (manifestData?.Workbooks == null) return;");
+        writer.AppendLine("foreach (var wb in manifestData.Workbooks)");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("var yamlPath = System.IO.Path.Combine(_basePath, language, wb.File);");
+        writer.AppendLine("if (!System.IO.File.Exists(yamlPath))");
+        writer.AppendLine("    throw new System.IO.FileNotFoundException($\"本地化文件缺失：语言 '{language}' 缺少工作簿 '{wb.Name}' 的映射文件，期望路径: {yamlPath}\");");
+        writer.AppendLine("var yaml = System.IO.File.ReadAllText(yamlPath);");
+        writer.AppendLine("var entries = deserializer.Deserialize<Dictionary<string, string>>(yaml);");
+        writer.AppendLine("foreach (var kv in entries) _map[kv.Key] = kv.Value;");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine("OnLanguageChanged?.Invoke();");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private sealed class ManifestData");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("public int Version { get; set; }");
+        writer.AppendLine("public List<ManifestWorkbook>? Workbooks { get; set; }");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.AppendLine();
+        writer.AppendLine("private sealed class ManifestWorkbook");
+        writer.AppendLine("{");
+        writer.Indent();
+        writer.AppendLine("public string Name { get; set; } = \"\";");
+        writer.AppendLine("public string File { get; set; } = \"\";");
+        writer.Outdent();
+        writer.AppendLine("}");
+        writer.Outdent();
+        writer.AppendLine("}");
         return writer.ToString();
     }
 

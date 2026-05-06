@@ -238,7 +238,7 @@ public static class LightyWorkbookValidationService
 
             return descriptor.MainTypeKey switch
             {
-                "string" => new StringValidator(
+                "string" or "LocalString" => new StringValidator(
                     required,
                     ReadBoolean(validation, "allowEmpty", true),
                     ReadNullableInt32(validation, "minLength"),

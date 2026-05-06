@@ -20,6 +20,12 @@ interface CodegenDialogProps {
   onExportSingle: () => void | Promise<void>;
   onExportBatch?: () => void | Promise<void>;
   onExportAll: () => void | Promise<void>;
+  enableI18n?: boolean;
+  i18nOutputRelativePath?: string;
+  i18nSourceLanguage?: string;
+  onEnableI18nChange?: (value: boolean) => void;
+  onI18nOutputPathChange?: (value: string) => void;
+  onI18nSourceLanguageChange?: (value: string) => void;
 }
 
 export function CodegenDialog({
@@ -38,6 +44,12 @@ export function CodegenDialog({
   onExportSingle,
   onExportBatch,
   onExportAll,
+  enableI18n = false,
+  i18nOutputRelativePath = "",
+  i18nSourceLanguage = "zh-cn",
+  onEnableI18nChange,
+  onI18nOutputPathChange,
+  onI18nSourceLanguageChange,
 }: CodegenDialogProps) {
   if (!isOpen) {
     return null;
@@ -93,6 +105,39 @@ export function CodegenDialog({
           <p className="workspace-create-path-label codegen-dialog-caption">
             路径相对于工作区根目录，可以使用 ../ 输出到工作区外；点击导出时会先保存工作区级配置，再执行导出。
           </p>
+
+          <label className="search-field workspace-create-name-field" style={{ marginTop: 12 }}>
+            <input
+              checked={enableI18n}
+              onChange={(event) => onEnableI18nChange?.(event.target.checked)}
+              style={{ width: 16, height: 16, marginRight: 8, cursor: "pointer" }}
+              type="checkbox"
+            />
+            <span style={{ cursor: "pointer", userSelect: "none" }}>启用本地化 (LocalString)</span>
+          </label>
+
+          {enableI18n && (
+            <>
+              <label className="search-field workspace-create-name-field">
+                <span>本地化映射路径</span>
+                <input
+                  onChange={(event) => onI18nOutputPathChange?.(event.target.value)}
+                  placeholder="例如 ../I18nMap"
+                  type="text"
+                  value={i18nOutputRelativePath}
+                />
+              </label>
+              <label className="search-field workspace-create-name-field">
+                <span>源语言</span>
+                <input
+                  onChange={(event) => onI18nSourceLanguageChange?.(event.target.value)}
+                  placeholder="例如 zh-cn"
+                  type="text"
+                  value={i18nSourceLanguage}
+                />
+              </label>
+            </>
+          )}
         </div>
 
         <div className="workspace-create-actions">

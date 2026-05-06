@@ -269,6 +269,12 @@ function App() {
     codegenDialogMode,
     codegenOutputInputRef,
     codegenOutputRelativePath,
+    codegenI18nEnabled,
+    codegenI18nOutputRelativePath,
+    codegenI18nSourceLanguage,
+    handleCodegenI18nEnabledChange,
+    handleCodegenI18nOutputPathChange,
+    handleCodegenI18nSourceLanguageChange,
     copiedSelectionSnapshot,
     currentSelectionContext,
     currentSheetContext,
@@ -1293,6 +1299,12 @@ function App() {
         onCloseRenameSheetDialog={handleCloseRenameSheetDialog}
         onCloseWorkbookContextMenu={handleCloseWorkbookContextMenu}
         onCodegenOutputPathChange={setCodegenOutputRelativePath}
+        codegenI18nEnabled={codegenI18nEnabled}
+        codegenI18nOutputRelativePath={codegenI18nOutputRelativePath}
+        codegenI18nSourceLanguage={codegenI18nSourceLanguage}
+        onCodegenI18nEnabledChange={handleCodegenI18nEnabledChange}
+        onCodegenI18nOutputPathChange={handleCodegenI18nOutputPathChange}
+        onCodegenI18nSourceLanguageChange={handleCodegenI18nSourceLanguageChange}
         onConfirmCreateSheet={handleConfirmCreateSheet}
         onConfirmCreateWorkbook={handleConfirmCreateWorkbook}
         onConfirmEditSheetAlias={handleConfirmEditSheetAlias}

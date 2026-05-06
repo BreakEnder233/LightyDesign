@@ -65,6 +65,12 @@ type WorkbookEditorOverlaysProps = {
   onCodegenOutputPathChange: (value: string) => void;
   onSaveWorkspaceCodegenConfig: () => void | Promise<void>;
   codegenOutputRelativePath: string;
+  codegenI18nEnabled?: boolean;
+  codegenI18nOutputRelativePath?: string;
+  codegenI18nSourceLanguage?: string;
+  onCodegenI18nEnabledChange?: (value: boolean) => void;
+  onCodegenI18nOutputPathChange?: (value: string) => void;
+  onCodegenI18nSourceLanguageChange?: (value: string) => void;
   activeSheetLabel: string;
   freezeColumnCount: number;
   freezeRowCount: number;
@@ -134,6 +140,12 @@ export function WorkbookEditorOverlays({
   onCodegenOutputPathChange,
   onSaveWorkspaceCodegenConfig,
   codegenOutputRelativePath,
+  codegenI18nEnabled,
+  codegenI18nOutputRelativePath,
+  codegenI18nSourceLanguage,
+  onCodegenI18nEnabledChange,
+  onCodegenI18nOutputPathChange,
+  onCodegenI18nSourceLanguageChange,
   activeSheetLabel,
   freezeColumnCount,
   freezeRowCount,
@@ -251,6 +263,12 @@ export function WorkbookEditorOverlays({
         onSaveConfig={onSaveWorkspaceCodegenConfig}
         outputRelativePath={codegenOutputRelativePath}
         workspacePath={workspacePath}
+        enableI18n={codegenI18nEnabled}
+        i18nOutputRelativePath={codegenI18nOutputRelativePath}
+        i18nSourceLanguage={codegenI18nSourceLanguage}
+        onEnableI18nChange={onCodegenI18nEnabledChange}
+        onI18nOutputPathChange={onCodegenI18nOutputPathChange}
+        onI18nSourceLanguageChange={onCodegenI18nSourceLanguageChange}
       />
 
       <FreezeDialog

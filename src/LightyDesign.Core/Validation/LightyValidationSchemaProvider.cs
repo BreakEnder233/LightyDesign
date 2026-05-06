@@ -15,7 +15,7 @@ public static class LightyValidationSchemaProvider
 
         return descriptor.MainTypeKey switch
         {
-            "string" => BuildStringSchema(descriptor),
+            "string" or "LocalString" => BuildStringSchema(descriptor),
             "int" or "long" or "float" or "double" => BuildNumericSchema(descriptor),
             "bool" => BuildBooleanSchema(descriptor),
             "List" => BuildListSchema(descriptor),

@@ -150,12 +150,18 @@ export type WorkspaceNavigationSheet = {
   columnCount: number;
 };
 
+export type I18nCodegenOptions = {
+  outputRelativePath?: string | null;
+  sourceLanguage?: string | null;
+};
+
 export type WorkspaceNavigationWorkbook = {
   name: string;
   alias?: string | null;
   directoryPath: string;
   codegen: {
     outputRelativePath?: string | null;
+    i18n?: I18nCodegenOptions | null;
   };
   sheetCount: number;
   sheets: WorkspaceNavigationSheet[];
@@ -167,6 +173,7 @@ export type WorkspaceNavigationResponse = {
   headersFilePath: string;
   codegen: {
     outputRelativePath?: string | null;
+    i18n?: I18nCodegenOptions | null;
   };
   headerLayout: {
     count: number;

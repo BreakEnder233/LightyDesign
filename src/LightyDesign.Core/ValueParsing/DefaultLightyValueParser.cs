@@ -92,7 +92,7 @@ public sealed class DefaultLightyValueParser : ILightyValueParser
     {
         return typeName switch
         {
-            "string" => LightyValueTextTokenizer.ParseStringLiteral(rawText),
+            "string" or "LocalString" => LightyValueTextTokenizer.ParseStringLiteral(rawText),
             "int" => ParseInt32(rawText),
             "long" => ParseInt64(rawText),
             "float" => ParseSingle(rawText),

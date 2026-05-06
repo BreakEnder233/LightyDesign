@@ -1417,7 +1417,13 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
     }
   }
 
-  async function saveWorkspaceCodegenOptions(outputRelativePath: string) {
+  async function saveWorkspaceCodegenOptions(
+    outputRelativePath: string,
+    options?: {
+      i18nOutputRelativePath?: string | null;
+      i18nSourceLanguage?: string | null;
+    },
+  ) {
     if (!hostInfo || !workspacePath) {
       emitToast({
         title: "无法保存代码生成配置",
@@ -1441,6 +1447,8 @@ export function useWorkspaceEditor({ hostInfo, onToast }: UseWorkspaceEditorArgs
           body: JSON.stringify({
             workspacePath,
             outputRelativePath,
+            i18nOutputRelativePath: options?.i18nOutputRelativePath ?? null,
+            i18nSourceLanguage: options?.i18nSourceLanguage ?? null,
           }),
         },
       );

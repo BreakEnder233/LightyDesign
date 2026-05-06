@@ -152,6 +152,9 @@ export function useWorkbookEditorUi({
   const [newSheetName, setNewSheetName] = useState("NewSheet");
   const [renameSheetName, setRenameSheetName] = useState("");
   const [codegenOutputRelativePath, setCodegenOutputRelativePath] = useState("");
+  const [codegenI18nEnabled, setCodegenI18nEnabled] = useState(false);
+  const [codegenI18nOutputRelativePath, setCodegenI18nOutputRelativePath] = useState("");
+  const [codegenI18nSourceLanguage, setCodegenI18nSourceLanguage] = useState("zh-cn");
   const [sheetDialogWorkbookName, setSheetDialogWorkbookName] = useState<string | null>(null);
   const [renameSheetTarget, setRenameSheetTarget] = useState<{ workbookName: string; sheetName: string } | null>(null);
   const [codegenWorkbookName, setCodegenWorkbookName] = useState<string | null>(null);
@@ -199,6 +202,8 @@ export function useWorkbookEditorUi({
     activeTab && hostInfo && workspacePath && activeWorkbookDirtyTabs.length > 0 && activeWorkbookSaveState?.status !== "saving",
   );
   const workspaceCodegenOutputRelativePath = workspace?.codegen.outputRelativePath ?? "";
+  const workspaceI18nOutputRelativePath = workspace?.codegen.i18n?.outputRelativePath ?? "../I18nMap";
+  const workspaceI18nSourceLanguage = workspace?.codegen.i18n?.sourceLanguage ?? "zh-cn";
 
   function pushToastNotification(toast: PushToastInput) {
     onToast(toast);
@@ -859,6 +864,9 @@ export function useWorkbookEditorUi({
     setCodegenDialogMode("single");
     setCodegenWorkbookName(workbookName);
     setCodegenOutputRelativePath(workspaceCodegenOutputRelativePath);
+    setCodegenI18nEnabled(Boolean(workspace?.codegen.i18n?.outputRelativePath));
+    setCodegenI18nOutputRelativePath(workspaceI18nOutputRelativePath);
+    setCodegenI18nSourceLanguage(workspaceI18nSourceLanguage);
     setIsCodegenDialogOpen(true);
     setWorkbookContextMenu(null);
   }
@@ -868,10 +876,16 @@ export function useWorkbookEditorUi({
     setCodegenDialogMode("single");
     setCodegenWorkbookName(null);
     setCodegenOutputRelativePath("");
+    setCodegenI18nEnabled(false);
+    setCodegenI18nOutputRelativePath("");
+    setCodegenI18nSourceLanguage("zh-cn");
   }
 
   async function handleSaveWorkspaceCodegenConfig() {
-    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath);
+    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath, {
+      i18nOutputRelativePath: codegenI18nEnabled ? codegenI18nOutputRelativePath : null,
+      i18nSourceLanguage: codegenI18nEnabled ? codegenI18nSourceLanguage : null,
+    });
     if (saved) {
       handleCloseCodegenDialog();
     }
@@ -882,7 +896,10 @@ export function useWorkbookEditorUi({
       return;
     }
 
-    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath);
+    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath, {
+      i18nOutputRelativePath: codegenI18nEnabled ? codegenI18nOutputRelativePath : null,
+      i18nSourceLanguage: codegenI18nEnabled ? codegenI18nSourceLanguage : null,
+    });
     if (!saved) {
       return;
     }
@@ -894,7 +911,10 @@ export function useWorkbookEditorUi({
   }
 
   async function handleConfirmExportAllWorkbookCode() {
-    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath);
+    const saved = await saveWorkspaceCodegenOptions(codegenOutputRelativePath, {
+      i18nOutputRelativePath: codegenI18nEnabled ? codegenI18nOutputRelativePath : null,
+      i18nSourceLanguage: codegenI18nEnabled ? codegenI18nSourceLanguage : null,
+    });
     if (!saved) {
       return;
     }
@@ -1965,6 +1985,18 @@ export function useWorkbookEditorUi({
     };
   }, [sheetContextMenu, workbookContextMenu]);
 
+  const handleCodegenI18nEnabledChange = (value: boolean) => {
+    setCodegenI18nEnabled(value);
+  };
+
+  const handleCodegenI18nOutputPathChange = (value: string) => {
+    setCodegenI18nOutputRelativePath(value);
+  };
+
+  const handleCodegenI18nSourceLanguageChange = (value: string) => {
+    setCodegenI18nSourceLanguage(value);
+  };
+
   return {
     activeColumnWidths,
     activeEditorContext,
@@ -2086,6 +2118,12 @@ export function useWorkbookEditorUi({
     selectionRange,
     selectionStatusText,
     setCodegenOutputRelativePath,
+    codegenI18nEnabled,
+    codegenI18nOutputRelativePath,
+    codegenI18nSourceLanguage,
+    handleCodegenI18nEnabledChange,
+    handleCodegenI18nOutputPathChange,
+    handleCodegenI18nSourceLanguageChange,
     setEditSheetAliasValue,
     setEditWorkbookAliasValue,
     setFreezeColumnCount,

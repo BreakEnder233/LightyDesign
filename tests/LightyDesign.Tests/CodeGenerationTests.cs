@@ -536,6 +536,144 @@ public class CodeGenerationTests
     }
 
 
+    [Fact]
+    public void WorkbookCodeGenerator_ShouldGenerateLocalStringPropertyAndI18nMap()
+    {
+        var workspace = CreateWorkspaceWithLocalStringColumn(new LightyWorkbookCodegenOptions("Generated/Config"));
+        var workbook = Assert.Single(workspace.Workbooks);
+        var generator = new LightyWorkbookCodeGenerator();
+
+        var package = generator.Generate(workspace, workbook);
+
+        // Verify LocalString.cs is included in the generated files
+        Assert.Contains(package.Files, file => file.RelativePath == "LocalString.cs");
+
+        // Verify the Row class has a LocalString property
+        var rowFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ConsumableRow.cs");
+        Assert.Contains("public LocalString Description", rowFile.Content, StringComparison.Ordinal);
+
+        // Verify the table initialization contains new LocalString("...")
+        var tableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ConsumableTable.cs");
+        Assert.Contains("new LocalString(\"", tableFile.Content, StringComparison.Ordinal);
+
+        // Verify i18n map is populated
+        Assert.NotNull(package.I18nMap);
+        Assert.Equal("Item", package.I18nMap.WorkbookName);
+        Assert.NotEmpty(package.I18nMap.Entries);
+
+        var entry = Assert.Single(package.I18nMap.Entries);
+        Assert.Contains("Description", entry.SourceContext, StringComparison.Ordinal);
+        Assert.Equal("一瓶回复药水", entry.SourceText);
+    }
+
+    [Fact]
+    public void WorkbookCodeGenerator_ShouldGenerateListOfLocalString()
+    {
+        var workspace = CreateWorkspaceWithLocalStringListColumn(new LightyWorkbookCodegenOptions("Generated/Config"));
+        var workbook = Assert.Single(workspace.Workbooks);
+        var generator = new LightyWorkbookCodeGenerator();
+
+        var package = generator.Generate(workspace, workbook);
+
+        // Verify Row class has List<LocalString> property
+        var rowFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ConsumableRow.cs");
+        Assert.Contains("public List<LocalString> Tags", rowFile.Content, StringComparison.Ordinal);
+
+        // Verify table init has List<LocalString>
+        var tableFile = Assert.Single(package.Files, file => file.RelativePath == "Item/ConsumableTable.cs");
+        Assert.Contains("new List<LocalString>", tableFile.Content, StringComparison.Ordinal);
+        Assert.Contains("new LocalString(\"", tableFile.Content, StringComparison.Ordinal);
+
+        // Verify i18n map has multiple entries for list items
+        Assert.NotNull(package.I18nMap);
+        Assert.Equal(2, package.I18nMap.Entries.Count);
+    }
+
+    [Fact]
+    public void WorkbookCodeGenerator_ShouldSkipI18nMapWhenNoLocalStringColumns()
+    {
+        var workspace = CreateWorkspace(new LightyWorkbookCodegenOptions("Generated/Config"));
+        var workbook = Assert.Single(workspace.Workbooks);
+        var generator = new LightyWorkbookCodeGenerator();
+
+        var package = generator.Generate(workspace, workbook);
+
+        Assert.Null(package.I18nMap);
+    }
+
+    private static LightyWorkspace CreateWorkspaceWithLocalStringColumn(LightyWorkbookCodegenOptions codegenOptions)
+    {
+        var workbookDirectory = @"D:\Workspace\Item";
+        var workbook = new LightyWorkbook(
+            "Item",
+            workbookDirectory,
+            new[]
+            {
+                new LightySheet(
+                    "Consumable",
+                    Path.Combine(workbookDirectory, "Consumable.txt"),
+                    Path.Combine(workbookDirectory, "Consumable_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("ID", "int", "编号", CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Name", "string", "名称", CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Description", "LocalString", "描述", CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                    }),
+                    new[]
+                    {
+                        new LightySheetRow(0, new[] { "1001", "Potion", "一瓶回复药水" }),
+                    }),
+            },
+            codegenOptions,
+            Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        return new LightyWorkspace(
+            @"D:\Workspace",
+            @"D:\Workspace\config.json",
+            @"D:\Workspace\headers.json",
+            WorkspaceHeaderLayout.CreateDefault(),
+            new[] { workbook },
+            codegenOptions,
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+    }
+
+    private static LightyWorkspace CreateWorkspaceWithLocalStringListColumn(LightyWorkbookCodegenOptions codegenOptions)
+    {
+        var workbookDirectory = @"D:\Workspace\Item";
+        var workbook = new LightyWorkbook(
+            "Item",
+            workbookDirectory,
+            new[]
+            {
+                new LightySheet(
+                    "Consumable",
+                    Path.Combine(workbookDirectory, "Consumable.txt"),
+                    Path.Combine(workbookDirectory, "Consumable_header.json"),
+                    new LightySheetHeader(new[]
+                    {
+                        new ColumnDefine("ID", "int", "编号", CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Name", "string", "名称", CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                        new ColumnDefine("Tags", "List<LocalString>", "标签", CreateAttributes(LightyHeaderTypes.ExportScope, "All")),
+                    }),
+                    new[]
+                    {
+                        new LightySheetRow(0, new[] { "1001", "Potion", "回复, 药品" }),
+                    }),
+            },
+            codegenOptions,
+            Path.Combine(workbookDirectory, LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+
+        return new LightyWorkspace(
+            @"D:\Workspace",
+            @"D:\Workspace\config.json",
+            @"D:\Workspace\headers.json",
+            WorkspaceHeaderLayout.CreateDefault(),
+            new[] { workbook },
+            codegenOptions,
+            Path.Combine(@"D:\Workspace", LightyWorkbookCodegenOptionsSerializer.DefaultFileName));
+    }
+
+
     private static IReadOnlyDictionary<string, JsonElement> CreateAttributes(string key, string value)
     {
         return new Dictionary<string, JsonElement>

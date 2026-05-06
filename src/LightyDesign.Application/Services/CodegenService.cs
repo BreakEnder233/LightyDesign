@@ -66,7 +66,7 @@ public sealed class CodegenService
 
         // Cleanup orphaned i18n YAML files
         var activeWorkbookNames = new HashSet<string>(workbookPackages.Select(entry => entry.Name), StringComparer.OrdinalIgnoreCase);
-        var i18nConfig = workspace.Workbooks[0].CodegenOptions.I18n;
+        var i18nConfig = workspace.CodegenOptions.I18n;
         GeneratedCodeOutputWriter.CleanupOrphanedI18nMaps(workspace.RootPath, i18nConfig.OutputRelativePath, i18nConfig.SourceLanguage, activeWorkbookNames);
 
         return new CodegenResultDto

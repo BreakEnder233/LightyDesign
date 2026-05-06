@@ -156,6 +156,11 @@ public static class GeneratedCodeOutputWriter
         string sourceLanguage,
         LightyGeneratedI18nMap i18nMap)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(i18nOutputRelativePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
+        ArgumentNullException.ThrowIfNull(i18nMap);
+
         var i18nRootPath = ValidateWorkbookCodegenOutputRelativePath(
             workspaceRootPath, i18nOutputRelativePath, allowEmpty: false);
         var langDir = Path.Combine(i18nRootPath, sourceLanguage);
@@ -181,6 +186,11 @@ public static class GeneratedCodeOutputWriter
         string sourceLanguage,
         HashSet<string> activeWorkbookNames)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRootPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(i18nOutputRelativePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
+        ArgumentNullException.ThrowIfNull(activeWorkbookNames);
+
         var i18nRootPath = ValidateWorkbookCodegenOutputRelativePath(
             workspaceRootPath, i18nOutputRelativePath, allowEmpty: false);
         var langDir = Path.Combine(i18nRootPath, sourceLanguage);

@@ -213,8 +213,8 @@ public sealed class WorkspaceMutationService
         var workspace = LightyWorkspaceLoader.Load(workspacePath);
         var i18n = new I18nCodegenOptions
         {
-            OutputRelativePath = i18nOutputRelativePath ?? "../I18nMap",
-            SourceLanguage = i18nSourceLanguage ?? "zh-cn",
+            OutputRelativePath = !string.IsNullOrWhiteSpace(i18nOutputRelativePath) ? i18nOutputRelativePath : "../I18nMap",
+            SourceLanguage = !string.IsNullOrWhiteSpace(i18nSourceLanguage) ? i18nSourceLanguage : "zh-cn",
         };
         var codegenOptions = new LightyWorkbookCodegenOptions(outputRelativePath, i18n);
         GeneratedCodeOutputWriter.ValidateWorkbookCodegenOutputRelativePath(workspace.RootPath, codegenOptions.OutputRelativePath, allowEmpty: true);

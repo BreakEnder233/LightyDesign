@@ -1358,6 +1358,7 @@ public class FlowChartCodeGenerationTests
 
               <ItemGroup>
                 <Compile Include="{generatedIncludePath}/**/*.cs" />
+                <PackageReference Include="YamlDotNet" Version="*" />
               </ItemGroup>
             </Project>
             """);
